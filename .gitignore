@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.jsonl
+
+# Virtual environments
+.venv
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Frontend
+node_modules/
+
+# Misc
+*.ipynb
+
+# Reports
+evals/reports/
+
+# Local runtime state
+.runtime/
+logs/

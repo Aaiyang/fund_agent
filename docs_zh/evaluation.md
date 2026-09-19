@@ -1,0 +1,80 @@
+# 评估
+
+本项目包含一个基于指标的评估框架：它从 Langfuse 获取追踪记录，使用 LLM 裁判进行评分，并生成 JSON 报告。
+
+## 运行评估
+
+```bash
+make eval                        # 交互模式——提示输入设置
+make eval-quick                  # 使用默认设置运行，不显示提示
+make eval-no-report              # 运行评估，但跳过报告生成
+make eval ENV=production         # 针对生产环境的追踪记录运行
+```
+
+## 工作原理
+
+```mermaid
+flowchart LR
+    Langfuse -->|"获取最近的追踪记录"| Evaluator
+    Metrics["指标提示词\nevals/metrics/prompts/*.md"] --> Evaluator
+    Evaluator -->|"LLM 裁判\n逐条追踪记录 × 逐项指标"| Score["通过 / 失败"]
+    Score --> Report["JSON 报告\nevals/reports/"]
+```
+
+1. **获取追踪记录**——从 Langfuse 拉取最近的 LLM 追踪记录（通过 `LANGFUSE_*` 环境变量配置）
+2. **评分**——对于每个“追踪记录 × 指标”组合，由 LLM 裁判评估输出并返回通过或失败
+3. **报告**——包含汇总统计和逐条追踪结果的 JSON 报告将保存到 `evals/reports/`
+
+## 内置指标
+
+| 指标 | 检查内容 |
+| --- | --- |
+| `helpfulness` | 响应是否确实帮助了用户？ |
+| `conciseness` | 响应是否足够简洁得当？ |
+| `hallucination` | 响应是否包含虚构事实？ |
+| `relevancy` | 响应是否切合主题？ |
+| `toxicity` | 响应是否包含有害内容？ |
+
+## 添加自定义指标
+
+1. 在 `evals/metrics/prompts/` 中创建 Markdown 文件：
+
+```markdown
+# 我的指标
+
+评估助手的响应是否……
+
+## 评分
+
+如果……则返回 "pass"；如果……则返回 "fail"。
+```
+
+2. 评估器会自动发现并应用该目录中的所有 `.md` 文件。
+
+## 报告格式
+
+报告保存为 `evals/reports/evaluation_report_YYYYMMDD_HHMMSS.json`：
+
+```json
+{
+  "summary": {
+    "total_traces": 50,
+    "success_rate": 0.92,
+    "duration_seconds": 34.2
+  },
+  "metrics": {
+    "helpfulness": {"pass": 48, "fail": 2, "rate": 0.96},
+    "hallucination": {"pass": 45, "fail": 5, "rate": 0.90}
+  },
+  "traces": [...]
+}
+```
+
+## 评估 LLM 配置
+
+评估器使用独立的 LLM 配置，因此你可以使用另一个成本更低的模型进行评判：
+
+```bash
+EVALUATION_LLM=gpt-5
+EVALUATION_API_KEY=...   # 未设置时默认为 OPENAI_API_KEY
+```
