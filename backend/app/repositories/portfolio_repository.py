@@ -237,6 +237,21 @@ class PortfolioRepository:
             await session.flush()
             return existing
 
+    async def first_activity_date(self, user_id: int, account_id: int, fund_code: str) -> date | None:
+        """Earliest recorded activity for a holding, used for holding days."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                select(col(Transaction.trade_date))
+                .where(
+                    col(Transaction.user_id) == user_id,
+                    col(Transaction.account_id) == account_id,
+                    col(Transaction.fund_code) == fund_code,
+                )
+                .order_by(col(Transaction.trade_date))
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """Remove one position row."""
         async with get_async_session() as session:

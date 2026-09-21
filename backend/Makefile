@@ -17,7 +17,10 @@ install:
 # Server
 # ---------------------------------------------------------------------------
 dev:
-	@$(call run_with_env,uv run uvicorn app.main:app --reload --port 8000)
+	@$(call run_with_env,uv run python scripts/run_local.py --reload)
+
+worker:
+	@$(call run_with_env,uv run taskiq worker app.core.task_queue:broker app.workers.fund_sync app.workers.screenshot_import)
 
 staging:
 	@$(call run_with_env,$(MAKE) _serve ENV=staging)
@@ -96,6 +99,7 @@ help:
 	@echo ""
 	@echo "Server:"
 	@echo "  dev                  Dev server with hot reload (port 8000)"
+	@echo "  worker               Taskiq worker (fund sync + screenshot import)"
 	@echo "  staging              Staging server"
 	@echo "  prod                 Production server"
 	@echo ""
@@ -121,7 +125,7 @@ help:
 	@echo "Misc:"
 	@echo "  clean                Remove .venv, __pycache__, .pytest_cache"
 
-.PHONY: install dev staging prod _serve \
+.PHONY: install dev worker staging prod _serve \
         migrate migration migrate-downgrade migrate-history \
         eval eval-quick eval-no-report \
         lint format typecheck check pre-commit pre-commit-update \

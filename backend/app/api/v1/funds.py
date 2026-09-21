@@ -14,16 +14,17 @@ from app.api.v1.auth import AuthIdentity, get_current_identity
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import logger
-from app.core.task_queue import broker
 from app.schemas.fund import (
     FundDetailResponse,
     FundNavHistoryResponse,
     FundPerformanceResponse,
     FundSearchResponse,
     FundSyncStatusResponse,
+    NavRange,
     RelatedSectorsResponse,
 )
 from app.services.fund_service import fund_service
+from app.services.fund_sync_service import fund_sync_service
 
 router = APIRouter()
 
@@ -60,12 +61,13 @@ async def get_fund_detail(
 async def get_fund_nav_history(
     request: Request,
     fund_code: str,
+    range: NavRange | None = Query(default=None, description="图表区间：1m/3m/6m/1y/3y/all"),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundNavHistoryResponse:
     """Historical NAV series served from PostgreSQL (never live pass-through)."""
-    return await fund_service.get_nav_history(fund_code, start_date, end_date)
+    return await fund_service.get_nav_history(fund_code, start_date, end_date, range_key=range)
 
 
 @router.get("/{fund_code}/performance", response_model=FundPerformanceResponse)
@@ -101,8 +103,6 @@ async def refresh_fund_data(
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundSyncStatusResponse:
     """Enqueue a background sync for one fund (returns immediately)."""
-    from app.workers.fund_sync import sync_fund_task
-
-    await sync_fund_task.kiq(fund_code)
-    logger.info("fund_refresh_requested", fund_code=fund_code, session_id=identity.session_id)
-    return FundSyncStatusResponse(fund_code=fund_code, queued=bool(broker))
+    job_id = await fund_sync_service.enqueue_sync(fund_code)
+    logger.info("fund_refresh_requested", fund_code=fund_code, job_id=job_id, user_id=identity.user_id)
+    return FundSyncStatusResponse(fund_code=fund_code, queued=True, job_id=job_id)

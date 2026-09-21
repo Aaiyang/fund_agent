@@ -18,7 +18,9 @@ class WatchlistFundItem(BaseModel):
     daily_return: float | None = None
     is_held: bool = False
     is_updated: bool = False
+    sort_order: int = 0
     groups: list[str] = []
+    group_ids: list[int] = []
 
 
 class WatchlistResponse(BaseResponse):
@@ -70,3 +72,7 @@ class WatchlistGroupUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sort_order: int | None = None
+    fund_codes: list[str] | None = Field(
+        default=None,
+        description="整组覆盖：分组内基金代码及顺序（未在自选内的代码会被忽略）",
+    )

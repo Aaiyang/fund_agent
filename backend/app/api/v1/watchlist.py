@@ -63,8 +63,10 @@ async def update_group(
     payload: WatchlistGroupUpdateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistGroupItem:
-    """Rename or reorder a group."""
-    updated = await watchlist_service.update_group(identity.user_id, group_id, payload.name, payload.sort_order)
+    """Rename, reorder, or rewrite the members of a group."""
+    updated = await watchlist_service.update_group(
+        identity.user_id, group_id, payload.name, payload.sort_order, payload.fund_codes
+    )
     if updated is None:
         raise HTTPException(status_code=404, detail="group_not_found")
     return updated

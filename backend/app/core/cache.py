@@ -15,6 +15,7 @@ from typing import (
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.metrics import component_up
 
 # Try to import redis — it's an optional dependency
 if TYPE_CHECKING:
@@ -47,6 +48,11 @@ class InMemoryCacheService:
     async def initialize(self) -> None:
         """No-op for in-memory cache."""
         logger.info("cache_initialized", backend="in_memory", ttl=self._default_ttl)
+
+    async def is_healthy(self) -> bool:
+        """The in-memory fallback cannot fail independently of the process."""
+        component_up.labels(component="cache").set(1)
+        return True
 
     async def get(self, key: str) -> Optional[str]:
         """Get a value from cache.
@@ -145,6 +151,20 @@ class ValkeyCacheService:
             port=settings.VALKEY_PORT,
             ttl=self._default_ttl,
         )
+
+    async def is_healthy(self) -> bool:
+        """Ping Valkey and export the result as a metric (spec 17.2)."""
+        if self._client is None:
+            component_up.labels(component="cache").set(0)
+            return False
+        try:
+            await cast(Awaitable[bool], self._client.ping())
+            component_up.labels(component="cache").set(1)
+            return True
+        except Exception as e:
+            component_up.labels(component="cache").set(0)
+            logger.warning("cache_health_check_failed", error=str(e))
+            return False
 
     async def get(self, key: str) -> Optional[str]:
         """Get a value from Valkey.

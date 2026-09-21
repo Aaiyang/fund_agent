@@ -34,6 +34,8 @@ from app.core.observability import langfuse_init
 from app.core.task_queue import shutdown_broker, startup_broker
 from app.services.database import database_service
 from app.services.memory import memory_service
+from app.workers import fund_sync, screenshot_import  # noqa: F401  register broker tasks
+from app.workers.scheduler import start_periodic_jobs, stop_periodic_jobs
 
 # Load environment variables
 load_dotenv()
@@ -77,6 +79,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("task_broker_startup_failed", error=str(e))
 
+    # Periodic Hot Fund enqueue (spec 7.13)
+    try:
+        start_periodic_jobs()
+    except Exception as e:
+        logger.exception("periodic_jobs_startup_failed", error=str(e))
+
     # Ensure the holding-import temp image directory exists
     try:
         Path(settings.HOLDING_IMPORT_TEMP_DIR).mkdir(parents=True, exist_ok=True)
@@ -86,6 +94,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup on shutdown
+    await stop_periodic_jobs()
     await shutdown_broker()
     await cache_service.close()
     if agent._connection_pool:
@@ -196,12 +205,19 @@ async def health_check(request: Request) -> JSONResponse:
 
     # Check database connectivity
     db_healthy = await database_service.health_check()
+    # Cache is degradable: an unreachable Valkey slows reads, it does not
+    # lose data, so it reports degraded without failing the probe.
+    cache_healthy = await cache_service.is_healthy()
 
     response = {
-        "status": "healthy" if db_healthy else "degraded",
+        "status": "healthy" if db_healthy and cache_healthy else "degraded",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT.value,
-        "components": {"api": "healthy", "database": "healthy" if db_healthy else "unhealthy"},
+        "components": {
+            "api": "healthy",
+            "database": "healthy" if db_healthy else "unhealthy",
+            "cache": "healthy" if cache_healthy else "unhealthy",
+        },
         "timestamp": datetime.now().isoformat(),
     }
 

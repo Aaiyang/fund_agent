@@ -78,6 +78,28 @@ class FundRepository:
             result = await session.execute(statement)
             return result.scalar_one_or_none()
 
+    async def get_funds(self, fund_codes: list[str]) -> dict[str, Fund]:
+        """Load many fund master rows by code, keyed by code."""
+        if not fund_codes:
+            return {}
+        async with get_async_session() as session:
+            result = await session.execute(select(Fund).where(col(Fund.fund_code).in_(fund_codes)))
+            return {fund.fund_code: fund for fund in result.scalars().all()}
+
+    async def get_latest_navs(self, fund_codes: list[str]) -> dict[str, FundNav]:
+        """Load the newest NAV row per fund in a single PostgreSQL DISTINCT ON."""
+        if not fund_codes:
+            return {}
+        async with get_async_session() as session:
+            statement = (
+                select(FundNav)
+                .where(col(FundNav.fund_code).in_(fund_codes))
+                .distinct(col(FundNav.fund_code))
+                .order_by(col(FundNav.fund_code), col(FundNav.nav_date).desc())
+            )
+            result = await session.execute(statement)
+            return {row.fund_code: row for row in result.scalars().all()}
+
     async def get_hot_fund_codes(self) -> list[str]:
         """Distinct fund codes held or watchlisted by any user (Hot Funds)."""
         position_codes = select(col(PortfolioPosition.fund_code)).distinct()
@@ -109,6 +131,10 @@ class FundWriteRepository:
                     "inception_date": record.inception_date,
                 }
             )
+        # Search records carry the public NAV date, which is what the row speaks as of
+        as_of = getattr(record, "nav_date", None)
+        if as_of is not None:
+            values["source_as_of"] = as_of
         async with get_async_session() as session:
             statement = pg_insert(Fund).values(**values)
             statement = statement.on_conflict_do_update(

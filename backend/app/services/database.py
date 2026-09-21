@@ -20,6 +20,7 @@ from app.core.config import (
     settings,
 )
 from app.core.logging import logger
+from app.core.metrics import component_up
 from app.models.session import Session as ChatSession
 from app.models.user import User
 from app.utils.clock import utc_now
@@ -255,7 +256,7 @@ class DatabaseService:
         return Session(self.engine)
 
     async def health_check(self) -> bool:
-        """Check database connection health.
+        """Check database connection health and export it as a metric.
 
         Returns:
             bool: True if database is healthy, False otherwise
@@ -264,8 +265,10 @@ class DatabaseService:
             with Session(self.engine) as session:
                 # Execute a simple query to check connection
                 session.exec(select(1)).first()
+                component_up.labels(component="postgresql").set(1)
                 return True
         except Exception as e:
+            component_up.labels(component="postgresql").set(0)
             logger.error("database_health_check_failed", error=str(e))
             return False
 

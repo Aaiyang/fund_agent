@@ -1,10 +1,13 @@
 """Fund API request/response schemas."""
 
-from datetime import date
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.schemas.base import BaseResponse
+
+NavRange = Literal["1m", "3m", "6m", "1y", "3y", "all"]
 
 
 class FundSearchItem(BaseModel):
@@ -56,6 +59,11 @@ class FundDetailResponse(BaseResponse):
     performance: FundPerformance = FundPerformance()
     is_watchlisted: bool = False
     is_held: bool = False
+    # Lineage: which source, as of when, and when we last refreshed it (spec 5.6)
+    source: str | None = None
+    source_as_of: date | None = None
+    updated_at: datetime | None = None
+    nav_fetched_at: datetime | None = None
 
 
 class FundNavPoint(BaseModel):
@@ -71,6 +79,7 @@ class FundNavHistoryResponse(BaseResponse):
     """GET /funds/{fund_code}/nav response."""
 
     fund_code: str
+    range: str | None = None
     points: list[FundNavPoint]
 
 
@@ -94,3 +103,4 @@ class FundSyncStatusResponse(BaseResponse):
 
     fund_code: str
     queued: bool
+    job_id: str | None = None

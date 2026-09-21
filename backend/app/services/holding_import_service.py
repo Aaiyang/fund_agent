@@ -16,21 +16,24 @@ from PIL import Image
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.metrics import holding_imports_total, screenshot_parse_duration_seconds
+from app.core.metrics import holding_import_items_total, holding_imports_total, screenshot_parse_duration_seconds
+from app.core.task_queue import enqueue
 from app.integrations.holdings.base import (
     DraftPositionItem,
     HoldingImportPayload,
     ManualPositionInput,
 )
 from app.integrations.holdings.manual_provider import ManualImportProvider
-from app.integrations.holdings.normalizer import validate_draft_item
+from app.integrations.holdings.normalizer import LOW_CONFIDENCE_THRESHOLD, validate_draft_item
 from app.integrations.holdings.screenshot_provider import ScreenshotImportProvider
 from app.models.holding_import import HoldingImport, HoldingImportItem
 from app.repositories.import_repository import import_repository
+from app.repositories.job_repository import job_repository
 from app.repositories.portfolio_repository import portfolio_repository
 from app.schemas.holding_import import ImportDetail, ImportItemOut
 from app.services.fund_service import fund_service
 from app.services.portfolio_service import portfolio_service
+from app.workers import SCREENSHOT_IMPORT_TASK
 from app.utils.clock import utc_now, business_today
 
 _ALLOWED_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
@@ -108,11 +111,10 @@ class HoldingImportService:
             await import_repository.update_import(record.id, status="PARSE_FAILED", error_message="upload_rejected")
             raise
         await import_repository.update_import(record.id, status="PARSING")
+        job = await job_repository.create("SCREENSHOT_IMPORT", subject=record.id)
 
-        from app.workers.screenshot_import import process_screenshot_import_task
-
-        await process_screenshot_import_task.kiq(import_id=record.id, user_id=user_id)
-        logger.info("screenshot_import_enqueued", import_id=record.id, images=len(paths))
+        await enqueue(SCREENSHOT_IMPORT_TASK, import_id=record.id, user_id=user_id, job_id=job.id)
+        logger.info("screenshot_import_enqueued", import_id=record.id, job_id=job.id, images=len(paths))
         return record
 
     # ------------------------------------------------------------------
@@ -152,6 +154,9 @@ class HoldingImportService:
             image_hashes=draft.image_hashes,
             error_message=draft.error_message,
         )
+        for item in draft.items:
+            band = "low" if (item.confidence or 0.0) < LOW_CONFIDENCE_THRESHOLD else "ok"
+            holding_import_items_total.labels(band=band).inc()
         holding_imports_total.labels(import_type="SCREENSHOT", status="REVIEW_REQUIRED").inc()
 
     async def mark_failed(self, import_id: str, message: str) -> None:

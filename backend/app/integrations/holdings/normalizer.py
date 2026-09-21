@@ -11,6 +11,9 @@ from app.integrations.holdings.base import DraftPositionItem, RawExtractedPositi
 _AMOUNT = re.compile(r"[¥￥$,，\s]")
 _PERCENT = re.compile(r"%\s*$")
 
+# Below this, a fund match needs explicit human confirmation (spec 3.7.2)
+LOW_CONFIDENCE_THRESHOLD = 0.6
+
 
 def parse_amount(value: str | float | int | None) -> float | None:
     """Normalize money-like input ('¥1,234.56' / '1234.56' / 1234.56)."""
@@ -75,7 +78,7 @@ def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
             issues.append("profit_loss_inconsistent_with_value")
     if item.profit_loss_rate is not None and abs(item.profit_loss_rate) > 500:
         issues.append("profit_loss_rate_out_of_range")
-    if item.confidence < 0.6:
+    if item.confidence < LOW_CONFIDENCE_THRESHOLD:
         issues.append("low_confidence")
 
     blocking = {"fund_unresolved", "missing_market_value_and_shares"}

@@ -70,6 +70,7 @@ class PositionItem(BaseModel):
     position_ratio: float | None = None
     nav_date: date | None = None
     is_updated: bool = False
+    holding_days: int | None = None
     version: int = 1
     updated_at: datetime | None = None
 

@@ -234,6 +234,9 @@ class Settings:
         self.AKSHARE_MAX_RETRIES = int(os.getenv("AKSHARE_MAX_RETRIES", "2"))
         self.AKSHARE_MIN_INTERVAL_SECONDS = float(os.getenv("AKSHARE_MIN_INTERVAL_SECONDS", "0.2"))
         self.FUND_NAV_STALE_HOURS = int(os.getenv("FUND_NAV_STALE_HOURS", "24"))
+        # Hot Fund sweep (spec 7.13): the API only enqueues; a worker executes
+        self.FUND_HOT_SYNC_ENABLED = os.getenv("FUND_HOT_SYNC_ENABLED", "false").lower() in ("true", "1", "t", "yes")
+        self.FUND_HOT_SYNC_INTERVAL_MINUTES = int(os.getenv("FUND_HOT_SYNC_INTERVAL_MINUTES", "360"))
         # Calendar dates (trade_date, nav freshness) follow the fund market, not the host tz
         self.FUND_BUSINESS_TZ = os.getenv("FUND_BUSINESS_TZ", "Asia/Shanghai")
 
@@ -253,6 +256,8 @@ class Settings:
 
         # Task queue Configuration (empty → derived from VALKEY_*; no Redis → in-process fallback)
         self.TASKIQ_REDIS_URL = os.getenv("TASKIQ_REDIS_URL", "")
+        # Total attempts for a durable background task (first try + retries)
+        self.BACKGROUND_TASK_MAX_ATTEMPTS = int(os.getenv("BACKGROUND_TASK_MAX_ATTEMPTS", "3"))
 
         # Rate Limiting Configuration
         self.RATE_LIMIT_DEFAULT = parse_list_from_env("RATE_LIMIT_DEFAULT", ["200 per day", "50 per hour"])

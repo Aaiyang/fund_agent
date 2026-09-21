@@ -13,11 +13,8 @@ http_request_duration_seconds = Histogram(
     "http_request_duration_seconds", "HTTP request duration in seconds", ["method", "endpoint"]
 )
 
-# Database metrics
-db_connections = Gauge("db_connections", "Number of active database connections")
-
-# Custom business metrics
-orders_processed = Counter("orders_processed_total", "Total number of orders processed")
+# Dependency health gauges (spec 17.2: PostgreSQL / Redis connectivity)
+component_up = Gauge("component_up", "1 when the dependency answers, 0 otherwise", ["component"])
 
 llm_inference_duration_seconds = Histogram(
     "llm_inference_duration_seconds",
@@ -56,7 +53,13 @@ screenshot_parse_duration_seconds = Histogram(
 fund_sync_total = Counter(
     "fund_sync_total",
     "Fund synchronization outcomes",
-    ["status"],  # "synced" | "skipped" | "failed"
+    ["status"],  # "written" | "skipped" | "failed"
+)
+
+holding_import_items_total = Counter(
+    "holding_import_items_total",
+    "Import items by match-confidence band, for the low-confidence ratio (spec 17.2)",
+    ["band"],  # "low" | "ok"
 )
 
 

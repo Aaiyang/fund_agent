@@ -25,18 +25,22 @@ class WatchlistService:
             Watchlist fund items ordered by sort_order.
         """
         entries = await watchlist_repository.list_funds(user_id)
+        group_map = await watchlist_repository.list_group_map(user_id)
         if group_id is not None:
-            scoped_codes = set(await watchlist_repository.list_group_fund_codes(group_id))
-            entries = [entry for entry in entries if entry.fund_code in scoped_codes]
+            entries = [
+                entry for entry in entries if any(gid == group_id for gid, _ in group_map.get(entry.fund_code, []))
+            ]
 
-        held_flags = {
-            entry.fund_code: await watchlist_repository.is_held(user_id, entry.fund_code) for entry in entries
-        }
+        codes = [entry.fund_code for entry in entries]
+        funds = await fund_repository.get_funds(codes)
+        navs = await fund_repository.get_latest_navs(codes)
+        held_codes = await watchlist_repository.list_held_fund_codes(user_id)
 
         items: list[WatchlistFundItem] = []
         for entry in entries:
-            fund = await fund_repository.get_fund(entry.fund_code)
-            latest = await fund_repository.get_latest_nav(entry.fund_code)
+            fund = funds.get(entry.fund_code)
+            latest = navs.get(entry.fund_code)
+            groups = group_map.get(entry.fund_code, [])
             items.append(
                 WatchlistFundItem(
                     fund_code=entry.fund_code,
@@ -45,9 +49,11 @@ class WatchlistService:
                     latest_nav=latest.unit_nav if latest else None,
                     nav_date=latest.nav_date if latest else None,
                     daily_return=latest.daily_return if latest else None,
-                    is_held=held_flags.get(entry.fund_code, False),
+                    is_held=entry.fund_code in held_codes,
                     is_updated=self._nav_is_fresh(latest.fetched_at, latest.nav_date) if latest else False,
-                    groups=[],
+                    sort_order=entry.sort_order,
+                    groups=[name for _, name in groups],
+                    group_ids=[gid for gid, _ in groups],
                 )
             )
         logger.info("watchlist_listed", user_id=user_id, count=len(items))
@@ -83,30 +89,42 @@ class WatchlistService:
         sort_order: int | None = None,
         group_ids: list[int] | None = None,
     ) -> bool:
-        """Update sort order and/or group memberships for a watchlisted fund."""
-        if sort_order is not None:
-            await watchlist_repository.update_sort(user_id, fund_code, sort_order)
-        if group_ids is not None:
-            for group_id in group_ids:
-                if await watchlist_repository.get_group(user_id, group_id) is not None:
-                    await watchlist_repository.add_to_group(user_id, group_id, fund_code)
+        """Update sort order and/or replace group memberships for a watchlisted fund.
+
+        Args:
+            user_id: Owner id.
+            fund_code: Watchlisted fund to edit.
+            sort_order: New order within the watchlist.
+            group_ids: Full desired membership — groups missing from the list
+                drop the fund, so ungrouping is expressible (spec 3.3).
+
+        Returns:
+            False when the fund is not on the user's watchlist.
+        """
+        if sort_order is not None and await watchlist_repository.update_sort(user_id, fund_code, sort_order) is None:
+            return False
+        if group_ids is not None and not await watchlist_repository.set_fund_groups(user_id, fund_code, group_ids):
+            return False
+        logger.info("watchlist_fund_updated", user_id=user_id, fund_code=fund_code)
         return True
 
     async def list_groups(self, user_id: int) -> list[WatchlistGroupItem]:
         """List the user's groups with fund counts."""
         groups = await watchlist_repository.list_groups(user_id)
-        items = []
-        for group in groups:
-            codes = await watchlist_repository.list_group_fund_codes(group.id or 0)
-            items.append(
-                WatchlistGroupItem(
-                    id=group.id or 0,
-                    name=group.name,
-                    sort_order=group.sort_order,
-                    fund_count=len(codes),
-                )
+        group_map = await watchlist_repository.list_group_map(user_id)
+        counts: dict[int, int] = {}
+        for memberships in group_map.values():
+            for group_id, _ in memberships:
+                counts[group_id] = counts.get(group_id, 0) + 1
+        return [
+            WatchlistGroupItem(
+                id=group.id or 0,
+                name=group.name,
+                sort_order=group.sort_order,
+                fund_count=counts.get(group.id or 0, 0),
             )
-        return items
+            for group in groups
+        ]
 
     async def create_group(self, user_id: int, name: str, sort_order: int = 0) -> WatchlistGroupItem:
         """Create a custom group."""
@@ -120,11 +138,27 @@ class WatchlistService:
         group_id: int,
         name: str | None = None,
         sort_order: int | None = None,
+        fund_codes: list[str] | None = None,
     ) -> WatchlistGroupItem | None:
-        """Rename or reorder a group."""
+        """Rename or reorder a group, optionally rewriting its members and order.
+
+        Args:
+            user_id: Owner id.
+            group_id: Group to edit.
+            name: New display name.
+            sort_order: New group order.
+            fund_codes: Desired members in display order (spec 3.3 分组内排序).
+
+        Returns:
+            The updated group, or None when it does not exist.
+        """
         group = await watchlist_repository.update_group(user_id, group_id, name, sort_order)
         if group is None:
             return None
+        if fund_codes is not None and not await watchlist_repository.replace_group_members(
+            user_id, group_id, fund_codes
+        ):
+            logger.warning("watchlist_group_reorder_partial", user_id=user_id, group_id=group_id)
         return WatchlistGroupItem(id=group.id or 0, name=group.name, sort_order=group.sort_order)
 
     async def delete_group(self, user_id: int, group_id: int) -> bool:

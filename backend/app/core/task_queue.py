@@ -47,6 +47,27 @@ def _create_broker() -> Any:
 broker = _create_broker()
 
 
+async def enqueue(task_name: str, **kwargs: Any) -> None:
+    """Hand a task to the broker by name.
+
+    Name-based on purpose: worker modules import the services that enqueue them,
+    so a direct import back would close a cycle. Task modules are imported at
+    startup (see app.main) to populate the broker registry.
+
+    Args:
+        task_name: Task id as Taskiq registers it, e.g.
+            "app.workers.fund_sync:sync_fund_task".
+        **kwargs: Task arguments.
+
+    Raises:
+        RuntimeError: The task was never registered in this process.
+    """
+    task = broker.find_task(task_name)
+    if task is None:
+        raise RuntimeError(f"task_not_registered_{task_name}")
+    await task.kiq(**kwargs)
+
+
 async def startup_broker() -> None:
     """Initialize the broker for the current process (API or worker)."""
     await broker.startup()

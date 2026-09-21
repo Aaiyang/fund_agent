@@ -105,7 +105,11 @@ class PortfolioService:
             return None
         siblings = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in siblings)
-        return await self._position_item(position, total_value)
+        item = await self._position_item(position, total_value)
+        first_activity = await portfolio_repository.first_activity_date(user_id, account_id, fund_code)
+        if first_activity is not None:
+            item.holding_days = (business_today() - first_activity).days
+        return item
 
     async def upsert_position(
         self,

@@ -7,9 +7,10 @@ enqueued or inlined only when local data is missing or stale (spec 5.6).
 """
 
 import asyncio
+import calendar
+import json
 from datetime import date
 
-from sqlalchemy import exists as sa_exists
 from sqlalchemy import select
 from sqlmodel import col
 
@@ -31,10 +32,29 @@ from app.schemas.fund import (
     FundNavPoint,
     FundPerformance,
     FundSearchItem,
+    NavRange,
 )
 from app.services.fund_sync_service import fund_sync_service
+from app.utils.clock import business_today
 
 _LATEST_NAV_CACHE_TTL_SECONDS = 300
+_SEARCH_CACHE_TTL_SECONDS = 300
+
+# Chart ranges (spec 3.5.3): months back from today, None = since inception
+_NAV_RANGES: dict[str, int | None] = {"1m": 1, "3m": 3, "6m": 6, "1y": 12, "3y": 36, "all": None}
+
+
+def _range_start(range_key: str) -> date | None:
+    """First date of a named chart range, clamped to a real calendar day."""
+    months = _NAV_RANGES[range_key]
+    if months is None:
+        return None
+    today = business_today()
+    year, month = today.year, today.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
 
 class FundService:
@@ -58,9 +78,38 @@ class FundService:
         if not keyword_clean:
             return []
 
-        cache_hit = await cache_service.get(cache_key("fund_search", str(user_id), keyword_clean))
-        if cache_hit:
-            return self._decode_items(cache_hit)
+        funds = await self._search_fund_rows(keyword_clean)
+        if not funds:
+            return []
+
+        codes = [fund.fund_code for fund in funds]
+        navs = await fund_repository.get_latest_navs(codes)
+        watchlisted, held = await self._user_flag_sets(user_id)
+        return [
+            FundSearchItem(
+                fund_code=fund.fund_code,
+                fund_name=fund.fund_name,
+                fund_type=fund.fund_type,
+                latest_nav=nav.unit_nav if nav else None,
+                nav_date=nav.nav_date if nav else None,
+                daily_return=nav.daily_return if nav else None,
+                is_watchlisted=fund.fund_code in watchlisted,
+                is_held=fund.fund_code in held,
+            )
+            for fund in funds
+            for nav in [navs.get(fund.fund_code)]
+        ]
+
+    async def _search_fund_rows(self, keyword_clean: str) -> list[Fund]:
+        """Load matching fund master rows, caching the shared result set.
+
+        Only public data is cached; per-user flags stay out of the key so one
+        user's watchlist edit can never be masked by another's cache entry —
+        and never by their own, since flags are read live.
+        """
+        cached = await cache_service.get(cache_key("fund_search", keyword_clean))
+        if cached:
+            return self._decode_funds(cached)
 
         local_funds = await fund_repository.search_funds(keyword_clean)
         if not local_funds and AKSHARE_AVAILABLE:
@@ -69,29 +118,14 @@ class FundService:
                 await fund_write_repository.upsert_fund_from_record(record)
             local_funds = await fund_repository.search_funds(keyword_clean)
 
-        items: list[FundSearchItem] = []
-        for fund in local_funds[:50]:
-            latest = await self._latest_nav_cached(fund.fund_code)
-            is_watchlisted, is_held = await self._user_flags(fund.fund_code, user_id)
-            items.append(
-                FundSearchItem(
-                    fund_code=fund.fund_code,
-                    fund_name=fund.fund_name,
-                    fund_type=fund.fund_type,
-                    latest_nav=latest.unit_nav if latest else None,
-                    nav_date=latest.nav_date if latest else None,
-                    daily_return=latest.daily_return if latest else None,
-                    is_watchlisted=is_watchlisted,
-                    is_held=is_held,
-                )
+        funds = local_funds[:50]
+        if funds:
+            await cache_service.set(
+                cache_key("fund_search", keyword_clean),
+                self._encode_funds(funds),
+                ttl=_SEARCH_CACHE_TTL_SECONDS,
             )
-
-        await cache_service.set(
-            cache_key("fund_search", str(user_id), keyword_clean),
-            self._encode_items(items),
-            ttl=_LATEST_NAV_CACHE_TTL_SECONDS,
-        )
-        return items
+        return funds
 
     # ------------------------------------------------------------------
     # Detail / NAV / performance
@@ -109,7 +143,7 @@ class FundService:
         points = self._to_points(history)
         is_watchlisted, is_held = await self._user_flags(fund_code, user_id)
 
-        end = latest.nav_date if latest else date.today()
+        end = latest.nav_date if latest else business_today()
         return FundDetailResponse(
             fund_code=fund.fund_code,
             fund_name=fund.fund_name,
@@ -124,6 +158,12 @@ class FundService:
             performance=self._compute_performance(points, end),
             is_watchlisted=is_watchlisted,
             is_held=is_held,
+            source=fund.source,
+            # AKShare's rank table carries no as-of column; the newest NAV date
+            # we hold is the honest equivalent for "what this data describes".
+            source_as_of=fund.source_as_of or (latest.nav_date if latest else None),
+            updated_at=fund.updated_at or fund.fetched_at,
+            nav_fetched_at=latest.fetched_at if latest else None,
         )
 
     async def get_nav_history(
@@ -131,12 +171,23 @@ class FundService:
         fund_code: str,
         start_date: date | None = None,
         end_date: date | None = None,
+        range_key: NavRange | None = None,
     ) -> FundNavHistoryResponse:
-        """Return the stored NAV series for charting (no live pass-through)."""
+        """Return the stored NAV series for charting (no live pass-through).
+
+        Args:
+            fund_code: The 6-digit fund code.
+            start_date: Explicit lower bound; overridden by `range_key`.
+            end_date: Explicit upper bound.
+            range_key: Named range from spec 3.5.3 (1m/3m/6m/1y/3y/all).
+        """
         await self.ensure_fund_data(fund_code)
+        if range_key is not None:
+            start_date = _range_start(range_key)
         history = await fund_repository.get_nav_history(fund_code, start_date, end_date)
         return FundNavHistoryResponse(
             fund_code=fund_code,
+            range=range_key,
             points=[
                 FundNavPoint(
                     nav_date=row.nav_date,
@@ -227,11 +278,8 @@ class FundService:
             return
 
         if await fund_sync_service.is_nav_stale(fund_code):
-            from app.workers.fund_sync import sync_fund_task
-
             try:
-                await sync_fund_task.kiq(fund_code)
-                logger.info("fund_sync_enqueued", fund_code=fund_code)
+                await fund_sync_service.enqueue_sync(fund_code)
             except Exception as e:
                 logger.warning("fund_sync_enqueue_failed", fund_code=fund_code, error=str(e))
 
@@ -249,26 +297,21 @@ class FundService:
         key = cache_key("fund_latest_nav", fund_code)
         cached = await cache_service.get(key)
         if cached:
-            row = FundNav(
-                fund_code=fund_code,
-                nav_date=date.fromisoformat(cached.split("|")[0]),
-                unit_nav=float(cached.split("|")[1]) if cached.split("|")[1] != "" else None,
-                accumulated_nav=float(cached.split("|")[2]) if cached.split("|")[2] != "" else None,
-                daily_return=float(cached.split("|")[3]) if cached.split("|")[3] != "" else None,
-            )
-            return row
+            return FundNav.model_validate(json.loads(cached))
 
         latest = await fund_repository.get_latest_nav(fund_code)
         if latest is not None:
             await cache_service.set(
                 key,
-                "|".join(
-                    [
-                        latest.nav_date.isoformat(),
-                        "" if latest.unit_nav is None else str(latest.unit_nav),
-                        "" if latest.accumulated_nav is None else str(latest.accumulated_nav),
-                        "" if latest.daily_return is None else str(latest.daily_return),
-                    ]
+                json.dumps(
+                    {
+                        "fund_code": latest.fund_code,
+                        "nav_date": latest.nav_date.isoformat(),
+                        "unit_nav": latest.unit_nav,
+                        "accumulated_nav": latest.accumulated_nav,
+                        "daily_return": latest.daily_return,
+                        "fetched_at": latest.fetched_at.isoformat() if latest.fetched_at else None,
+                    }
                 ),
                 ttl=_LATEST_NAV_CACHE_TTL_SECONDS,
             )
@@ -276,22 +319,29 @@ class FundService:
 
     async def _user_flags(self, fund_code: str, user_id: int) -> tuple[bool, bool]:
         """Check whether the user watchlists or holds this fund."""
+        watchlisted, held = await self._user_flag_sets(user_id)
+        return fund_code in watchlisted, fund_code in held
+
+    async def _user_flag_sets(self, user_id: int) -> tuple[set[str], set[str]]:
+        """Fund codes the user watchlists, and fund codes the user holds."""
         async with get_async_session() as session:
-            watchlisted = (
-                await session.execute(
-                    select(sa_exists().where(col(Watchlist.user_id) == user_id, col(Watchlist.fund_code) == fund_code))
-                )
-            ).scalar()
-            held = (
-                await session.execute(
-                    select(
-                        sa_exists().where(
-                            col(PortfolioPosition.user_id) == user_id, col(PortfolioPosition.fund_code) == fund_code
-                        )
+            watchlisted = set(
+                (await session.execute(select(col(Watchlist.fund_code)).where(col(Watchlist.user_id) == user_id)))
+                .scalars()
+                .all()
+            )
+            held = set(
+                (
+                    await session.execute(
+                        select(col(PortfolioPosition.fund_code))
+                        .where(col(PortfolioPosition.user_id) == user_id)
+                        .distinct()
                     )
                 )
-            ).scalar()
-            return bool(watchlisted), bool(held)
+                .scalars()
+                .all()
+            )
+            return watchlisted, held
 
     @staticmethod
     def _to_points(history: list[FundNav]) -> list[NavPoint]:
@@ -299,16 +349,16 @@ class FundService:
         return [NavPoint(date=row.nav_date, nav=row.unit_nav or 0.0) for row in history]
 
     @staticmethod
-    def _encode_items(items: list[FundSearchItem]) -> str:
-        """Serialize search items for the cache."""
-        return "[" + ",".join(item.model_dump_json() for item in items) + "]"
+    def _encode_funds(funds: list[Fund]) -> str:
+        """Serialize the public part of search hits for the shared cache."""
+        return json.dumps(
+            [{"fund_code": fund.fund_code, "fund_name": fund.fund_name, "fund_type": fund.fund_type} for fund in funds]
+        )
 
     @staticmethod
-    def _decode_items(raw: str) -> list[FundSearchItem]:
-        """Deserialize cached search items."""
-        import json
-
-        return [FundSearchItem.model_validate(entry) for entry in json.loads(raw)]
+    def _decode_funds(raw: str) -> list[Fund]:
+        """Deserialize cached search hits back into fund master rows."""
+        return [Fund.model_validate(entry) for entry in json.loads(raw)]
 
 
 fund_service = FundService()
