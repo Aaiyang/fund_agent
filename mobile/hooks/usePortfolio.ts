@@ -1,0 +1,118 @@
+/** Positions, asset summary, accounts and transactions (spec 3.2 / 3.6 / 3.8). */
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { api } from '@/api/client';
+import { queryKeys } from '@/api/queries';
+import type { components } from '@/api/schema';
+
+export type PositionItem = components['schemas']['PositionItem'];
+export type PortfolioSummary = components['schemas']['PortfolioSummary'];
+export type AccountItem = components['schemas']['AccountItem'];
+export type TransactionItem = components['schemas']['TransactionItem'];
+
+/** Account writes change both the account list and every derived holding view. */
+function invalidateAccounts(client: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.accounts }),
+    client.invalidateQueries({ queryKey: queryKeys.portfolio }),
+    client.invalidateQueries({ queryKey: queryKeys.transactionsAll }),
+  ]);
+}
+
+/** Position writes also append adjustment records. */
+function invalidatePositions(client: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.portfolio }),
+    client.invalidateQueries({ queryKey: queryKeys.transactionsAll }),
+    client.invalidateQueries({ queryKey: queryKeys.funds }),
+  ]);
+}
+
+export function usePortfolioSummary(accountId: number | null) {
+  return useQuery({
+    queryKey: queryKeys.portfolioSummary(accountId),
+    queryFn: () =>
+      api.get<components['schemas']['PortfolioSummaryResponse']>('/portfolio/summary', { account_id: accountId }),
+  });
+}
+
+export function usePositions(accountId: number | null) {
+  return useQuery({
+    queryKey: queryKeys.positions(accountId),
+    queryFn: () => api.get<components['schemas']['PositionsResponse']>('/portfolio/positions', { account_id: accountId }),
+  });
+}
+
+export function usePosition(accountId: number | null, fundCode: string | null) {
+  return useQuery({
+    queryKey: queryKeys.position(accountId ?? -1, fundCode ?? ''),
+    queryFn: () => api.get<PositionItem>(`/portfolio/positions/${fundCode}`, { account_id: accountId }),
+    enabled: Boolean(fundCode),
+  });
+}
+
+export function useAccounts() {
+  return useQuery({
+    queryKey: queryKeys.accounts,
+    queryFn: () => api.get<components['schemas']['AccountsResponse']>('/accounts'),
+  });
+}
+
+export function useCreateAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: components['schemas']['AccountCreateRequest']) => api.post<AccountItem>('/accounts', payload),
+    onSuccess: () => invalidateAccounts(client),
+  });
+}
+
+export function useUpdateAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, ...payload }: { accountId: number } & components['schemas']['AccountUpdateRequest']) =>
+      api.patch<AccountItem>(`/accounts/${accountId}`, payload),
+    onSuccess: () => invalidateAccounts(client),
+  });
+}
+
+export function useDeleteAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: number) => api.del(`/accounts/${accountId}`),
+    onSuccess: () => invalidateAccounts(client),
+  });
+}
+
+/**
+ * Create or edit a holding. `expected_version` is required when updating an
+ * existing row; a stale version comes back as 409 (spec 7.11).
+ */
+export function useUpsertPosition() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fundCode, ...payload }: { fundCode: string } & components['schemas']['PositionUpsertRequest']) =>
+      api.patch<PositionItem>(`/portfolio/positions/${fundCode}`, payload),
+    onSuccess: () => invalidatePositions(client),
+  });
+}
+
+export function useDeletePosition() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, fundCode }: { accountId: number; fundCode: string }) =>
+      api.del(`/portfolio/positions/${fundCode}`, { account_id: accountId }),
+    onSuccess: () => invalidatePositions(client),
+  });
+}
+
+export function useTransactions(accountId: number | null, fundCode: string | null) {
+  return useQuery({
+    queryKey: queryKeys.transactions(accountId, fundCode),
+    queryFn: () =>
+      api.get<components['schemas']['TransactionsResponse']>('/transactions', {
+        account_id: accountId,
+        fund_code: fundCode,
+      }),
+  });
+}
