@@ -67,7 +67,8 @@ cp .env.example .env.development
 | --- | --- | --- | --- |
 | `JWT_SECRET_KEY` | — | Yes | Secret used to sign JWT tokens — use a long random string in production |
 | `JWT_ALGORITHM` | `HS256` | No | JWT signing algorithm |
-| `JWT_ACCESS_TOKEN_EXPIRE_DAYS` | `30` | No | Token lifetime in days |
+| `JWT_ACCESS_TOKEN_EXPIRE_DAYS` | `1` | No | Access token lifetime in days — refresh it with `POST /auth/refresh` |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `90` | No | Refresh token lifetime; `POST /auth/logout` revokes refresh tokens issued earlier |
 
 ---
 
@@ -129,3 +130,36 @@ Only active when `DEBUG=true`. Profiles every request and saves a JSON report wh
 | --- | --- | --- | --- |
 | `LOG_LEVEL` | `DEBUG` | `WARNING` | Log level |
 | `LOG_FORMAT` | `console` | `json` | `console` for coloured dev output, `json` for structured production logs |
+
+---
+
+## Fund domain (AKShare, imports, background jobs)
+
+Fund facts are collected by a `FundDataProvider` and stored in PostgreSQL; the
+screenshot import pipeline runs in a Taskiq worker. Every value below is read
+through `os.getenv`, so third-party limits stay tunable without code changes
+(MVP spec 7.6, 7.7, 3.7.2).
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AKSHARE_MAX_CONCURRENCY` | `5` | Concurrent provider calls (semaphore) |
+| `AKSHARE_TIMEOUT_SECONDS` | `20` | Per-call timeout for a blocking AKShare call |
+| `AKSHARE_MAX_RETRIES` | `2` | tenacity retries per call |
+| `AKSHARE_MIN_INTERVAL_SECONDS` | `0.2` | Minimum spacing between calls (throttle) |
+| `FUND_NAV_STALE_HOURS` | `24` | Age after which a stored NAV counts as stale |
+| `FUND_BUSINESS_TZ` | `Asia/Shanghai` | Calendar used for `trade_date` and holding days |
+| `FUND_HOT_SYNC_ENABLED` | `false` | Periodically enqueue a Hot Fund sweep from the API process |
+| `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | Interval of that sweep |
+| `VISION_ENABLED` | `true` | Screenshot recognition switch; `false` marks batches `PARSE_FAILED` |
+| `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | SiliconFlow `Qwen/Qwen2.5-VL-72B-Instruct` | OpenAI-compatible vision endpoint (`VISION_API_KEY` falls back to `SILICONFLOW_API_KEY`) |
+| `VISION_TIMEOUT_SECONDS` / `VISION_MAX_TOKENS` | `120` / `4096` | Vision call budget |
+| `HOLDING_IMPORT_MAX_IMAGES` | `5` | Screenshots per batch |
+| `HOLDING_IMPORT_MAX_IMAGE_MB` | `8` | Per-file upload limit |
+| `HOLDING_IMPORT_TEMP_DIR` | `.runtime/holding_imports` | Where originals live until deleted |
+| `HOLDING_IMPORT_STALE_MINUTES` | `30` | Reap batches stuck in `PARSING` |
+| `TASKIQ_REDIS_URL` | `` | Broker URL; empty reuses `VALKEY_*`, and no Valkey means in-process execution |
+| `BACKGROUND_TASK_MAX_ATTEMPTS` | `3` | Total attempts (first try + retries) for a durable job |
+
+The hot-cache TTL for latest NAV and search results is not an env var: it is
+`_LATEST_NAV_CACHE_TTL_SECONDS` / `_SEARCH_CACHE_TTL_SECONDS` in
+`app/services/fund_service.py` (300s).

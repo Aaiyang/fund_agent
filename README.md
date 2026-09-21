@@ -8,13 +8,16 @@
 
 ## 功能特性
 
-- **LangGraph 智能体** — `chat ↔ tool_call` 循环图，Postgres checkpoint 持久化会话历史，支持 human-in-the-loop（`ask_human` 工具中断/恢复）
-- **长期记忆** — mem0 + pgvector，自托管于项目 PostgreSQL，按用户语义检索，带缓存层
-- **LLM 服务** — OpenAI 兼容端点（默认 DeepSeek），tenacity 指数退避重试、循环模型回退、总超时预算兜底
-- **可观测性** — Langfuse 全链路追踪（可关闭）、Prometheus 指标、structlog 结构化日志
-- **安全** — JWT 认证 + 会话管理、slowapi 限流、输入清洗、detect-secrets 预提交检查
-- **基础设施** — Alembic 迁移、可选 Valkey/Redis 缓存
-- **前端**（`frontend/`）— React 19 + Vinext + Tailwind 4，连接本后端 API
+当前产品形态是**个人基金管理应用**（需求与技术规范见 [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)），在第一阶段闭环之外保留了模板的 Agent 基础设施：
+
+- **基金数据** — AKShare 经 `FundDataProvider` 隔离采集，落库 PostgreSQL + Redis 热点缓存；区间收益/最大回撤/波动率由后端 Python 计算（`app/analytics`），不由 LLM 计算
+- **自选基金** — 搜索、加删、分组与组内排序，列表带最新净值、当日涨跌与持有标识
+- **持仓管理** — 多账户、资产汇总、派生指标查询时计算不落库、持仓修改带乐观锁（409）
+- **持仓导入** — 手动录入与第三方 App 截图识别两条来源，统一 `HoldingImportProvider`；一律「解析 → 预览 → 用户确认 → 写入」，原图仅临时保存并在确认/失败后删除
+- **后台任务** — Taskiq + Redis（无 Redis 时进程内兜底）、有界并发、幂等键与分布式锁、PostgreSQL 侧任务账本（状态/重试/错误）
+- **Agent 预留** — LangGraph 图、Checkpointer、LLM 服务、Langfuse 全部保留；`POST /api/v1/agent/chat` 返回 501，App 保留 Agent Tab
+- **可观测性与安全** — structlog、Prometheus 指标、JWT（Access + Refresh，登出可撤销）、slowapi 限流、输入清洗、detect-secrets
+- **前端** — `mobile/` Expo + React Native + Expo Router + TanStack Query + Zustand + SecureStore（Android / iOS / Web 同一套代码）；`frontend/` 为模板遗留的网页聊天端
 
 ## 快速开始
 
@@ -27,14 +30,30 @@ cd backend
 cp .env.example .env.development   # 填入 LLM / Embedding / JWT 密钥与 POSTGRES_* 连接
 make install                       # 安装依赖 + pre-commit hooks
 make migrate                       # 建表（需要本地 PostgreSQL）
-make dev                           # 启动开发服务器（端口 8000）
+make dev                           # 启动开发服务器（端口 8000，Windows 走 run_local.py）
+make test                          # pytest 单测
+make worker                        # Taskiq worker（基金同步 + 截图识别，需 Redis）
 ```
 
 打开 [http://localhost:8000/docs](http://localhost:8000/docs) 查看交互式 API 文档。
 
 更多本地开发细节见 [docs_zh/getting-started.md](docs_zh/getting-started.md)。
 
-### 前端
+### 移动端（Expo）
+
+```bash
+cd mobile
+npm install
+cp .env.example .env               # EXPO_PUBLIC_API_BASE_URL
+npx expo start --web               # 浏览器版：http://localhost:8081
+npx expo run:android --device      # 真机调试（需 Android 设备与开发构建）
+```
+
+真机访问后端必须使用电脑局域网 IP（例如 `http://192.168.1.10:8000/api/v1`），`localhost` 指向手机自身；同时要把该来源加进后端 `ALLOWED_ORIGINS`。
+
+`npm run generate:api` 会从运行中的后端拉取 OpenAPI 并重新生成 `api/schema.ts`，避免前后端类型漂移。
+
+### 网页端（模板聊天界面）
 
 ```bash
 cd frontend
@@ -53,36 +72,52 @@ npm run dev        # http://localhost:3000
 | `FUND_LLM_*` | LLM 端点、密钥、模型（OpenAI 兼容，默认 DeepSeek） |
 | `FUND_EMBEDDING_*` / `SILICONFLOW_API_KEY` | mem0 长期记忆的 embedding 服务（默认 SiliconFlow Qwen3-Embedding） |
 | `JWT_SECRET_KEY` | 32 位以上强随机字符串 |
+| `JWT_ACCESS_TOKEN_EXPIRE_DAYS` / `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | 默认 1 天 / 90 天；登出会撤销刷新令牌 |
+| `ALLOWED_ORIGINS` | CORS 白名单，需包含前端来源（如 `http://localhost:8081`） |
+| `AKSHARE_MAX_CONCURRENCY` / `_TIMEOUT_SECONDS` / `_MAX_RETRIES` / `_MIN_INTERVAL_SECONDS` | 外部基金数据采集的并发、超时、重试与节流 |
+| `FUND_NAV_STALE_HOURS` / `FUND_BUSINESS_TZ` | 净值新鲜度窗口与业务日历（交易日/持有天数口径） |
+| `FUND_HOT_SYNC_ENABLED` / `FUND_HOT_SYNC_INTERVAL_MINUTES` | 热基金周期扫描（默认关闭，仅入队，由 worker 执行） |
+| `VISION_*` | 持仓截图识别的视觉模型（默认 SiliconFlow Qwen-VL），未配置时批次置 `PARSE_FAILED` |
+| `HOLDING_IMPORT_MAX_IMAGES` / `_MAX_IMAGE_MB` / `_TEMP_DIR` / `_STALE_MINUTES` | 截图导入的文件数量/大小/临时目录/僵死批次回收 |
+| `TASKIQ_REDIS_URL` / `BACKGROUND_TASK_MAX_ATTEMPTS` | 后台任务队列与重试预算 |
 | `LANGFUSE_TRACING_ENABLED` | Langfuse 追踪开关，不需要时设为 `false` |
 
 ## 项目结构
 
 ```
-backend/             # FastAPI + LangGraph 后端
+backend/             # FastAPI + LangGraph 后端（基金域）
   app/
-    api/v1/          # 路由（auth.py、chatbot.py、api.py）
-    core/
-      config.py      # 配置（os.getenv 实现，FUND_* 前缀变量可覆盖默认值）
-      cache.py       # Valkey/Redis 缓存 + 内存兜底
-      langgraph/     # Agent 图 + 工具
-      limiter.py     # 限流（slowapi）
-      logging.py     # structlog
-      metrics.py     # Prometheus 指标
-      middleware.py    # ASGI 中间件
-      observability.py # Langfuse 初始化与回调
-      prompts/       # 系统提示词（markdown 模板）
-    models/          # SQLModel ORM 模型
+    api/v1/          # auth、chatbot、funds、watchlist、portfolio、accounts、
+                     #  transactions、holding-imports、agent（占位），汇总于 api.py
+    core/            # config / cache(Valkey+兜底) / database(异步引擎) / task_queue /
+                     #  limiter / logging / metrics / middleware / observability / prompts
+    models/          # SQLModel 模型（多词类名需显式 __tablename__）
     schemas/         # Pydantic 请求/响应模型 + 图状态
-    services/        # LLM、数据库、记忆、embedding、会话命名等服务
+    repositories/    # 异步数据访问（fund/portfolio/watchlist/import/job）
+    services/        # 领域服务单例（fund / fund_sync / watchlist / portfolio /
+                     #  holding_import / memory / embeddings / session_naming / llm）
+    integrations/    # fund_data(AKShare Provider) 、holdings(手动/截图 Provider + Vision Adapter)
+    analytics/       # 纯函数金融指标（收益/回撤/波动率）
+    workers/         # Taskiq 任务 + run_job 账本包装 + 周期调度
+    utils/           # clock.py（时间口径唯一入口）、auth、sanitization…
+    core/langgraph/  # Agent 图与工具
   alembic/           # 数据库迁移
+  tests/             # pytest 单测（纯函数与任务账本）
   evals/             # LLM 评估框架（基于 Langfuse）
-frontend/            # React 前端
+mobile/              # Expo + React Native 客户端（四 Tab：持有/自选/Agent/我的）
+  api/               # client + 由 OpenAPI 生成的 schema.ts
+  hooks/ stores/ components/ utils/  # 查询 hooks、Zustand、UI 原语、格式化
+  app/               # Expo Router 路由文件
+frontend/            # 模板遗留网页聊天端（React 19 + Vinext）
+docs/ docs_zh/       # 项目文档（英/中）；docs/PROJECT_SPEC.md 为需求权威来源
 ```
 
 ## 文档
 
 | 指南 | 内容 |
 |---|---|
+| [需求与技术规范](docs/PROJECT_SPEC.md) | **权威需求**（V5）：功能范围、架构、数据模型、验收标准 |
+| [MVP 验收对照报告](docs/reports/mvp-build-report.md) | 逐条对照规范第 20 章的实测结果与剩余缺口 |
 | [快速开始](docs_zh/getting-started.md) | 前置条件、本地搭建、第一个 API 调用 |
 | [架构](docs_zh/architecture.md) | 系统设计、请求流程、组件图 |
 | [配置](docs_zh/configuration.md) | 所有环境变量及默认值 |
@@ -97,8 +132,17 @@ frontend/            # React 前端
 
 ## 常见问题
 
+**App 里所有请求都失败？**
+先看浏览器/设备的网络错误。CORS 未放行前端来源时后端返回 `400 Disallowed CORS origin`；把前端地址加进 `ALLOWED_ORIGINS` 并重启后端。真机请用局域网 IP。
+
+**持仓截图识别一直是「识别失败」？**
+检查 `VISION_*` 与 `SILICONFLOW_API_KEY`：账号未开通该模型时上游会返回 `403 Model disabled`，批次会落到 `PARSE_FAILED` 并带上错误信息，原图仍会被清理，不影响已有持仓。
+
+**没有 Redis 能跑吗？**
+可以。缓存与锁退化为进程内实现，后台任务由 InMemoryBroker 在进程内执行；但跨进程互斥与「不随进程死亡的持久队列」需要 Redis + `make worker`。
+
 **如何添加自定义工具？**
-在 `app/core/langgraph/tools/` 中添加 `@tool` 装饰的函数，并注册到该包导出的 `tools` 列表。Agent 下次启动自动加载，无需修改图结构。
+在 `app/core/langgraph/tools/` 中添加 `@tool` 装饰的函数，并注册到该包导出的 `tools` 列表。Agent 下次启动自动加载，无需修改图结构。工具只能经 Service 访问数据（规范 4.4）。
 
 **LLM 调用失败怎么处理？**
 两层容错：单模型内 tenacity 指数退避重试；重试耗尽后循环切换到 `LLMRegistry` 中下一个模型。总超时预算（`FUND_LLM_TIMEOUT_SECONDS`）保证延迟有界。

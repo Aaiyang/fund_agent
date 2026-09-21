@@ -35,6 +35,8 @@ Both carry `typ: "access"` and are the only tokens the auth dependencies accept.
 
 Access tokens are short-lived (`JWT_ACCESS_TOKEN_EXPIRE_DAYS`, default 1 day); refresh tokens live `JWT_REFRESH_TOKEN_EXPIRE_DAYS` (default 90 days). They are stateless, so logout cannot kill an access token in flight — it revokes refresh tokens instead (see `/auth/logout`).
 
+Fund-domain routes (`/funds`, `/watchlist`, `/portfolio`, `/holding-imports`, …) use `get_current_identity`, which accepts **either** token above — a client that has only logged in is not forced to open a chat session first.
+
 ---
 
 ## Endpoints
