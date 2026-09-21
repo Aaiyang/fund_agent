@@ -117,28 +117,33 @@ export default function FundDetailScreen() {
 
       <Card>
         <SectionTitle title="我的持仓" action="修改持仓" onAction={() => router.push(`/position/edit?code=${code}&account_id=${accountId ?? ''}`)} />
-        <Async
-          query={position}
-          empty={() => <EmptyState title="该账户未持有此基金" hint="可点击“修改持仓”手动录入" />}
-        >
-          {(data) => (
-            <View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                <Stat label="持有金额" value={formatMoney(data.market_value)} />
-                <Stat label="持有份额" value={formatNumber(data.shares)} />
-                <Stat label="持仓占比" value={formatRate(data.position_ratio)} />
-                <Stat label="持有收益" value={formatSignedMoney(data.profit_loss)} tone={trendTone(data.profit_loss)} />
-                <Stat label="持有收益率" value={formatRate(data.profit_loss_rate)} tone={trendTone(data.profit_loss_rate)} />
-                <Stat label="持仓成本净值" value={formatNumber(data.average_cost_nav)} />
-                <Stat label="当日收益" value={formatSignedMoney(data.daily_profit_loss)} tone={trendTone(data.daily_profit_loss)} />
-                <Stat label="持有天数" value={data.holding_days !== null && data.holding_days !== undefined ? `${data.holding_days}` : '--'} tone="muted" />
-              </View>
-              <Text style={{ fontSize: 11, color: theme.textFaint }}>
-                成本 {formatMoney(data.cost_amount)} · 更新于 {formatDateTime(data.updated_at)} · 版本 v{data.version}
-              </Text>
+        {/* A 404 from this endpoint means "no position in the current view", not an error. */}
+        {position.isPending ? (
+          <LoadingState />
+        ) : position.data ? (
+          <View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              <Stat label="持有金额" value={formatMoney(position.data.market_value)} />
+              <Stat label="持有份额" value={formatNumber(position.data.shares)} />
+              <Stat label="持仓占比" value={formatRate(position.data.position_ratio)} />
+              <Stat label="持有收益" value={formatSignedMoney(position.data.profit_loss)} tone={trendTone(position.data.profit_loss)} />
+              <Stat label="持有收益率" value={formatRate(position.data.profit_loss_rate)} tone={trendTone(position.data.profit_loss_rate)} />
+              <Stat label="持仓成本净值" value={formatNumber(position.data.average_cost_nav)} />
+              <Stat label="当日收益" value={formatSignedMoney(position.data.daily_profit_loss)} tone={trendTone(position.data.daily_profit_loss)} />
+              <Stat
+                label="持有天数"
+                value={position.data.holding_days !== undefined && position.data.holding_days !== null ? `${position.data.holding_days}` : '--'}
+                tone="muted"
+              />
             </View>
-          )}
-        </Async>
+            <Text style={{ fontSize: 11, color: theme.textFaint }}>
+              成本 {formatMoney(position.data.cost_amount)} · 更新于 {formatDateTime(position.data.updated_at)} · 版本 v
+              {position.data.version}
+            </Text>
+          </View>
+        ) : (
+          <EmptyState title="该账户未持有此基金" hint="可点击“修改持仓”手动录入" />
+        )}
       </Card>
 
       <View style={{ flexDirection: 'row', marginTop: 4 }}>
