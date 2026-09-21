@@ -7,7 +7,6 @@ enqueued or inlined only when local data is missing or stale (spec 5.6).
 """
 
 import asyncio
-import calendar
 import json
 from datetime import date
 
@@ -35,26 +34,10 @@ from app.schemas.fund import (
     NavRange,
 )
 from app.services.fund_sync_service import fund_sync_service
-from app.utils.clock import business_today
+from app.utils.clock import business_today, range_start
 
 _LATEST_NAV_CACHE_TTL_SECONDS = 300
 _SEARCH_CACHE_TTL_SECONDS = 300
-
-# Chart ranges (spec 3.5.3): months back from today, None = since inception
-_NAV_RANGES: dict[str, int | None] = {"1m": 1, "3m": 3, "6m": 6, "1y": 12, "3y": 36, "all": None}
-
-
-def _range_start(range_key: str) -> date | None:
-    """First date of a named chart range, clamped to a real calendar day."""
-    months = _NAV_RANGES[range_key]
-    if months is None:
-        return None
-    today = business_today()
-    year, month = today.year, today.month - months
-    while month <= 0:
-        month += 12
-        year -= 1
-    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
 
 class FundService:
@@ -183,7 +166,7 @@ class FundService:
         """
         await self.ensure_fund_data(fund_code)
         if range_key is not None:
-            start_date = _range_start(range_key)
+            start_date = range_start(range_key, business_today())
         history = await fund_repository.get_nav_history(fund_code, start_date, end_date)
         return FundNavHistoryResponse(
             fund_code=fund_code,

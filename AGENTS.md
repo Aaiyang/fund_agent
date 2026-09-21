@@ -14,6 +14,8 @@ make lint                 # ruff check .
 make format               # ruff format .
 make typecheck            # uv run pyright (static type check)
 make check                # lint + typecheck
+make test                 # pytest suite (tests/)
+make worker               # Taskiq worker: fund sync + screenshot import
 make eval                 # Run LLM evals (interactive)
 make eval-quick           # Run LLM evals (default settings)
 make migrate              # Run DB migrations to latest (Alembic)
@@ -27,10 +29,13 @@ make migrate              # Run DB migrations to latest (Alembic)
 ```
 backend/           # FastAPI + LangGraph backend (all make targets run here)
   app/
-    api/v1/        # Route handlers (auth.py, chatbot.py, api.py)
+    api/v1/        # Route handlers: auth, chatbot, funds, watchlist, portfolio,
+                   # accounts, transactions, imports, agent (aggregated in api.py)
     core/
       config.py    # Settings via os.getenv (FUND_* env vars override generic ones)
-      cache.py     # Valkey/Redis cache with in-memory fallback
+      cache.py     # Valkey/Redis cache + distributed lock, in-memory fallback
+      database.py  # Async SQLAlchemy engine (asyncpg) used by fund-domain repos
+      task_queue.py# Taskiq broker (Redis or in-process) + enqueue(task_name)
       langgraph/   # LangGraph agent graph + tools
       limiter.py   # Rate limiting (slowapi)
       logging.py   # structlog setup
@@ -38,20 +43,30 @@ backend/           # FastAPI + LangGraph backend (all make targets run here)
       middleware.py  # ASGI middleware
       observability.py  # Langfuse init + callback handler
       prompts/     # System prompts (markdown templates)
-    models/        # SQLModel ORM models
+    models/        # SQLModel ORM models (multi-word classes must set __tablename__)
     schemas/       # Pydantic request/response schemas + graph state
-    services/
-      database.py    # Database service (health checks, etc.)
+    repositories/  # Data access on the async engine (fund/portfolio/watchlist/import/job)
+    services/      # Domain services, module-level singletons
+      database.py    # Legacy sync chat/auth DB service (migrate to async engine)
       embeddings.py  # OpenAI-compatible embedder used by mem0
       llm/           # LLMRegistry + LLMService (retry + circular fallback)
       memory.py      # mem0 long-term memory (pgvector)
-      session_naming.py  # Auto session naming
-    utils/         # Shared utilities
+      fund_service.py / fund_sync_service.py / watchlist_service.py
+      portfolio_service.py / holding_import_service.py / session_naming.py
+    integrations/  # External data adapters behind Protocols
+      fund_data/     # FundDataProvider -> AKShare (block isolation + normalizer)
+      holdings/      # HoldingImportProvider -> manual / screenshot (vision adapter)
+    analytics/     # Pure-Python financial math (never LLM math)
+    workers/       # Taskiq tasks, run_job ledger wrapper, periodic scheduler
+    utils/         # Shared utilities (clock.py is the single source for "now")
   alembic/         # Database migrations
   evals/           # LLM evaluation framework (Langfuse-based)
+  tests/           # pytest suite for pure logic (analytics, normalizers, job ledger)
   scripts/         # Local run scripts (run_local.py, set_env.sh)
-frontend/          # React 19 + Vinext frontend (talks to this backend)
-docs/, docs_zh/    # Project documentation (English / Chinese)
+frontend/          # React 19 + Vinext web frontend (chat demo)
+mobile/            # Expo React Native app (four tabs, talks to this backend)
+docs/              # Project docs (EN); docs_zh/ mirrors them in Chinese
+docs/PROJECT_SPEC.md  # Authoritative MVP requirement spec (V5)
 ```
 
 ## Project Overview
@@ -68,6 +83,24 @@ This is a production-ready AI agent application built with:
 
 ### Import Rules
 - **All imports MUST be at the top of the file** - never add imports inside functions or classes
+- One documented exception: a **worker task module** may be imported inside a function.
+  Workers import the services they run, so a service importing a worker at module scope
+  closes a cycle. Prefer enqueueing by task name instead - see `core.task_queue.enqueue`
+  and the constants in `app/workers/__init__.py` (that package must stay import-free)
+
+### Fund Domain Conventions
+- **Timestamps**: every value written to PostgreSQL goes through `app/utils/clock.py`.
+  Columns are `timestamp without time zone`, so use `utc_now()` (naive UTC); never
+  `datetime.now()` (host-local) and never an aware datetime. Calendar dates such as
+  `trade_date` use `business_today()` (`FUND_BUSINESS_TZ`), not the host timezone
+- **Table names**: SQLModel derives `__tablename__` from the lowercased class name, so
+  every multi-word model must declare `__tablename__` explicitly to match the snake_case
+  table the Alembic migration creates
+- **Auth**: fund-domain routes depend on `get_current_identity`, which accepts a user or
+  chat-session access token; refresh tokens (`typ: "refresh"`) are rejected everywhere
+  except `POST /auth/refresh`
+- **Derived metrics**: rates, daily P/L and position ratios are computed at query time and
+  never persisted; financial math lives in `app/analytics` as pure functions
 
 ### Logging Rules
 - Use **structlog** for all logging

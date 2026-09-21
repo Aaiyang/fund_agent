@@ -64,6 +64,9 @@ eval-no-report:
 # ---------------------------------------------------------------------------
 # Code quality
 # ---------------------------------------------------------------------------
+test:
+	@$(call run_with_env,uv run pytest -q)
+
 lint:
 	uv run ruff check .
 
@@ -115,6 +118,7 @@ help:
 	@echo "  eval-no-report       Run evals without report"
 	@echo ""
 	@echo "Code quality:"
+	@echo "  test                 Pytest suite (unit + pure functions)"
 	@echo "  lint                 Ruff lint check"
 	@echo "  format               Ruff format"
 	@echo "  typecheck            Pyright static type check"
@@ -128,5 +132,5 @@ help:
 .PHONY: install dev worker staging prod _serve \
         migrate migration migrate-downgrade migrate-history \
         eval eval-quick eval-no-report \
-        lint format typecheck check pre-commit pre-commit-update \
+        lint format typecheck check pre-commit pre-commit-update test \
         clean help

@@ -9,10 +9,14 @@ market, so they use ``FUND_BUSINESS_TZ`` rather than whatever zone the host
 happens to run in.
 """
 
+import calendar
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+
+# Chart ranges (spec 3.5.3): months back from a reference date, None = all time
+NAV_RANGE_MONTHS: dict[str, int | None] = {"1m": 1, "3m": 3, "6m": 6, "1y": 12, "3y": 36, "all": None}
 
 
 def utc_now() -> datetime:
@@ -23,3 +27,26 @@ def utc_now() -> datetime:
 def business_today() -> date:
     """Return today's date on the fund market calendar."""
     return datetime.now(ZoneInfo(settings.FUND_BUSINESS_TZ)).date()
+
+
+def range_start(range_key: str, today: date) -> date | None:
+    """First date of a named chart range, with month-end clamping.
+
+    Args:
+        range_key: One of the keys in ``NAV_RANGE_MONTHS``.
+        today: Reference date the range ends at.
+
+    Returns:
+        The window start, or None for the "all" range.
+
+    Raises:
+        KeyError: `range_key` is not a known range name.
+    """
+    months = NAV_RANGE_MONTHS[range_key]
+    if months is None:
+        return None
+    year, month = today.year, today.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
