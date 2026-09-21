@@ -11,21 +11,29 @@ sequenceDiagram
     A-->>C: {user_id, email, username, token}
 
     C->>A: POST /auth/login<br/>form: email + password
-    A-->>C: {access_token, expires_at}
+    A-->>C: {access_token, refresh_token, expires_at}
+
+    C->>A: POST /auth/refresh<br/>form: refresh_token
+    A-->>C: {access_token, refresh_token, expires_at}
 
     C->>A: POST /auth/session<br/>Bearer: user token
     A-->>C: {session_id, token}
 
     C->>A: POST /chatbot/chat<br/>Bearer: session token
     A-->>C: {messages}
+
+    C->>A: POST /auth/logout<br/>Bearer: user token
+    A-->>C: 204 (refresh tokens revoked)
 ```
 
 The API uses **two token scopes**:
 
-- **User token** — issued on register/login, identifies the user. Used to create and list sessions.
+- **User token** — issued on register/login, identifies the user. Used to create and list sessions, and for every protected business endpoint (`/funds`, `/watchlist`, `/portfolio`, `/holding-imports`, …).
 - **Session token** — issued per conversation session. Required for all chat endpoints. Scoped to a single `session_id`.
 
-Both are signed JWTs (HS256) with a configurable expiry (`JWT_ACCESS_TOKEN_EXPIRE_DAYS`).
+Both carry `typ: "access"` and are the only tokens the auth dependencies accept. **Refresh tokens carry `typ: "refresh"` and are rejected everywhere else** — they can only be exchanged at `POST /auth/refresh`.
+
+Access tokens are short-lived (`JWT_ACCESS_TOKEN_EXPIRE_DAYS`, default 1 day); refresh tokens live `JWT_REFRESH_TOKEN_EXPIRE_DAYS` (default 90 days). They are stateless, so logout cannot kill an access token in flight — it revokes refresh tokens instead (see `/auth/logout`).
 
 ---
 
@@ -60,7 +68,32 @@ curl -X POST /api/v1/auth/login \
   -F "grant_type=password"
 ```
 
-Returns `access_token` and `expires_at`.
+Returns `access_token`, `refresh_token` and `expires_at`.
+
+---
+
+### `POST /api/v1/auth/refresh`
+
+Exchange a refresh token (`typ: "refresh"`) for a fresh access token and a rotated refresh token. Form-encoded body.
+
+```bash
+curl -X POST /api/v1/auth/refresh \
+  -F "refresh_token=<refresh token>"
+```
+
+Returns 401 when the token is malformed, expired, not a refresh token, or was revoked by a logout.
+
+---
+
+### `POST /api/v1/auth/logout`
+
+Revokes the caller's refresh tokens: any refresh token issued before this call is rejected from then on. Requires a user token. Returns `204` with no body. Access tokens stay valid until their own expiry.
+
+---
+
+### `GET /api/v1/auth/me`
+
+Returns the authenticated user's profile (`id`, `email`, `username`, `created_at`). Requires a user or session token.
 
 ---
 

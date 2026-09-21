@@ -1,7 +1,6 @@
 """This file contains the thread model for the application."""
 
 from datetime import (
-    UTC,
     datetime,
 )
 
@@ -9,6 +8,7 @@ from sqlmodel import (
     Field,
     SQLModel,
 )
+from app.utils.clock import utc_now
 
 
 class Thread(SQLModel, table=True):
@@ -21,4 +21,4 @@ class Thread(SQLModel, table=True):
     """
 
     id: str = Field(primary_key=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=utc_now)

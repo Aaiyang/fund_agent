@@ -85,6 +85,30 @@ class InMemoryCacheService:
         """
         self._cache.pop(key, None)
 
+    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+        """Acquire a process-local lock keyed by cache key.
+
+        Args:
+            key: The lock key.
+            ttl: Lock time-to-live in seconds.
+
+        Returns:
+            True if the lock was acquired, False if already held.
+        """
+        entry = self._cache.get(key)
+        if entry is not None and time.monotonic() <= entry[0]:
+            return False
+        self._cache[key] = (time.monotonic() + ttl, "lock")
+        return True
+
+    async def release_lock(self, key: str) -> None:
+        """Release a process-local lock.
+
+        Args:
+            key: The lock key.
+        """
+        self._cache.pop(key, None)
+
     async def close(self) -> None:
         """Clear the in-memory cache."""
         self._cache.clear()
@@ -134,7 +158,10 @@ class ValkeyCacheService:
         if not self._client:
             return None
         try:
-            return await self._client.get(key)
+            value = await self._client.get(key)
+            if isinstance(value, bytes):
+                return value.decode()
+            return value
         except Exception as e:
             logger.warning("cache_get_failed", key=key, error=str(e))
             return None
@@ -166,6 +193,39 @@ class ValkeyCacheService:
             await self._client.delete(key)
         except Exception as e:
             logger.warning("cache_delete_failed", key=key, error=str(e))
+
+    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+        """Acquire a distributed lock via SET NX EX.
+
+        Args:
+            key: The lock key.
+            ttl: Lock time-to-live in seconds (auto-release safety net).
+
+        Returns:
+            True if the lock was acquired, False if already held. Fails open
+            (returns True) when the cache backend is unreachable so a cache
+            outage never blocks fund synchronization.
+        """
+        if not self._client:
+            return True
+        try:
+            return bool(await self._client.set(key, "lock", nx=True, ex=ttl))
+        except Exception as e:
+            logger.warning("cache_lock_acquire_failed", key=key, error=str(e))
+            return True
+
+    async def release_lock(self, key: str) -> None:
+        """Release a distributed lock.
+
+        Args:
+            key: The lock key.
+        """
+        if not self._client:
+            return
+        try:
+            await self._client.delete(key)
+        except Exception as e:
+            logger.warning("cache_lock_release_failed", key=key, error=str(e))
 
     async def close(self) -> None:
         """Close the Valkey connection."""

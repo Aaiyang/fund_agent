@@ -40,6 +40,25 @@ session_names_generated_total = Counter(
     ["status"],  # "success" | "error"
 )
 
+# Holding import metrics (MVP spec 17.2)
+holding_imports_total = Counter(
+    "holding_imports_total",
+    "Holding import batches by type and terminal status",
+    ["import_type", "status"],
+)
+
+screenshot_parse_duration_seconds = Histogram(
+    "screenshot_parse_duration_seconds",
+    "Time spent parsing holding screenshots (vision extraction)",
+    buckets=[1.0, 5.0, 15.0, 30.0, 60.0, 120.0],
+)
+
+fund_sync_total = Counter(
+    "fund_sync_total",
+    "Fund synchronization outcomes",
+    ["status"],  # "synced" | "skipped" | "failed"
+)
+
 
 def setup_metrics(app):
     """Set up Prometheus metrics middleware and endpoints.

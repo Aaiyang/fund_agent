@@ -35,11 +35,13 @@ class TokenResponse(BaseResponse):
         access_token: The JWT access token
         token_type: The type of token (always "bearer")
         expires_at: When the token expires
+        refresh_token: Optional long-lived refresh token (spec 3.1)
     """
 
     access_token: str = Field(..., description="The JWT access token")
     token_type: str = Field(default="bearer", description="The type of token")
     expires_at: datetime = Field(..., description="When the token expires")
+    refresh_token: str | None = Field(default=None, description="The JWT refresh token, when issued")
 
 
 class UserCreate(BaseModel):
@@ -104,6 +106,22 @@ class UserResponse(BaseResponse):
     email: str = Field(..., description="User's email address")
     username: str | None = Field(default=None, description="Optional display name")
     token: Token = Field(..., description="Authentication token")
+
+
+class CurrentUserResponse(BaseResponse):
+    """Response model for GET /auth/me (spec 3.1 获取当前用户信息).
+
+    Attributes:
+        id: User's ID
+        email: User's email address
+        username: Optional display name
+        created_at: When the account was created
+    """
+
+    id: int = Field(..., description="User's ID")
+    email: str = Field(..., description="User's email address")
+    username: str | None = Field(default=None, description="Optional display name")
+    created_at: datetime | None = Field(default=None, description="When the account was created")
 
 
 class SessionResponse(BaseResponse):

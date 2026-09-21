@@ -22,6 +22,7 @@ from app.core.config import (
 from app.core.logging import logger
 from app.models.session import Session as ChatSession
 from app.models.user import User
+from app.utils.clock import utc_now
 
 
 class DatabaseService:
@@ -111,6 +112,25 @@ class DatabaseService:
             statement = select(User).where(User.email == email)
             user = session.exec(statement).first()
             return user
+
+    async def revoke_refresh_tokens(self, user_id: int) -> bool:
+        """Reject every refresh token issued for the user before now.
+
+        Args:
+            user_id: The user logging out.
+
+        Returns:
+            bool: True when the user existed and was stamped.
+        """
+        with Session(self.engine) as session:
+            user = session.get(User, user_id)
+            if not user:
+                return False
+            user.refresh_revoked_at = utc_now()
+            session.add(user)
+            session.commit()
+            logger.info("refresh_tokens_revoked", user_id=user_id)
+            return True
 
     async def delete_user_by_email(self, email: str) -> bool:
         """Delete a user by email.

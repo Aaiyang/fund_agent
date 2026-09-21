@@ -40,6 +40,12 @@ dependencies = [
     "uvloop>=0.22.1; platform_system != 'Windows'",
     "asgi-correlation-id>=4.3.4",
     "alembic>=1.18.4",
+    "asyncpg>=0.30.0",
+    "akshare>=1.16.0",
+    "taskiq>=0.11.0",
+    "taskiq-redis>=1.1.0",
+    "redis>=7.4.0",
+    "pillow>=11.0.0",
 ]
 
 [project.optional-dependencies]

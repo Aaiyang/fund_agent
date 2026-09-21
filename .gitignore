@@ -23,6 +23,7 @@ node_modules/
 
 # Reports
 evals/reports/
+pyright_report.json
 
 # Local runtime state
 .runtime/

@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import (
@@ -30,6 +31,7 @@ from app.core.middleware import (
     ProfilingMiddleware,
 )
 from app.core.observability import langfuse_init
+from app.core.task_queue import shutdown_broker, startup_broker
 from app.services.database import database_service
 from app.services.memory import memory_service
 
@@ -69,9 +71,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("memory_service_pre_warm_failed", error=str(e))
 
+    # Taskiq broker (Redis) or in-process fallback for background tasks
+    try:
+        await startup_broker()
+    except Exception as e:
+        logger.exception("task_broker_startup_failed", error=str(e))
+
+    # Ensure the holding-import temp image directory exists
+    try:
+        Path(settings.HOLDING_IMPORT_TEMP_DIR).mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.exception("import_temp_dir_creation_failed", error=str(e))
+
     yield
 
     # Cleanup on shutdown
+    await shutdown_broker()
     await cache_service.close()
     if agent._connection_pool:
         await agent._connection_pool.close()

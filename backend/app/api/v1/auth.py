@@ -5,6 +5,8 @@ and token verification.
 """
 
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import List
 
 from fastapi import (
@@ -28,6 +30,7 @@ from app.core.logging import (
 from app.models.session import Session
 from app.models.user import User
 from app.schemas.auth import (
+    CurrentUserResponse,
     SessionResponse,
     TokenResponse,
     UserCreate,
@@ -36,6 +39,8 @@ from app.schemas.auth import (
 from app.services.database import database_service
 from app.utils.auth import (
     create_access_token,
+    create_refresh_token,
+    decode_token,
     verify_token,
 )
 from app.utils.sanitization import (
@@ -69,9 +74,9 @@ async def get_current_user(
         # Sanitize token
         token = sanitize_string(credentials.credentials)
 
-        user_id = verify_token(token)
+        user_id = verify_token(token, expected_type="access")
         if user_id is None:
-            logger.error("invalid_token", token_part=token[:10] + "...")
+            logger.warning("invalid_token_rejected")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid authentication credentials",
@@ -120,9 +125,9 @@ async def get_current_session(
         # Sanitize token
         token = sanitize_string(credentials.credentials)
 
-        session_id = verify_token(token)
+        session_id = verify_token(token, expected_type="access")
         if session_id is None:
-            logger.error("session_id_not_found", token_part=token[:10] + "...")
+            logger.warning("invalid_session_token_rejected")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid authentication credentials",
@@ -146,6 +151,77 @@ async def get_current_session(
         bind_context(user_id=session.user_id)
 
         return session
+    except ValueError as ve:
+        logger.exception("token_validation_failed", error=str(ve))
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid token format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+@dataclass(frozen=True)
+class AuthIdentity:
+    """Resolved caller: the owning user, plus the chat session when one was used.
+
+    Business endpoints (funds, watchlist, portfolio, imports) only need
+    `user_id`; accepting both token flavors means a client can use its login
+    token without first opening a chat session.
+    """
+
+    user_id: int
+    session_id: str | None = None
+
+
+async def get_current_identity(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> AuthIdentity:
+    """Resolve the caller from a user token or a chat-session access token.
+
+    Both carry `typ: "access"`; the subject decides which table to check —
+    user ids are numeric, session ids are UUIDs.
+
+    Args:
+        credentials: The HTTP authorization credentials containing the JWT token.
+
+    Returns:
+        AuthIdentity: The user (and session, when applicable) the token belongs to.
+
+    Raises:
+        HTTPException: 401 invalid token, 404 unknown subject, 422 malformed token.
+    """
+    try:
+        subject = verify_token(sanitize_string(credentials.credentials), expected_type="access")
+        if subject is None:
+            logger.warning("invalid_token_rejected")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if subject.isdigit():
+            user = await db_service.get_user(int(subject))
+            if user is None:
+                logger.warning("user_not_found")
+                raise HTTPException(
+                    status_code=404,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            bind_context(user_id=user.id)
+            return AuthIdentity(user_id=user.id)
+
+        session = await db_service.get_session(subject)
+        if session is None:
+            logger.warning("session_not_found", session_id=subject)
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        bind_context(user_id=session.user_id)
+        return AuthIdentity(user_id=session.user_id, session_id=session.id)
     except ValueError as ve:
         logger.exception("token_validation_failed", error=str(ve))
         raise HTTPException(
@@ -238,10 +314,107 @@ async def login(
             )
 
         token = create_access_token(str(user.id))
-        return TokenResponse(access_token=token.access_token, token_type="bearer", expires_at=token.expires_at)
+        refresh = create_refresh_token(str(user.id))
+        return TokenResponse(
+            access_token=token.access_token,
+            token_type="bearer",
+            expires_at=token.expires_at,
+            refresh_token=refresh.access_token,
+        )
     except ValueError as ve:
         logger.exception("login_validation_failed", error=str(ve))
         raise HTTPException(status_code=422, detail=str(ve))
+
+
+@router.post("/refresh", response_model=TokenResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["login"][0])
+async def refresh_access_token(request: Request, refresh_token: str = Form(...)):
+    """Exchange a refresh token for a new access token (spec 3.1).
+
+    Args:
+        request: The FastAPI request object for rate limiting.
+        refresh_token: The refresh token issued at login.
+
+    Returns:
+        TokenResponse: A fresh access token and a rotated refresh token.
+
+    Raises:
+        HTTPException: 401 when the refresh token is invalid or revoked.
+    """
+    try:
+        payload = decode_token(sanitize_string(refresh_token), expected_type="refresh")
+    except ValueError:
+        payload = None
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        user = await db_service.get_user(int(payload["sub"]))
+    except (TypeError, ValueError):
+        user = None
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Logout revokes by stamping the user: anything minted before the stamp is dead.
+    # Both sides are naive UTC here — Postgres columns store UTC wall time without tz.
+    revoked_at = user.refresh_revoked_at
+    issued_at = payload.get("iat")
+    if revoked_at is not None and isinstance(issued_at, (int, float)):
+        if datetime.fromtimestamp(issued_at, UTC).replace(tzinfo=None) < revoked_at:
+            logger.warning("refresh_token_revoked", user_id=user.id)
+            raise HTTPException(
+                status_code=401,
+                detail="Refresh token revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    token = create_access_token(str(user.id))
+    refresh = create_refresh_token(str(user.id))
+    logger.info("access_token_refreshed", user_id=user.id)
+    return TokenResponse(
+        access_token=token.access_token,
+        token_type="bearer",
+        expires_at=token.expires_at,
+        refresh_token=refresh.access_token,
+    )
+
+
+@router.post("/logout", status_code=204)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def logout(request: Request, user: User = Depends(get_current_user)) -> None:
+    """Revoke the caller's refresh tokens (spec 3.1 用户退出).
+
+    Args:
+        request: The FastAPI request object for rate limiting.
+        user: The authenticated user.
+
+    Returns:
+        None: 204 with no body. Access tokens stay valid until they expire.
+    """
+    await db_service.revoke_refresh_tokens(user.id)
+    logger.info("user_logged_out", user_id=user.id)
+
+
+@router.get("/me", response_model=CurrentUserResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def get_current_user_info(request: Request, user: User = Depends(get_current_user)) -> CurrentUserResponse:
+    """Return the authenticated user's profile (spec 3.1 获取当前用户信息).
+
+    Args:
+        request: The FastAPI request object for rate limiting.
+        user: The authenticated user.
+
+    Returns:
+        CurrentUserResponse: Profile without credentials.
+    """
+    return CurrentUserResponse(id=user.id, email=user.email, username=user.username, created_at=user.created_at)
 
 
 @router.post("/session", response_model=SessionResponse)

@@ -197,7 +197,8 @@ class Settings:
         # JWT Configuration
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-        self.JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "30"))
+        self.JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "1"))
+        self.JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "90"))
         self.validate_jwt_secret_key()
 
         # Logging Configuration
@@ -227,6 +228,32 @@ class Settings:
         self.VALKEY_MAX_CONNECTIONS = int(os.getenv("VALKEY_MAX_CONNECTIONS", "20"))
         self.CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
+        # Fund data provider (AKShare) Configuration
+        self.AKSHARE_MAX_CONCURRENCY = int(os.getenv("AKSHARE_MAX_CONCURRENCY", "5"))
+        self.AKSHARE_TIMEOUT_SECONDS = float(os.getenv("AKSHARE_TIMEOUT_SECONDS", "20"))
+        self.AKSHARE_MAX_RETRIES = int(os.getenv("AKSHARE_MAX_RETRIES", "2"))
+        self.AKSHARE_MIN_INTERVAL_SECONDS = float(os.getenv("AKSHARE_MIN_INTERVAL_SECONDS", "0.2"))
+        self.FUND_NAV_STALE_HOURS = int(os.getenv("FUND_NAV_STALE_HOURS", "24"))
+        # Calendar dates (trade_date, nav freshness) follow the fund market, not the host tz
+        self.FUND_BUSINESS_TZ = os.getenv("FUND_BUSINESS_TZ", "Asia/Shanghai")
+
+        # Vision (screenshot extraction) Configuration
+        self.VISION_ENABLED = os.getenv("VISION_ENABLED", "true").lower() in ("true", "1", "t", "yes")
+        self.VISION_BASE_URL = os.getenv("VISION_BASE_URL", "https://api.siliconflow.cn/v1")
+        self.VISION_API_KEY = os.getenv("VISION_API_KEY", os.getenv("SILICONFLOW_API_KEY", ""))
+        self.VISION_MODEL = os.getenv("VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct")
+        self.VISION_TIMEOUT_SECONDS = float(os.getenv("VISION_TIMEOUT_SECONDS", "120"))
+        self.VISION_MAX_TOKENS = int(os.getenv("VISION_MAX_TOKENS", "4096"))
+
+        # Holding import Configuration
+        self.HOLDING_IMPORT_MAX_IMAGES = int(os.getenv("HOLDING_IMPORT_MAX_IMAGES", "5"))
+        self.HOLDING_IMPORT_MAX_IMAGE_MB = int(os.getenv("HOLDING_IMPORT_MAX_IMAGE_MB", "8"))
+        self.HOLDING_IMPORT_TEMP_DIR = Path(os.getenv("HOLDING_IMPORT_TEMP_DIR", ".runtime/holding_imports"))
+        self.HOLDING_IMPORT_STALE_MINUTES = int(os.getenv("HOLDING_IMPORT_STALE_MINUTES", "30"))
+
+        # Task queue Configuration (empty → derived from VALKEY_*; no Redis → in-process fallback)
+        self.TASKIQ_REDIS_URL = os.getenv("TASKIQ_REDIS_URL", "")
+
         # Rate Limiting Configuration
         self.RATE_LIMIT_DEFAULT = parse_list_from_env("RATE_LIMIT_DEFAULT", ["200 per day", "50 per hour"])
 
@@ -237,8 +264,18 @@ class Settings:
             "messages": ["50 per minute"],
             "register": ["10 per hour"],
             "login": ["20 per minute"],
+            "auth": ["60 per minute"],
             "root": ["10 per minute"],
             "health": ["20 per minute"],
+            "funds": ["120 per minute"],
+            "funds_search": ["60 per minute"],
+            "watchlist": ["60 per minute"],
+            "watchlist_groups": ["60 per minute"],
+            "portfolio": ["120 per minute"],
+            "accounts": ["60 per minute"],
+            "transactions": ["60 per minute"],
+            "holding_imports": ["30 per minute"],
+            "agent": ["10 per minute"],
         }
 
         # Update rate limit endpoints from environment variables
