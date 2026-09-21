@@ -67,7 +67,8 @@ cp .env.example .env.development
 | --- | --- | --- | --- |
 | `JWT_SECRET_KEY` | — | 是 | 用于签署 JWT 的密钥——生产环境中应使用较长的随机字符串 |
 | `JWT_ALGORITHM` | `HS256` | 否 | JWT 签名算法 |
-| `JWT_ACCESS_TOKEN_EXPIRE_DAYS` | `30` | 否 | 令牌有效期（天） |
+| `JWT_ACCESS_TOKEN_EXPIRE_DAYS` | `1` | 否 | Access 令牌有效期（天），过期用 `POST /auth/refresh` 换新 |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `90` | 否 | Refresh 令牌有效期；`POST /auth/logout` 会撤销此前签发的刷新令牌 |
 
 ---
 
@@ -129,3 +130,34 @@ cp .env.example .env.development
 | --- | --- | --- | --- |
 | `LOG_LEVEL` | `DEBUG` | `WARNING` | 日志级别 |
 | `LOG_FORMAT` | `console` | `json` | 开发环境使用 `console` 彩色输出，生产环境使用 `json` 结构化日志 |
+
+---
+
+## 基金域（AKShare、持仓导入、后台任务）
+
+基金事实由 `FundDataProvider` 采集后落库 PostgreSQL，截图导入在 Taskiq worker 中执行。
+以下变量都经 `os.getenv` 读取，第三方接口限额可在线调整而无需改代码（规范 7.6、7.7、3.7.2）。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AKSHARE_MAX_CONCURRENCY` | `5` | Provider 并发数（信号量） |
+| `AKSHARE_TIMEOUT_SECONDS` | `20` | 单次阻塞调用超时 |
+| `AKSHARE_MAX_RETRIES` | `2` | tenacity 重试次数 |
+| `AKSHARE_MIN_INTERVAL_SECONDS` | `0.2` | 调用间最小间隔（节流） |
+| `FUND_NAV_STALE_HOURS` | `24` | 净值超过该小时数视为过期 |
+| `FUND_BUSINESS_TZ` | `Asia/Shanghai` | `trade_date` 与持有天数使用的日历 |
+| `FUND_HOT_SYNC_ENABLED` | `false` | 由 API 进程周期入队热基金扫描 |
+| `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | 扫描间隔 |
+| `VISION_ENABLED` | `true` | 截图识别开关；关闭时批次置 `PARSE_FAILED` |
+| `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | SiliconFlow `Qwen/Qwen2.5-VL-72B-Instruct` | OpenAI 兼容视觉端点（`VISION_API_KEY` 可回退到 `SILICONFLOW_API_KEY`） |
+| `VISION_TIMEOUT_SECONDS` / `VISION_MAX_TOKENS` | `120` / `4096` | 视觉调用预算 |
+| `HOLDING_IMPORT_MAX_IMAGES` | `5` | 单批截图数量上限 |
+| `HOLDING_IMPORT_MAX_IMAGE_MB` | `8` | 单文件大小上限 |
+| `HOLDING_IMPORT_TEMP_DIR` | `.runtime/holding_imports` | 原图临时目录（用后即删） |
+| `HOLDING_IMPORT_STALE_MINUTES` | `30` | 卡在 `PARSING` 的批次回收阈值 |
+| `TASKIQ_REDIS_URL` | `` | Broker 地址；留空则复用 `VALKEY_*`，无 Valkey 时退化为进程内执行 |
+| `BACKGROUND_TASK_MAX_ATTEMPTS` | `3` | 持久任务总尝试次数（首次 + 重试） |
+
+最新净值与搜索结果的热点缓存 TTL 不是环境变量，而是
+`app/services/fund_service.py` 里的常量 `_LATEST_NAV_CACHE_TTL_SECONDS` /
+`_SEARCH_CACHE_TTL_SECONDS`（300 秒）。
