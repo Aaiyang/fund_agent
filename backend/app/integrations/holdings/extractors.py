@@ -6,6 +6,7 @@ provider stays business-logic-only (MVP spec 3.7.2 component split).
 
 import hashlib
 from datetime import date
+from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -51,7 +52,7 @@ class ScreenshotPositionExtractor:
                 rows = await vision_adapter.extract_positions(path)
             except Exception as e:
                 logger.warning("screenshot_extraction_failed", path=path, error=str(e))
-                errors.append(f"{path}: {e}")
+                errors.append(f"{Path(path).name}: {e}")
                 continue
 
             for row in rows:
