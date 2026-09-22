@@ -56,3 +56,11 @@ class FundExternalHolding(BaseModel):
     stock_code: str | None = None
     stock_name: str | None = None
     weight: float | None = None
+
+
+class IndexExternalQuote(BaseModel):
+    """One trading day's close of a benchmark index (fund comparison line)."""
+
+    index_code: str
+    trade_date: date
+    close: float

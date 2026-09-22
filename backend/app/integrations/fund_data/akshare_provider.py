@@ -29,9 +29,11 @@ from app.integrations.fund_data.models import (
     FundExternalNav,
     FundExternalProfile,
     FundExternalRecord,
+    IndexExternalQuote,
 )
 from app.integrations.fund_data.normalizer import (
     normalize_fund_record,
+    normalize_index_rows,
     normalize_nav_rows,
     normalize_profile_rows,
 )
@@ -143,6 +145,28 @@ class AKShareFundProvider:
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
         """Stock holdings are not part of the MVP sync scope (spec 5.7)."""
         return []
+
+    async def get_index_history(
+        self,
+        index_code: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[IndexExternalQuote]:
+        """Fetch a benchmark index's daily closes for the comparison line.
+
+        Outside the FundDataProvider protocol: an index is not a fund fact. It
+        shares this adapter only for the guarded transport (throttle, semaphore,
+        timeout, retries). The Sina endpoint returns the whole history in one
+        call, so the range is trimmed here; the Eastmoney index endpoint is
+        unreachable from some networks.
+        """
+        rows = await self._call("stock_zh_index_daily", symbol=index_code)
+        quotes = normalize_index_rows(rows or [], index_code)
+        if start_date is not None:
+            quotes = [quote for quote in quotes if quote.trade_date >= start_date]
+        if end_date is not None:
+            quotes = [quote for quote in quotes if quote.trade_date <= end_date]
+        return quotes
 
     # ------------------------------------------------------------------
     # Internal helpers

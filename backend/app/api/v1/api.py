@@ -13,6 +13,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.chatbot import router as chatbot_router
 from app.api.v1.funds import router as funds_router
 from app.api.v1.imports import router as holding_imports_router
+from app.api.v1.indexes import router as indexes_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.transactions import router as transactions_router
 from app.api.v1.watchlist import router as watchlist_router
@@ -24,6 +25,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(chatbot_router, prefix="/chatbot", tags=["Chatbot"])
 api_router.include_router(funds_router, prefix="/funds", tags=["Funds"])
+api_router.include_router(indexes_router, prefix="/indexes", tags=["Indexes"])
 api_router.include_router(watchlist_router, prefix="/watchlist", tags=["Watchlist"])
 api_router.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio"])
 api_router.include_router(accounts_router, prefix="/accounts", tags=["Accounts"])

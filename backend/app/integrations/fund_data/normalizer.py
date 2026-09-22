@@ -13,6 +13,7 @@ from app.integrations.fund_data.models import (
     FundExternalNav,
     FundExternalProfile,
     FundExternalRecord,
+    IndexExternalQuote,
 )
 
 _PERCENT_SUFFIX = re.compile(r"%\s*$")
@@ -156,3 +157,21 @@ def normalize_nav_rows(
         )
     navs.sort(key=lambda nav: nav.nav_date, reverse=True)
     return navs
+
+
+def normalize_index_rows(rows: list[dict[str, Any]], index_code: str) -> list[IndexExternalQuote]:
+    """Convert an index daily frame into ascending (date, close) quotes.
+
+    AKShare's index endpoints disagree on column naming between versions and
+    sources (Sina is lowercase English, Eastmoney is Chinese), so both
+    spellings are accepted and unusable rows are dropped.
+    """
+    quotes: list[IndexExternalQuote] = []
+    for row in rows:
+        trade_date = to_date(_pick(row, "date", "日期", "trade_date"))
+        close = to_float(_pick(row, "close", "收盘", "close_price"))
+        if trade_date is None or close is None or close <= 0:
+            continue
+        quotes.append(IndexExternalQuote(index_code=index_code, trade_date=trade_date, close=close))
+    quotes.sort(key=lambda quote: quote.trade_date)
+    return quotes

@@ -274,6 +274,7 @@ class Settings:
             "health": ["20 per minute"],
             "funds": ["120 per minute"],
             "funds_search": ["60 per minute"],
+            "indexes": ["120 per minute"],
             "watchlist": ["60 per minute"],
             "watchlist_groups": ["60 per minute"],
             "portfolio": ["120 per minute"],
