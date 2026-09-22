@@ -4,20 +4,20 @@ import { Text, View } from 'react-native';
 
 import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { describeError } from '@/components/states';
+import { FundQueryField } from '@/components/FundQueryField';
 import { theme } from '@/constants/theme';
 import { useCreateManualImport, type ManualPosition } from '@/hooks/useImports';
 import { useAccounts } from '@/hooks/usePortfolio';
 
-type DraftRow = { fund_code: string; fund_name: string; market_value: string; shares: string; profit_loss: string };
+type DraftRow = { query: string; code: string | null; name: string | null; market_value: string };
 
-const EMPTY_ROW: DraftRow = { fund_code: '', fund_name: '', market_value: '', shares: '', profit_loss: '' };
+const EMPTY_ROW: DraftRow = { query: '', code: null, name: null, market_value: '' };
 
 /** Manual batch entry: parsed into a draft, confirmed on the review page. */
 export default function ManualImportScreen() {
   const accounts = useAccounts();
   const create = useCreateManualImport();
   const [accountId, setAccountId] = useState<number | null>(null);
-  const [sourceApp, setSourceApp] = useState('');
   const [rows, setRows] = useState<DraftRow[]>([EMPTY_ROW]);
   const [problem, setProblem] = useState<string | null>(null);
   const chosen = accountId ?? accounts.data?.items[0]?.id ?? null;
@@ -32,20 +32,24 @@ export default function ManualImportScreen() {
       setProblem('请先创建一个持仓账户');
       return;
     }
-    const filled = rows.filter((row) => row.fund_code.trim() || row.fund_name.trim());
+    const filled = rows.filter((row) => row.query.trim());
     if (filled.length === 0) {
       setProblem('至少填写一条持仓（基金代码或名称）');
       return;
     }
-    const positions: ManualPosition[] = filled.map((row) => ({
-      fund_code: row.fund_code.trim() || null,
-      fund_name: row.fund_name.trim() || null,
-      market_value: toNumber(row.market_value),
-      shares: toNumber(row.shares),
-      profit_loss: toNumber(row.profit_loss),
-    }));
+    const positions: ManualPosition[] = filled.map((row) => {
+      const query = row.query.trim();
+      // A picked suggestion carries the exact code; free text is routed by
+      // shape so the backend resolver gets it as code or as name.
+      const digits = /^\d{6}$/.test(query);
+      return {
+        fund_code: row.code ?? (digits ? query : null),
+        fund_name: row.name ?? (digits ? null : query),
+        market_value: toNumber(row.market_value),
+      };
+    });
     create.mutate(
-      { account_id: chosen, source_app: sourceApp.trim() || null, positions },
+      { account_id: chosen, positions },
       {
         onSuccess: (detail) => router.replace(`/holding-import/${detail.id}`),
         onError: (error) => setProblem(describeError(error)),
@@ -68,7 +72,6 @@ export default function ManualImportScreen() {
           ))}
           <Chip label="+ 新增账户" onPress={() => router.push('/account/add')} />
         </View>
-        <Field label="来源应用标签（可选）" value={sourceApp} onChangeText={setSourceApp} placeholder="支付宝 / 天天基金 / 手工" />
       </Card>
 
       {rows.map((row, index) => (
@@ -76,13 +79,20 @@ export default function ManualImportScreen() {
           <SectionTitle
             title={`第 ${index + 1} 条`}
             action={rows.length > 1 ? '移除' : undefined}
-            onAction={rows.length > 1 ? () => setRows((current) => current.filter((_, position) => position !== index)) : undefined}
+            onAction={
+              rows.length > 1
+                ? () => setRows((current) => current.filter((_, position) => position !== index))
+                : undefined
+            }
           />
-          <Field label="基金代码（6 位）" value={row.fund_code} onChangeText={(value) => updateRow(index, { fund_code: value })} keyboardType="numeric" placeholder="011452" />
-          <Field label="或基金名称" value={row.fund_name} onChangeText={(value) => updateRow(index, { fund_name: value })} placeholder="华泰柏瑞质量成长混合C" />
-          <Field label="持有金额" value={row.market_value} onChangeText={(value) => updateRow(index, { market_value: value })} keyboardType="numeric" placeholder="881.99" />
-          <Field label="持有份额（可选）" value={row.shares} onChangeText={(value) => updateRow(index, { shares: value })} keyboardType="numeric" placeholder="295.1" />
-          <Field label="持有收益（可选）" value={row.profit_loss} onChangeText={(value) => updateRow(index, { profit_loss: value })} keyboardType="numeric" placeholder="-137.20" />
+          <FundQueryField
+            label="基金（代码或名称）"
+            value={row.query}
+            matchedCode={row.code}
+            onChangeText={(text) => updateRow(index, { query: text, code: null, name: null })}
+            onPick={(fund) => updateRow(index, { query: fund.name, code: fund.code, name: fund.name })}
+          />
+          <Field label="当前持有金额" value={row.market_value} onChangeText={(value) => updateRow(index, { market_value: value })} keyboardType="numeric" placeholder="881.99" />
         </Card>
       ))}
 
