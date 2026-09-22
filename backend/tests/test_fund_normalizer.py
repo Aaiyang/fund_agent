@@ -3,6 +3,7 @@
 from datetime import date, datetime
 
 from app.integrations.fund_data.normalizer import (
+    _pick,
     normalize_fund_record,
     normalize_nav_rows,
     normalize_profile_rows,
@@ -35,6 +36,31 @@ class TestToDate:
     def test_returns_none_for_garbage(self) -> None:
         assert to_date("昨天") is None
         assert to_date(None) is None
+
+    def test_survives_pandas_nat_and_nan_sentinels(self) -> None:
+        """A single NaT cell must not take down a whole search (rank rows have them)."""
+
+        class NaTType:  # pandas' NaT raises on any date use
+            def date(self) -> date:
+                raise TypeError("'float' object cannot be interpreted as an integer")
+
+        assert to_date(NaTType()) is None
+        assert to_date(float("nan")) is None
+        assert to_date("NaT") is None
+
+
+class TestMissingSentinels:
+    def test_pick_skips_nan_nat_and_placeholder_strings(self) -> None:
+        row = {"单位净值": float("nan"), "日期": "NaT", "基金简称": "  ", "基金代码": "011452"}
+        assert _pick(row, "单位净值") is None
+        assert _pick(row, "日期") is None
+        assert _pick(row, "基金简称") is None
+        assert _pick(row, "基金代码") == "011452"
+
+    def test_real_zeroes_are_not_treated_as_missing(self) -> None:
+        row = {"日增长率": 0.0, "单位净值": 0}
+        assert to_float(_pick(row, "日增长率")) == 0.0
+        assert to_float(_pick(row, "单位净值")) == 0.0
 
 
 class TestNormalizeFundRecord:

@@ -35,10 +35,22 @@ from app.integrations.fund_data.normalizer import (
     normalize_nav_rows,
     normalize_profile_rows,
 )
+from app.utils.clock import business_today
 from app.utils.sanitization import sanitize_string
 
 # Cache the full open-fund rank table in-process for cheap search + latest NAV
 _RANK_CACHE_TTL_SECONDS = 6 * 3600
+
+
+def match_records(records: list[FundExternalRecord], keyword: str) -> list[FundExternalRecord]:
+    """Substring match on code or name.
+
+    AKShare's rank endpoint returns the whole table with no query API, so
+    fuzzy search happens here. Chinese names match as substrings, which is
+    what users type ("华泰柏瑞" finds "华泰柏瑞质量成长混合C").
+    """
+    lowered = keyword.lower()
+    return [record for record in records if lowered in record.fund_code or lowered in record.fund_name.lower()]
 
 
 class AKShareFundProvider:
@@ -49,7 +61,7 @@ class AKShareFundProvider:
         self._semaphore = asyncio.Semaphore(settings.AKSHARE_MAX_CONCURRENCY)
         self._throttle_lock = asyncio.Lock()
         self._last_call_monotonic = 0.0
-        self._rank_records: list[dict[str, Any]] = []
+        self._rank_index: list[FundExternalRecord] = []
         self._rank_cached_at = 0.0
 
     # ------------------------------------------------------------------
@@ -57,19 +69,12 @@ class AKShareFundProvider:
     # ------------------------------------------------------------------
 
     async def search_funds(self, keyword: str) -> list[FundExternalRecord]:
-        """Search funds by code prefix or fuzzy name from the rank table."""
-        records = await self._get_rank_records()
+        """Search funds by code substring or fuzzy name from the rank table."""
         keyword_clean = sanitize_string(keyword).strip()
         if not keyword_clean:
             return []
-        lowered = keyword_clean.lower()
-        matched = [
-            record
-            for record in records
-            if lowered in str(record.get("fund_code", "")).lower()
-            or lowered in str(record.get("fund_name", "")).lower()
-        ]
-        return [item for record in matched[:50] if (item := normalize_fund_record(record)) is not None]
+        index = await self._get_rank_index()
+        return match_records(index, keyword_clean)[:50]
 
     async def get_fund_profile(self, fund_code: str) -> FundExternalProfile | None:
         """Fetch fund master data from the individual basic-info endpoint."""
@@ -78,16 +83,15 @@ class AKShareFundProvider:
 
     async def get_latest_nav(self, fund_code: str) -> FundExternalNav | None:
         """Fetch the most recent NAV, preferring the rank table then history."""
-        records = await self._get_rank_records()
-        for record in records:
-            if str(record.get("fund_code", "")).zfill(6) == fund_code:
-                if (normalized := normalize_fund_record(record)) is not None:
-                    return FundExternalNav(
-                        fund_code=fund_code,
-                        nav_date=normalized.nav_date or date.today(),
-                        unit_nav=normalized.latest_nav,
-                        daily_return=normalized.daily_return,
-                    )
+        index = await self._get_rank_index()
+        for record in index:
+            if record.fund_code == fund_code:
+                return FundExternalNav(
+                    fund_code=fund_code,
+                    nav_date=record.nav_date or business_today(),
+                    unit_nav=record.latest_nav,
+                    daily_return=record.daily_return,
+                )
         history = await self.get_nav_history(fund_code)
         return history[0] if history else None
 
@@ -112,6 +116,23 @@ class AKShareFundProvider:
             navs = [nav for nav in navs if nav.nav_date >= start_date]
         return navs
 
+    async def get_latest_navs(self, fund_codes: list[str]) -> list[FundExternalNav]:
+        """Read the latest NAV for many funds from the cached rank table."""
+        if not fund_codes:
+            return []
+        wanted = set(fund_codes)
+        index = await self._get_rank_index()
+        return [
+            FundExternalNav(
+                fund_code=record.fund_code,
+                nav_date=record.nav_date or business_today(),
+                unit_nav=record.latest_nav,
+                daily_return=record.daily_return,
+            )
+            for record in index
+            if record.fund_code in wanted and record.latest_nav is not None
+        ]
+
     async def get_fund_manager(self, fund_code: str) -> FundExternalManager | None:
         """Fetch the current manager from the basic-info endpoint."""
         profile = await self.get_fund_profile(fund_code)
@@ -127,14 +148,21 @@ class AKShareFundProvider:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _get_rank_records(self) -> list[dict[str, Any]]:
-        """Return the (cached) open-fund rank table as plain dict records."""
-        if self._rank_records and (time.monotonic() - self._rank_cached_at) < _RANK_CACHE_TTL_SECONDS:
-            return self._rank_records
+    async def _get_rank_index(self) -> list[FundExternalRecord]:
+        """Return the open-fund rank table as normalized records, cached.
+
+        Normalization happens once per refresh: the raw rows carry Chinese
+        column names, and matching on English keys would silently never hit.
+        """
+        if self._rank_index and (time.monotonic() - self._rank_cached_at) < _RANK_CACHE_TTL_SECONDS:
+            return self._rank_index
         rows = await self._call("fund_open_fund_rank_em", symbol="全部")
-        self._rank_records = rows or []
-        self._rank_cached_at = time.monotonic()
-        return self._rank_records
+        normalized = [item for row in rows or [] if (item := normalize_fund_record(row)) is not None]
+        if normalized:
+            self._rank_index = normalized
+            self._rank_cached_at = time.monotonic()
+            logger.info("akshare_rank_index_built", rows=len(normalized))
+        return normalized
 
     async def _throttle(self) -> None:
         """Enforce a minimum interval between external calls."""

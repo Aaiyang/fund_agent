@@ -33,6 +33,10 @@ class FundDataProvider(Protocol):
         """Fetch the most recent NAV for a fund."""
         ...
 
+    async def get_latest_navs(self, fund_codes: list[str]) -> list[FundExternalNav]:
+        """Fetch the latest NAV for many funds at once, for list views."""
+        ...
+
     async def get_nav_history(
         self,
         fund_code: str,

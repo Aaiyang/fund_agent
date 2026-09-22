@@ -113,7 +113,12 @@ class FundWriteRepository:
     """Write-side operations for fund data (upserts)."""
 
     async def upsert_fund_from_record(self, record: FundExternalProfile | FundExternalRecord) -> None:
-        """Insert or update a fund master row from an external record."""
+        """Insert or update a fund master row from an external record.
+
+        A search/rank record also carries the latest NAV, so that is written as
+        a `fund_nav` point too — otherwise a fund that was only ever reached
+        through search would list no 净值/涨跌 (spec 3.4 requires both).
+        """
         now = utc_now()
         values = {
             "fund_code": record.fund_code,
@@ -142,6 +147,18 @@ class FundWriteRepository:
                 set_={key: value for key, value in values.items() if key != "fund_code"},
             )
             await session.execute(statement)
+
+        if isinstance(record, FundExternalRecord) and record.nav_date is not None:
+            await self.upsert_navs(
+                [
+                    FundExternalNav(
+                        fund_code=record.fund_code,
+                        nav_date=record.nav_date,
+                        unit_nav=record.latest_nav,
+                        daily_return=record.daily_return,
+                    )
+                ]
+            )
 
     async def upsert_navs(self, navs: list[FundExternalNav]) -> int:
         """Bulk-upsert NAV rows. Returns the number of rows written."""

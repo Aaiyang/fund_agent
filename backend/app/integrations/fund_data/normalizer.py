@@ -20,12 +20,12 @@ _PERCENT_SUFFIX = re.compile(r"%\s*$")
 
 def to_float(value: Any) -> float | None:
     """Cast a raw cell (number, numeric string, '1.23%', '--') to float."""
-    if value is None:
+    if _is_missing(value):
         return None
     if isinstance(value, (int, float)):
-        return float(value) if value == value else None  # NaN guard
+        return float(value)
     text = _PERCENT_SUFFIX.sub("", str(value).strip().replace(",", ""))
-    if not text or text in {"--", "-", "—", "None", "nan"}:
+    if not text or text in _MISSING_TOKENS:
         return None
     try:
         return float(text)
@@ -34,27 +34,51 @@ def to_float(value: Any) -> float | None:
 
 
 def to_date(value: Any) -> date | None:
-    """Cast a raw date cell (date, datetime, 'YYYY-MM-DD', 'YYYYMMDD') to date."""
+    """Cast a raw date cell (date, datetime, 'YYYY-MM-DD', 'YYYYMMDD') to date.
+
+    Anything unparseable becomes None: pandas hands us NaT for missing dates,
+    and touching a NaT raises rather than returning None.
+    """
     if value is None:
         return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d", "%Y-%m-%d %H:%M:%S"):
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
+    try:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        text = str(value).strip()
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
     return None
+
+
+# Sentinels AKShare/pandas use for "no value"; NaT reaches us as a str() of 'NaT'
+# and NaN as a float that is not equal to itself.
+_MISSING_TOKENS = {"", "--", "-", "—", "None", "nan", "NaN", "NaT", "nat"}
+
+
+def _is_missing(value: Any) -> bool:
+    """True for None, NaN, NaT and the placeholder strings AKShare emits."""
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:
+        return True
+    if str(value).strip() in _MISSING_TOKENS:
+        return True
+    # pandas NaT is datetime-like but explodes on any real use
+    return type(value).__name__ == "NaTType"
 
 
 def _pick(record: dict[str, Any], *keys: str) -> Any:
     """Return the first non-empty value among candidate column names."""
     for key in keys:
         value = record.get(key)
-        if value is not None and str(value).strip() not in {"", "--", "-", "nan"}:
+        if not _is_missing(value):
             return value
     return None
 

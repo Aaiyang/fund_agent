@@ -67,6 +67,9 @@ class FundService:
 
         codes = [fund.fund_code for fund in funds]
         navs = await fund_repository.get_latest_navs(codes)
+        missing = [code for code in codes if code not in navs]
+        if missing:
+            navs = await self._backfill_navs(missing, codes)
         watchlisted, held = await self._user_flag_sets(user_id)
         return [
             FundSearchItem(
@@ -82,6 +85,22 @@ class FundService:
             for fund in funds
             for nav in [navs.get(fund.fund_code)]
         ]
+
+    async def _backfill_navs(self, missing: list[str], codes: list[str]) -> dict[str, FundNav]:
+        """Store NAVs for search hits that have none, then re-read PostgreSQL.
+
+        Funds discovered before their NAV was persisted (or synced by another
+        user) would otherwise list `--` for 净值/涨跌, which spec 3.4 requires.
+        Reads still come from PostgreSQL; the provider only fills the gap.
+        """
+        if AKSHARE_AVAILABLE:
+            try:
+                external = await akshare_fund_provider.get_latest_navs(missing)
+                if external:
+                    await fund_write_repository.upsert_navs(external)
+            except Exception as e:
+                logger.warning("fund_nav_backfill_failed", count=len(missing), error=str(e))
+        return await fund_repository.get_latest_navs(codes)
 
     async def _search_fund_rows(self, keyword_clean: str) -> list[Fund]:
         """Load matching fund master rows, caching the shared result set.
@@ -100,6 +119,11 @@ class FundService:
             for record in external[:50]:
                 await fund_write_repository.upsert_fund_from_record(record)
             local_funds = await fund_repository.search_funds(keyword_clean)
+            # A 6-digit code missing from the rank table (exchange-traded funds,
+            # recent issues) still resolves by fetching that fund directly.
+            if not local_funds and len(keyword_clean) == 6 and keyword_clean.isdigit():
+                await fund_sync_service.sync_fund(keyword_clean)
+                local_funds = await fund_repository.search_funds(keyword_clean)
 
         funds = local_funds[:50]
         if funds:
