@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
-import { Button, Card, Chip, Screen, SectionTitle } from '@/components/ui';
+import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
 import { FundRow } from '@/components/FundRow';
 import { theme } from '@/constants/theme';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
@@ -61,14 +61,6 @@ export default function HoldingsScreen() {
 
       <Card>
         <SectionTitle title="持仓基金" action="导入持仓" onAction={() => router.push('/holding-import')} />
-        <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Button label="手动录入" variant="secondary" onPress={() => router.push('/holding-import/manual')} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button label="截图识别" variant="secondary" onPress={() => router.push('/holding-import/screenshots')} />
-          </View>
-        </View>
         <Async
           query={positions}
           empty={(data) =>
