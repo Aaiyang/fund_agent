@@ -82,7 +82,7 @@ export function WatchlistTable({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.surface }}>
+    <View style={{ flex: 1, paddingHorizontal: theme.gap, backgroundColor: theme.surface }}>
       <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
         <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>
           <Text style={headerTextStyle}>基金</Text>
@@ -185,7 +185,7 @@ export function WatchlistTable({
         </View>
       </ScrollView>
 
-      <Text style={{ fontSize: 11, color: theme.textFaint, padding: 8 }}>
+      <Text style={{ fontSize: 11, color: theme.textFaint, paddingVertical: 8 }}>
         左右滑动查看其它列 · 净值日期为橙色表示尚未更新
       </Text>
     </View>
