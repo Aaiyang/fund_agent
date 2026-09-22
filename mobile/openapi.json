@@ -4645,6 +4645,28 @@
             ],
             "title": "Daily Return"
           },
+          "weekly_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Return"
+          },
+          "monthly_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Return"
+          },
           "is_held": {
             "type": "boolean",
             "title": "Is Held",
@@ -4683,7 +4705,7 @@
           "fund_name"
         ],
         "title": "WatchlistFundItem",
-        "description": "One watchlisted fund with market data and relationship flags."
+        "description": "One watchlisted fund with market data and relationship flags.\n\nAll `*_return` fields are percent points (2.2 means +2.2%)."
       },
       "WatchlistGroupCreateRequest": {
         "properties": {

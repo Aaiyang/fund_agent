@@ -32,6 +32,11 @@ def period_return(points: list[NavPoint], end: date, months: int) -> float | Non
     return range_return(points, start, end)
 
 
+def window_return(points: list[NavPoint], end: date, days: int) -> float | None:
+    """Return over the trailing `days` calendar days ending at `end`."""
+    return range_return(points, end - timedelta(days=days), end)
+
+
 def _nav_on_or_before(points: list[NavPoint], target: date) -> float | None:
     """Find the NAV of the latest point dated on or before `target`."""
     result: float | None = None

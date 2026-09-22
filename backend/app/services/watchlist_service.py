@@ -1,14 +1,25 @@
 """Watchlist domain service."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
+from app.analytics import period_return, window_return
+from app.analytics.returns import NavPoint
+from app.core.cache import cache_key, cache_service
 from app.core.logging import logger
+from app.models.fund import Fund, FundNav
 from app.repositories.fund_repository import fund_repository
 from app.repositories.watchlist_repository import watchlist_repository
 from app.schemas.watchlist import WatchlistFundItem, WatchlistGroupItem
-from app.utils.clock import utc_now
+from app.services.fund_sync_service import fund_sync_service
+from app.utils.clock import business_today, utc_now
 
 _NAV_FRESH_DAYS = 3
+# Enough history to cover a 30-day window plus a stale NAV grace period.
+_HISTORY_LOOKBACK_DAYS = 45
+_WEEKLY_DAYS = 7
+_MONTHLY_DAYS = 31
+# One backfill request per fund per day; the sync lock dedups the job itself.
+_BACKFILL_COOLDOWN_SECONDS = 24 * 3600
 
 
 class WatchlistService:
@@ -35,12 +46,20 @@ class WatchlistService:
         funds = await fund_repository.get_funds(codes)
         navs = await fund_repository.get_latest_navs(codes)
         held_codes = await watchlist_repository.list_held_fund_codes(user_id)
+        history = await fund_repository.get_nav_history_map(
+            codes, business_today() - timedelta(days=_HISTORY_LOOKBACK_DAYS)
+        )
 
         items: list[WatchlistFundItem] = []
+        thin_codes: list[str] = []
         for entry in entries:
             fund = funds.get(entry.fund_code)
             latest = navs.get(entry.fund_code)
             groups = group_map.get(entry.fund_code, [])
+            rows = history.get(entry.fund_code, [])
+            weekly, monthly = self._period_returns(rows, latest)
+            if latest is not None and self._series_is_thin(rows, latest.nav_date, fund):
+                thin_codes.append(entry.fund_code)
             items.append(
                 WatchlistFundItem(
                     fund_code=entry.fund_code,
@@ -49,6 +68,8 @@ class WatchlistService:
                     latest_nav=latest.unit_nav if latest else None,
                     nav_date=latest.nav_date if latest else None,
                     daily_return=latest.daily_return if latest else None,
+                    weekly_return=weekly,
+                    monthly_return=monthly,
                     is_held=entry.fund_code in held_codes,
                     is_updated=self._nav_is_fresh(latest.fetched_at, latest.nav_date) if latest else False,
                     sort_order=entry.sort_order,
@@ -56,7 +77,9 @@ class WatchlistService:
                     group_ids=[gid for gid, _ in groups],
                 )
             )
-        logger.info("watchlist_listed", user_id=user_id, count=len(items))
+        if thin_codes:
+            await self._request_history_backfill(thin_codes)
+        logger.info("watchlist_listed", user_id=user_id, count=len(items), backfill=thin_codes)
         return items
 
     async def add_fund(self, user_id: int, fund_code: str, group_ids: list[int] | None = None) -> bool:
@@ -166,6 +189,54 @@ class WatchlistService:
         deleted = await watchlist_repository.delete_group(user_id, group_id)
         logger.info("watchlist_group_deleted", user_id=user_id, group_id=group_id, deleted=deleted)
         return deleted
+
+    @staticmethod
+    def _series_is_thin(rows: list[FundNav], end: date, fund: Fund | None) -> bool:
+        """True when the stored series cannot reach back over a month.
+
+        A fund reached only through search has a single NAV row, which leaves
+        近1周/近1月 empty until the history lands. Funds younger than the window
+        are excluded: no sync can produce their missing rows.
+        """
+        window_start = end - timedelta(days=_MONTHLY_DAYS)
+        if fund is not None and fund.inception_date is not None and fund.inception_date > window_start:
+            return False
+        return not rows or rows[0].nav_date > window_start
+
+    async def _request_history_backfill(self, fund_codes: list[str]) -> None:
+        """Ask the queue to pull NAV history for funds with thin series.
+
+        The read stays non-blocking: the broker runs the job outside the
+        request, so the next list load fills in the missing columns.
+        """
+        today = business_today().isoformat()
+        for fund_code in fund_codes:
+            if not await cache_service.acquire_lock(
+                cache_key("watchlist_history_backfill", fund_code, today), ttl=_BACKFILL_COOLDOWN_SECONDS
+            ):
+                continue
+            try:
+                await fund_sync_service.enqueue_sync(fund_code)
+            except Exception as e:
+                logger.warning("watchlist_history_backfill_failed", fund_code=fund_code, error=str(e))
+
+    @staticmethod
+    def _period_returns(rows: list[FundNav], latest: FundNav | None) -> tuple[float | None, float | None]:
+        """Trailing 1-week and 1-month returns, in percent points.
+
+        The analytics helpers return fractions while the `daily_return` column
+        already holds percent points; both are reported in the column's unit so
+        one formatter handles the whole row (MVP spec 5.2).
+        """
+        if latest is None:
+            return None, None
+        points = [NavPoint(row.nav_date, row.unit_nav) for row in rows if row.unit_nav is not None]
+        weekly = window_return(points, latest.nav_date, _WEEKLY_DAYS)
+        monthly = period_return(points, latest.nav_date, 1)
+        return (
+            None if weekly is None else round(weekly * 100, 4),
+            None if monthly is None else round(monthly * 100, 4),
+        )
 
     @staticmethod
     def _nav_is_fresh(fetched_at: datetime | None, nav_date) -> bool:

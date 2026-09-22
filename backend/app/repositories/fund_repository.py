@@ -100,6 +100,27 @@ class FundRepository:
             result = await session.execute(statement)
             return {row.fund_code: row for row in result.scalars().all()}
 
+    async def get_nav_history_map(
+        self, fund_codes: list[str], start_date: date | None = None
+    ) -> dict[str, list[FundNav]]:
+        """Load the NAV series for many funds in one query, keyed by code.
+
+        Each list is ascending by date so the analytics helpers can scan it
+        linearly. Funds without rows are omitted.
+        """
+        if not fund_codes:
+            return {}
+        async with get_async_session() as session:
+            statement = select(FundNav).where(col(FundNav.fund_code).in_(fund_codes))
+            if start_date is not None:
+                statement = statement.where(col(FundNav.nav_date) >= start_date)
+            statement = statement.order_by(col(FundNav.fund_code), col(FundNav.nav_date))
+            result = await session.execute(statement)
+            series: dict[str, list[FundNav]] = {}
+            for row in result.scalars().all():
+                series.setdefault(row.fund_code, []).append(row)
+            return series
+
     async def get_hot_fund_codes(self) -> list[str]:
         """Distinct fund codes held or watchlisted by any user (Hot Funds)."""
         position_codes = select(col(PortfolioPosition.fund_code)).distinct()

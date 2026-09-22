@@ -8,7 +8,10 @@ from app.schemas.base import BaseResponse
 
 
 class WatchlistFundItem(BaseModel):
-    """One watchlisted fund with market data and relationship flags."""
+    """One watchlisted fund with market data and relationship flags.
+
+    All `*_return` fields are percent points (2.2 means +2.2%).
+    """
 
     fund_code: str
     fund_name: str
@@ -16,6 +19,8 @@ class WatchlistFundItem(BaseModel):
     latest_nav: float | None = None
     nav_date: date | None = None
     daily_return: float | None = None
+    weekly_return: float | None = None
+    monthly_return: float | None = None
     is_held: bool = False
     is_updated: bool = False
     sort_order: int = 0

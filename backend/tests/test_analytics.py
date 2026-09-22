@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.analytics import annualized_volatility, max_drawdown, period_return, range_return
+from app.analytics import annualized_volatility, max_drawdown, period_return, range_return, window_return
 from app.analytics.returns import NavPoint
 
 START = date(2026, 1, 1)
@@ -49,6 +49,19 @@ class TestPeriodReturn:
         end = points[-1].date
         assert period_return(points, end, 12) == pytest.approx(2.0)
         assert period_return(points, end, 11) == pytest.approx(0.0)
+
+
+class TestWindowReturn:
+    def test_window_length_is_exactly_the_given_days(self) -> None:
+        # Only day 0 is cheap: a 7-day window reaches it, a 6-day window does not
+        points = _series([1.0] + [3.0] * 7)
+        end = points[-1].date
+        assert window_return(points, end, 7) == pytest.approx(2.0)
+        assert window_return(points, end, 6) == pytest.approx(0.0)
+
+    def test_none_when_window_reaches_before_the_series(self) -> None:
+        points = _series([1.0, 1.2])
+        assert window_return(points, points[-1].date, 30) is None
 
 
 class TestMaxDrawdown:

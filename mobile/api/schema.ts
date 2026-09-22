@@ -1923,6 +1923,8 @@ export interface components {
         /**
          * WatchlistFundItem
          * @description One watchlisted fund with market data and relationship flags.
+         *
+         *     All `*_return` fields are percent points (2.2 means +2.2%).
          */
         WatchlistFundItem: {
             /** Fund Code */
@@ -1937,6 +1939,10 @@ export interface components {
             nav_date?: string | null;
             /** Daily Return */
             daily_return?: number | null;
+            /** Weekly Return */
+            weekly_return?: number | null;
+            /** Monthly Return */
+            monthly_return?: number | null;
             /**
              * Is Held
              * @default false
