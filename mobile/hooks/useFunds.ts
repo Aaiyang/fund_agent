@@ -1,6 +1,6 @@
 /** Fund search, detail, NAV history and refresh triggers (spec 3.4 / 3.5). */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, request } from '@/api/client';
 import { queryKeys } from '@/api/queries';
@@ -41,6 +41,26 @@ export function useFundNav(code: string | null, range: NavRange) {
   return useQuery({
     queryKey: queryKeys.fundNav(code ?? '', range),
     queryFn: () => api.get<NavHistory>(`/funds/${code}/nav`, { range }),
+    enabled: Boolean(code),
+  });
+}
+
+/**
+ * Cursor paging over the whole NAV history: 30 newest rows first, then older
+ * pages as the list reaches its bottom. `before_date` is exclusive, so pages
+ * never repeat a trading day.
+ */
+export function useFundNavPages(code: string | null, pageSize = 30) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.fundNavPages(code ?? ''),
+    queryFn: ({ pageParam }) =>
+      api.get<NavHistory>(`/funds/${code}/nav`, { limit: pageSize, before_date: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.has_more) return undefined;
+      const dates = lastPage.points.map((point) => point.nav_date);
+      return dates.length ? dates.reduce((oldest, value) => (value < oldest ? value : oldest)) : undefined;
+    },
     enabled: Boolean(code),
   });
 }

@@ -8,6 +8,7 @@ export const queryKeys = {
   fundSearch: (keyword: string) => ['funds', 'search', keyword] as const,
   fundDetail: (code: string) => ['funds', 'detail', code] as const,
   fundNav: (code: string, range: string) => ['funds', 'nav', code, range] as const,
+  fundNavPages: (code: string) => ['funds', 'nav-pages', code] as const,
 
   indexes: ['indexes'] as const,
   indexHistory: (code: string, range: string) => ['indexes', code, range] as const,

@@ -1207,6 +1207,16 @@ export interface components {
             range?: string | null;
             /** Points */
             points: components["schemas"]["FundNavPoint"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total?: number;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more?: boolean;
         };
         /**
          * FundNavPoint
@@ -2591,6 +2601,10 @@ export interface operations {
                 range?: ("1m" | "3m" | "6m" | "1y" | "3y" | "all") | null;
                 start_date?: string | null;
                 end_date?: string | null;
+                /** @description 只取最近 N 条，用于净值明细分页 */
+                limit?: number | null;
+                /** @description 游标：仅返回早于该日期的记录 */
+                before_date?: string | null;
             };
             header?: never;
             path: {

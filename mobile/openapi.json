@@ -665,6 +665,45 @@
               ],
               "title": "End Date"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 500,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "只取最近 N 条，用于净值明细分页",
+              "title": "Limit"
+            },
+            "description": "只取最近 N 条，用于净值明细分页"
+          },
+          {
+            "name": "before_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "游标：仅返回早于该日期的记录",
+              "title": "Before Date"
+            },
+            "description": "游标：仅返回早于该日期的记录"
           }
         ],
         "responses": {
@@ -2874,6 +2913,16 @@
             },
             "type": "array",
             "title": "Points"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",

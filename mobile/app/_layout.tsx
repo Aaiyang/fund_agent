@@ -55,6 +55,7 @@ export default function RootLayout() {
         <Stack.Screen name="search" options={{ title: '搜索基金' }} />
         <Stack.Screen name="watchlist-groups" options={{ title: '自选分组' }} />
         <Stack.Screen name="transactions" options={{ title: '交易记录' }} />
+        <Stack.Screen name="nav-history" options={{ title: '净值详情' }} />
         <Stack.Screen name="fund/[code]" options={{ title: '基金详情' }} />
         <Stack.Screen name="position/edit" options={{ title: '修改持仓' }} />
         <Stack.Screen name="account/index" options={{ title: '账户管理' }} />

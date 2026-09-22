@@ -30,7 +30,7 @@ import {
   trendColor,
 } from '@/utils/format';
 
-const NAV_ROWS_COLLAPSED = 10;
+const NAV_ROWS_COLLAPSED = 15;
 
 /** Fund detail: overview + holdings context + NAV chart (spec 3.5). */
 export default function FundDetailScreen() {
@@ -38,7 +38,6 @@ export default function FundDetailScreen() {
   const [range, setRange] = useState<NavRange>('1y');
   const [benchmarkCode, setBenchmarkCode] = useState<string | null>(DEFAULT_BENCHMARK);
   const [pickingBenchmark, setPickingBenchmark] = useState(false);
-  const [showAllNav, setShowAllNav] = useState(false);
   const accountId = useUiStore((state) => state.accountId);
   const detail = useFundDetail(code ?? null);
   const nav = useFundNav(code ?? null, range);
@@ -78,7 +77,7 @@ export default function FundDetailScreen() {
   }
 
   const navPoints = nav.data?.points ?? [];
-  const recentNav = showAllNav ? navPoints : navPoints.slice(-NAV_ROWS_COLLAPSED);
+  const recentNav = [...navPoints].reverse().slice(0, NAV_ROWS_COLLAPSED);
 
   return (
     <Screen>
@@ -204,11 +203,13 @@ export default function FundDetailScreen() {
                     </Text>
                   </View>
                 ))}
-                {data.points.length > NAV_ROWS_COLLAPSED ? (
-                  <Pressable accessibilityRole="button" onPress={() => setShowAllNav((current) => !current)} style={{ marginTop: 10 }}>
-                    <Text style={{ fontSize: 13, color: theme.primary, textAlign: 'center' }}>
-                      {showAllNav ? '收起' : `查看全部 ${data.points.length} 条`}
-                    </Text>
+                {navPoints.length > NAV_ROWS_COLLAPSED ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push(`/nav-history?code=${code}`)}
+                    style={{ marginTop: 10 }}
+                  >
+                    <Text style={{ fontSize: 13, color: theme.primary, textAlign: 'center' }}>查看净值详情</Text>
                   </Pressable>
                 ) : null}
               </View>
