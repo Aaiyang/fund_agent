@@ -14,10 +14,12 @@ from app.services.fund_sync_service import fund_sync_service
 from app.utils.clock import business_today, utc_now
 
 _NAV_FRESH_DAYS = 3
-# Enough history to cover a 30-day window plus a stale NAV grace period.
-_HISTORY_LOOKBACK_DAYS = 45
+# Covers the longest column the list reports (近1年) plus a stale NAV grace period.
+_HISTORY_LOOKBACK_DAYS = 400
 _WEEKLY_DAYS = 7
-_MONTHLY_DAYS = 31
+# A series shorter than the longest displayed window means the fund was only ever
+# reached through search, so its history still has to be pulled.
+_BACKFILL_WINDOW_DAYS = 366
 # One backfill request per fund per day; the sync lock dedups the job itself.
 _BACKFILL_COOLDOWN_SECONDS = 24 * 3600
 
@@ -57,7 +59,6 @@ class WatchlistService:
             latest = navs.get(entry.fund_code)
             groups = group_map.get(entry.fund_code, [])
             rows = history.get(entry.fund_code, [])
-            weekly, monthly = self._period_returns(rows, latest)
             if latest is not None and self._series_is_thin(rows, latest.nav_date, fund):
                 thin_codes.append(entry.fund_code)
             items.append(
@@ -68,8 +69,7 @@ class WatchlistService:
                     latest_nav=latest.unit_nav if latest else None,
                     nav_date=latest.nav_date if latest else None,
                     daily_return=latest.daily_return if latest else None,
-                    weekly_return=weekly,
-                    monthly_return=monthly,
+                    **self._period_metrics(rows, latest),
                     is_held=entry.fund_code in held_codes,
                     is_updated=self._nav_is_fresh(latest.fetched_at, latest.nav_date) if latest else False,
                     sort_order=entry.sort_order,
@@ -192,13 +192,13 @@ class WatchlistService:
 
     @staticmethod
     def _series_is_thin(rows: list[FundNav], end: date, fund: Fund | None) -> bool:
-        """True when the stored series cannot reach back over a month.
+        """True when the stored series cannot reach back over the longest window.
 
         A fund reached only through search has a single NAV row, which leaves
-        近1周/近1月 empty until the history lands. Funds younger than the window
-        are excluded: no sync can produce their missing rows.
+        the period columns empty until the history lands. Funds younger than the
+        window are excluded: no sync can produce their missing rows.
         """
-        window_start = end - timedelta(days=_MONTHLY_DAYS)
+        window_start = end - timedelta(days=_BACKFILL_WINDOW_DAYS)
         if fund is not None and fund.inception_date is not None and fund.inception_date > window_start:
             return False
         return not rows or rows[0].nav_date > window_start
@@ -221,22 +221,29 @@ class WatchlistService:
                 logger.warning("watchlist_history_backfill_failed", fund_code=fund_code, error=str(e))
 
     @staticmethod
-    def _period_returns(rows: list[FundNav], latest: FundNav | None) -> tuple[float | None, float | None]:
-        """Trailing 1-week and 1-month returns, in percent points.
+    def _period_metrics(rows: list[FundNav], latest: FundNav | None) -> dict[str, float | None]:
+        """Trailing 1-week/1/3/6/12-month returns, in percent points.
 
         The analytics helpers return fractions while the `daily_return` column
         already holds percent points; both are reported in the column's unit so
         one formatter handles the whole row (MVP spec 5.2).
         """
+        fields = ("weekly_return", "monthly_return", "quarterly_return", "semiannual_return", "annual_return")
         if latest is None:
-            return None, None
+            return dict.fromkeys(fields)
         points = [NavPoint(row.nav_date, row.unit_nav) for row in rows if row.unit_nav is not None]
-        weekly = window_return(points, latest.nav_date, _WEEKLY_DAYS)
-        monthly = period_return(points, latest.nav_date, 1)
-        return (
-            None if weekly is None else round(weekly * 100, 4),
-            None if monthly is None else round(monthly * 100, 4),
-        )
+        end = latest.nav_date
+
+        def as_points(fraction: float | None) -> float | None:
+            return None if fraction is None else round(fraction * 100, 4)
+
+        return {
+            "weekly_return": as_points(window_return(points, end, _WEEKLY_DAYS)),
+            "monthly_return": as_points(period_return(points, end, 1)),
+            "quarterly_return": as_points(period_return(points, end, 3)),
+            "semiannual_return": as_points(period_return(points, end, 6)),
+            "annual_return": as_points(period_return(points, end, 12)),
+        }
 
     @staticmethod
     def _nav_is_fresh(fetched_at: datetime | None, nav_date) -> bool:

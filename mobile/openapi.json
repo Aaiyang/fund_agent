@@ -4667,6 +4667,39 @@
             ],
             "title": "Monthly Return"
           },
+          "quarterly_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarterly Return"
+          },
+          "semiannual_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semiannual Return"
+          },
+          "annual_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Return"
+          },
           "is_held": {
             "type": "boolean",
             "title": "Is Held",

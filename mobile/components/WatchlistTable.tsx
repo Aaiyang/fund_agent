@@ -26,39 +26,46 @@ const NAME_W = 132;
 const ACTION_W = 56;
 const ROW_H = 58;
 
+type Cell = { text: string; color?: string; sub?: string; subColor?: string };
+
 type Column = {
   key: string;
   title: string;
   width: number;
-  cell: (item: WatchlistFund) => { text: string; color?: string };
+  cell: (item: WatchlistFund) => Cell;
 };
+
+/** Trailing-window column shared by 近1周/近1月/近3月/近6月/近1年. */
+function periodColumn(key: string, title: string, pick: (item: WatchlistFund) => number | null | undefined): Column {
+  return {
+    key,
+    title,
+    width: 76,
+    cell: (item) => ({ text: formatReturnPoints(pick(item)), color: trendColor(pick(item)) }),
+  };
+}
 
 const COLUMNS: Column[] = [
   { key: 'nav', title: '最新净值', width: 80, cell: (item) => ({ text: formatNumber(item.latest_nav) }) },
   {
     key: 'daily',
-    title: '日涨跌',
-    width: 76,
-    cell: (item) => ({ text: formatReturnPoints(item.daily_return), color: trendColor(item.daily_return) }),
+    title: '当日涨跌',
+    width: 84,
+    cell: (item) => ({
+      text: formatReturnPoints(item.daily_return),
+      color: trendColor(item.daily_return),
+      sub: formatDate(item.nav_date),
+      subColor: item.is_updated ? theme.textFaint : theme.warning,
+    }),
   },
-  {
-    key: 'weekly',
-    title: '近1周',
-    width: 76,
-    cell: (item) => ({ text: formatReturnPoints(item.weekly_return), color: trendColor(item.weekly_return) }),
-  },
-  {
-    key: 'monthly',
-    title: '近1月',
-    width: 76,
-    cell: (item) => ({ text: formatReturnPoints(item.monthly_return), color: trendColor(item.monthly_return) }),
-  },
-  {
-    key: 'navDate',
-    title: '净值日期',
-    width: 88,
-    cell: (item) => ({ text: formatDate(item.nav_date), color: item.is_updated ? theme.text : theme.warning }),
-  },
+  // Reserved for the intraday estimate (估值): the provider has no estimate
+  // endpoint yet, so the column keeps its place in the grid and says so.
+  { key: 'estimate', title: '当日涨幅', width: 84, cell: () => ({ text: '--', sub: '未接入' }) },
+  periodColumn('weekly', '近1周', (item) => item.weekly_return),
+  periodColumn('monthly', '近1月', (item) => item.monthly_return),
+  periodColumn('quarterly', '近3月', (item) => item.quarterly_return),
+  periodColumn('semiannual', '近6月', (item) => item.semiannual_return),
+  periodColumn('annual', '近1年', (item) => item.annual_return),
 ];
 
 const GRID_W = COLUMNS.reduce((total, column) => total + column.width, 0) + ACTION_W;
@@ -160,6 +167,14 @@ export function WatchlistTable({
                           <Text style={{ ...cellTextStyle, color: cell.color ?? theme.text }} numberOfLines={1}>
                             {cell.text}
                           </Text>
+                          {cell.sub ? (
+                            <Text
+                              style={{ fontSize: 11, color: cell.subColor ?? theme.textFaint, marginTop: 2 }}
+                              numberOfLines={1}
+                            >
+                              {cell.sub}
+                            </Text>
+                          ) : null}
                         </View>
                       );
                     })}
@@ -186,7 +201,7 @@ export function WatchlistTable({
       </ScrollView>
 
       <Text style={{ fontSize: 11, color: theme.textFaint, paddingVertical: 8 }}>
-        左右滑动查看其它列 · 净值日期为橙色表示尚未更新
+        左右滑动查看其它列 · 当日涨跌下方为净值日期，橙色表示尚未更新 · 当日涨幅待估值接口接入
       </Text>
     </View>
   );

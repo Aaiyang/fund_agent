@@ -1943,6 +1943,12 @@ export interface components {
             weekly_return?: number | null;
             /** Monthly Return */
             monthly_return?: number | null;
+            /** Quarterly Return */
+            quarterly_return?: number | null;
+            /** Semiannual Return */
+            semiannual_return?: number | null;
+            /** Annual Return */
+            annual_return?: number | null;
             /**
              * Is Held
              * @default false

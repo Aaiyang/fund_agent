@@ -21,6 +21,9 @@ class WatchlistFundItem(BaseModel):
     daily_return: float | None = None
     weekly_return: float | None = None
     monthly_return: float | None = None
+    quarterly_return: float | None = None
+    semiannual_return: float | None = None
+    annual_return: float | None = None
     is_held: bool = False
     is_updated: bool = False
     sort_order: int = 0
