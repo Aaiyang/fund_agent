@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
@@ -28,7 +28,9 @@ export default function HoldingImportScreen() {
           导入是“当前持仓快照”的覆盖更新，系统不会根据截图推断你的买卖流水。任何结果都要经你确认后才会写入正式持仓。
         </Text>
         <Button label="手动录入" onPress={() => router.push('/holding-import/manual')} />
-        <Button label="上传持仓截图识别" variant="secondary" onPress={() => router.push('/holding-import/screenshots')} />
+        <View style={{ marginTop: 10 }}>
+          <Button label="上传持仓截图识别" variant="secondary" onPress={() => router.push('/holding-import/screenshots')} />
+        </View>
       </Card>
 
       <Card>

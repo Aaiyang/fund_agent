@@ -70,14 +70,16 @@ export default function LoginScreen() {
         ) : null}
         {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
         <Button label={mode === 'login' ? '登录' : '注册并登录'} onPress={submit} loading={busy} />
-        <Button
-          label={mode === 'login' ? '还没有账号？去注册' : '已有账号？去登录'}
-          variant="secondary"
-          onPress={() => {
-            setMode(mode === 'login' ? 'register' : 'login');
-            setProblem(null);
-          }}
-        />
+        <View style={{ marginTop: 10 }}>
+          <Button
+            label={mode === 'login' ? '还没有账号？去注册' : '已有账号？去登录'}
+            variant="secondary"
+            onPress={() => {
+              setMode(mode === 'login' ? 'register' : 'login');
+              setProblem(null);
+            }}
+          />
+        </View>
       </Card>
     </View>
   );

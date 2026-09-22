@@ -89,7 +89,9 @@ export default function ManualImportScreen() {
       <Card>
         <Button label="+ 再加一条" variant="secondary" onPress={() => setRows((current) => [...current, EMPTY_ROW])} />
         {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginTop: 12 }}>{problem}</Text> : null}
-        <Button label="生成待确认草稿" onPress={submit} loading={create.isPending} />
+        <View style={{ marginTop: 10 }}>
+          <Button label="生成待确认草稿" onPress={submit} loading={create.isPending} />
+        </View>
         <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 8 }}>
           草稿不会改动正式持仓，下一步可逐条核对并确认。
         </Text>

@@ -104,7 +104,9 @@ export default function ScreenshotImportScreen() {
         </View>
         <Button label="选择截图" variant="secondary" onPress={pick} />
         {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginTop: 12 }}>{problem}</Text> : null}
-        <Button label="开始识别" onPress={submit} loading={upload.isPending} />
+        <View style={{ marginTop: 10 }}>
+          <Button label="开始识别" onPress={submit} loading={upload.isPending} />
+        </View>
       </Card>
     </Screen>
   );
