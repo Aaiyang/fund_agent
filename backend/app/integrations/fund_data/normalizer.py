@@ -115,9 +115,15 @@ def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundEx
         logger.debug("fund_profile_name_missing", fund_code=fund_code)
         return None
 
-    # "成立日期/规模" cells like "2021-01-01/2.34亿" — keep the date part
-    inception_raw = _pick(info, "成立日期", "成立日期/规模", "发行日期")
-    inception = to_date(str(inception_raw).split("/")[0]) if inception_raw else None
+    # AKShare renamed this cell across versions: 成立日期 / 成立日期/规模 / 成立时间
+    # all appear in the wild, and a missed key silently yields None.
+    inception_raw = _pick(info, "成立日期", "成立日期/规模", "成立时间", "发行日期")
+    inception = None
+    if inception_raw:
+        text = str(inception_raw).strip()
+        # "2021-01-01/2.34亿" carries the size after the date; slash-formatted
+        # dates must not be split, so the whole value is tried first.
+        inception = to_date(text) or to_date(text.split("/")[0])
 
     return FundExternalProfile(
         fund_code=fund_code,

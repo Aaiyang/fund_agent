@@ -103,6 +103,28 @@ class TestNormalizeProfile:
         assert profile.company == "华泰柏瑞基金"
         assert profile.inception_date == date(2021, 1, 4)
 
+    def test_reads_the_renamed_inception_cell(self) -> None:
+        # Current AKShare labels this 成立时间; matching only 成立日期 silently
+        # leaves the fund detail page showing "--".
+        profile = normalize_profile_rows(
+            [
+                {"item": "基金全称", "value": "示例混合型证券投资基金"},
+                {"item": "成立时间", "value": "2021-02-19"},
+            ],
+            "011452",
+        )
+        assert profile is not None
+        assert profile.fund_name == "示例混合型证券投资基金"
+        assert profile.inception_date == date(2021, 2, 19)
+
+    def test_keeps_slash_formatted_dates_whole(self) -> None:
+        profile = normalize_profile_rows(
+            [{"item": "基金简称", "value": "示例"}, {"item": "成立时间", "value": "2021/03/05"}],
+            "011452",
+        )
+        assert profile is not None
+        assert profile.inception_date == date(2021, 3, 5)
+
     def test_none_without_a_name(self) -> None:
         assert normalize_profile_rows([{"item": "基金类型", "value": "股票型"}], "011452") is None
         assert normalize_profile_rows([], "011452") is None
