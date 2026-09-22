@@ -8,7 +8,7 @@ enqueued or inlined only when local data is missing or stale (spec 5.6).
 
 import asyncio
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlmodel import col
@@ -179,6 +179,8 @@ class FundService:
         start_date: date | None = None,
         end_date: date | None = None,
         range_key: NavRange | None = None,
+        limit: int | None = None,
+        before_date: date | None = None,
     ) -> FundNavHistoryResponse:
         """Return the stored NAV series for charting (no live pass-through).
 
@@ -187,14 +189,23 @@ class FundService:
             start_date: Explicit lower bound; overridden by `range_key`.
             end_date: Explicit upper bound.
             range_key: Named range from spec 3.5.3 (1m/3m/6m/1y/3y/all).
+            limit: Keep only the newest N points, for paging the history list.
+            before_date: Exclusive cursor — only points strictly older than this,
+                so a client can walk backwards without repeating a page.
         """
         await self.ensure_fund_data(fund_code)
         if range_key is not None:
             start_date = range_start(range_key, business_today())
+        if before_date is not None:
+            cursor_end = before_date - timedelta(days=1)
+            end_date = min(end_date, cursor_end) if end_date else cursor_end
         history = await fund_repository.get_nav_history(fund_code, start_date, end_date)
+        page, has_more = _newest_page(history, limit)
         return FundNavHistoryResponse(
             fund_code=fund_code,
             range=range_key,
+            total=len(history),
+            has_more=has_more,
             points=[
                 FundNavPoint(
                     nav_date=row.nav_date,
@@ -202,7 +213,7 @@ class FundService:
                     accumulated_nav=row.accumulated_nav,
                     daily_return=row.daily_return,
                 )
-                for row in history
+                for row in page
             ],
         )
 
@@ -366,6 +377,17 @@ class FundService:
     def _decode_funds(raw: str) -> list[Fund]:
         """Deserialize cached search hits back into fund master rows."""
         return [Fund.model_validate(entry) for entry in json.loads(raw)]
+
+
+def _newest_page(history: list[FundNav], limit: int | None) -> tuple[list[FundNav], bool]:
+    """Keep the newest `limit` rows of an ascending series; report older remainders.
+
+    Rows arrive ascending, so the tail is the most recent window and everything
+    before it is the next page walked backwards by cursor.
+    """
+    if limit is None or len(history) <= limit:
+        return history, False
+    return history[-limit:], True
 
 
 fund_service = FundService()

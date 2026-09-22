@@ -81,6 +81,8 @@ class FundNavHistoryResponse(BaseResponse):
     fund_code: str
     range: str | None = None
     points: list[FundNavPoint]
+    total: int = 0
+    has_more: bool = False
 
 
 class FundPerformanceResponse(BaseResponse):

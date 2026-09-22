@@ -64,10 +64,19 @@ async def get_fund_nav_history(
     range: NavRange | None = Query(default=None, description="图表区间：1m/3m/6m/1y/3y/all"),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=500, description="只取最近 N 条，用于净值明细分页"),
+    before_date: date | None = Query(default=None, description="游标：仅返回早于该日期的记录"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundNavHistoryResponse:
     """Historical NAV series served from PostgreSQL (never live pass-through)."""
-    return await fund_service.get_nav_history(fund_code, start_date, end_date, range_key=range)
+    return await fund_service.get_nav_history(
+        fund_code,
+        start_date,
+        end_date,
+        range_key=range,
+        limit=limit,
+        before_date=before_date,
+    )
 
 
 @router.get("/{fund_code}/performance", response_model=FundPerformanceResponse)
