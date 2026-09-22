@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
@@ -13,8 +13,10 @@ import { formatNumber, formatReturnPoints } from '@/utils/format';
 
 export default function SearchScreen() {
   const [keyword, setKeyword] = useState('');
+  // Typing Chinese needs an IME commit; only query the settled text.
+  const settledKeyword = useDeferredValue(keyword);
   const groupId = useUiStore((state) => state.groupId);
-  const search = useFundSearch(keyword);
+  const search = useFundSearch(settledKeyword);
   const watchlist = useWatchlist(null);
   const add = useAddWatchlistFund();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -61,8 +63,8 @@ export default function SearchScreen() {
       </Card>
 
       <Card>
-        <SectionTitle title={keyword.trim() ? '搜索结果' : '输入关键词开始搜索'} />
-        {!keyword.trim() ? (
+        <SectionTitle title={settledKeyword.trim() ? '搜索结果' : '输入关键词开始搜索'} />
+        {!settledKeyword.trim() ? (
           <EmptyState title="支持代码与名称" hint="例如 011452、华泰柏瑞、创新药" />
         ) : (
           <Async
