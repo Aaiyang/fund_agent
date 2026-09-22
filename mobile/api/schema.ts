@@ -1161,6 +1161,10 @@ export interface components {
             manager_name?: string | null;
             /** Inception Date */
             inception_date?: string | null;
+            /** Asset Size */
+            asset_size?: string | null;
+            /** Benchmark */
+            benchmark?: string | null;
             /** Latest Nav */
             latest_nav?: number | null;
             /** Accumulated Nav */

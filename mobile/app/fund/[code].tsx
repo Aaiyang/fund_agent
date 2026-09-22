@@ -121,7 +121,13 @@ export default function FundDetailScreen() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}>
             <Stat label="成立日期" value={formatDate(detail.data.inception_date)} tone="muted" />
             <Stat label="基金经理" value={detail.data.manager_name ?? '--'} tone="muted" />
+            <Stat label="规模" value={detail.data.asset_size ?? '--'} tone="muted" />
           </View>
+          {detail.data.benchmark ? (
+            <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }} numberOfLines={2}>
+              业绩比较基准：{detail.data.benchmark}
+            </Text>
+          ) : null}
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 4 }}>
             来源 {detail.data.source ?? '--'} · 数据截止 {formatDate(detail.data.source_as_of)} · 抓取于{' '}
             {formatDateTime(detail.data.nav_fetched_at ?? detail.data.updated_at)}

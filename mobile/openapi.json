@@ -2769,6 +2769,28 @@
             ],
             "title": "Inception Date"
           },
+          "asset_size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Size"
+          },
+          "benchmark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark"
+          },
           "latest_nav": {
             "anyOf": [
               {
