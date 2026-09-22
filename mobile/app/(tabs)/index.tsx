@@ -46,7 +46,7 @@ export default function HoldingsScreen() {
                 {formatMoney(stats.total_market_value)}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                <Metric label="当日收益" value={formatSignedMoney(stats.daily_profit_loss)} color={trendColor(stats.daily_profit_loss)} />
+                <Metric label="昨日收益" value={formatSignedMoney(stats.daily_profit_loss)} color={trendColor(stats.daily_profit_loss)} />
                 <Metric label="累计收益" value={formatSignedMoney(stats.total_profit_loss)} color={trendColor(stats.total_profit_loss)} />
                 <Metric label="累计收益率" value={formatRate(stats.total_profit_loss_rate)} color={trendColor(stats.total_profit_loss)} />
                 <Metric label="持仓数量" value={`${stats.fund_count}`} color={theme.text} />
