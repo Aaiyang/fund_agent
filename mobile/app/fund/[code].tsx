@@ -132,22 +132,6 @@ export default function FundDetailScreen() {
       {detail.data ? (
         <Card>
           <SectionTitle title="业绩走势" action="同步净值" onAction={() => refresh.mutate()} />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
-            {NAV_RANGES.map((item) => (
-              <Chip key={item.key} label={item.label} active={range === item.key} onPress={() => setRange(item.key)} />
-            ))}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setPickingBenchmark(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}
-          >
-            <View style={{ width: 12, height: 2, backgroundColor: theme.warning, marginRight: 5 }} />
-            <Text style={{ fontSize: 13, color: theme.text }}>
-              业绩比较基准：{catalog.data?.items.find((item) => item.index_code === benchmarkCode)?.name ?? '不比较'}
-            </Text>
-            <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 4 }}>▾</Text>
-          </Pressable>
           <Async query={nav}>
             {(data) => (
               <NavChart
@@ -161,6 +145,24 @@ export default function FundDetailScreen() {
               />
             )}
           </Async>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+              {NAV_RANGES.map((item) => (
+                <Chip key={item.key} label={item.label} active={range === item.key} onPress={() => setRange(item.key)} />
+              ))}
+            </ScrollView>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="切换业绩比较基准"
+              onPress={() => setPickingBenchmark(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 6 }}
+            >
+              <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                {catalog.data?.items.find((item) => item.index_code === benchmarkCode)?.name ?? '选基准'}
+              </Text>
+              <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 2 }}>▾</Text>
+            </Pressable>
+          </View>
           {detail.data.performance ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
               <Stat label="近 1 月" value={formatRate(detail.data.performance.return_1m)} tone={trendTone(detail.data.performance.return_1m)} />
@@ -325,7 +327,9 @@ function BenchmarkPicker({
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable accessibilityRole="button" onPress={onCancel} style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center' }}>
+      {/* No accessibilityRole here: RN-web renders a <button>, and the option
+          rows inside it would be nested buttons. */}
+      <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center' }}>
         <View style={{ backgroundColor: theme.surface, marginHorizontal: 28, borderRadius: theme.radius, padding: theme.gap }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text, marginBottom: 10 }}>选择比较基准</Text>
           <ScrollView style={{ maxHeight: 320 }}>
