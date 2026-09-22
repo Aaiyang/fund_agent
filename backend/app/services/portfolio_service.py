@@ -254,6 +254,12 @@ class PortfolioService:
         if total_value > 0 and position.market_value is not None:
             position_ratio = position.market_value / total_value
 
+        # Snapshot imports leave the stored column empty; cost per unit NAV is
+        # derivable from amount and shares (spec 5.2: derived, never persisted).
+        average_cost_nav = position.average_cost_nav
+        if average_cost_nav is None and position.shares and position.cost_amount:
+            average_cost_nav = position.cost_amount / position.shares
+
         return PositionItem(
             id=position.id,
             account_id=position.account_id,
@@ -261,7 +267,7 @@ class PortfolioService:
             fund_name=fund.fund_name if fund else None,
             shares=position.shares,
             cost_amount=position.cost_amount,
-            average_cost_nav=position.average_cost_nav,
+            average_cost_nav=average_cost_nav,
             market_value=position.market_value,
             profit_loss=position.profit_loss,
             profit_loss_rate=profit_loss_rate,
