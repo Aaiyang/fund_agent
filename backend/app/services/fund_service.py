@@ -158,6 +158,8 @@ class FundService:
             company=fund.company,
             manager_name=fund.manager_name,
             inception_date=fund.inception_date,
+            asset_size=fund.asset_size,
+            benchmark=fund.benchmark,
             latest_nav=latest.unit_nav if latest else None,
             accumulated_nav=latest.accumulated_nav if latest else None,
             nav_date=latest.nav_date if latest else None,

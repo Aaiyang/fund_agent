@@ -100,6 +100,15 @@ def normalize_fund_record(record: dict[str, Any]) -> FundExternalRecord | None:
     )
 
 
+def _text(info: dict[str, Any], limit: int, *keys: str) -> str | None:
+    """First usable value among the candidate keys, trimmed to `limit` characters."""
+    value = _pick(info, *keys)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:limit] or None
+
+
 def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundExternalProfile | None:
     """Normalize fund_individual_basic_info_xq-style item/value rows."""
     if not rows:
@@ -132,6 +141,8 @@ def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundEx
         company=str(_pick(info, "基金管理人", "基金公司") or "").strip() or None,
         manager_name=str(_pick(info, "基金经理") or "").strip() or None,
         inception_date=inception,
+        asset_size=_text(info, 50, "最新规模", "基金规模", "规模"),
+        benchmark=_text(info, 300, "业绩比较基准"),
     )
 
 

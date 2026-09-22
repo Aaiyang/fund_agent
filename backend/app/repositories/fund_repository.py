@@ -155,6 +155,8 @@ class FundWriteRepository:
                     "company": record.company,
                     "manager_name": record.manager_name,
                     "inception_date": record.inception_date,
+                    "asset_size": record.asset_size,
+                    "benchmark": record.benchmark,
                 }
             )
         # Search records carry the public NAV date, which is what the row speaks as of

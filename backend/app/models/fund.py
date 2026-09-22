@@ -22,6 +22,10 @@ class Fund(BaseModel, table=True):
     company: str | None = Field(default=None, max_length=200)
     manager_name: str | None = Field(default=None, max_length=200)
     inception_date: date | None = Field(default=None)
+    # Snapshot facts quoted verbatim from the source: a size like "226.75亿" and
+    # the fund's own stated comparison benchmark.
+    asset_size: str | None = Field(default=None, max_length=50)
+    benchmark: str | None = Field(default=None, max_length=300)
 
     # Data lineage — every external fact keeps its source and freshness
     source: str = Field(default="akshare", max_length=50)
