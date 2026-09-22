@@ -477,6 +477,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/indexes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Indexes
+         * @description Benchmarks the fund-detail comparison line can be switched to.
+         */
+        get: operations["list_indexes_api_v1_indexes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/indexes/{index_code}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Index History
+         * @description Daily closes for one benchmark, served from PostgreSQL with lazy backfill.
+         */
+        get: operations["get_index_history_api_v1_indexes__index_code__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watchlist/groups": {
         parameters: {
             query?: never;
@@ -1444,6 +1484,67 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
+        };
+        /**
+         * IndexCatalogItem
+         * @description One selectable benchmark.
+         */
+        IndexCatalogItem: {
+            /** Index Code */
+            index_code: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * IndexCatalogResponse
+         * @description GET /indexes response.
+         */
+        IndexCatalogResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Items */
+            items: components["schemas"]["IndexCatalogItem"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * IndexHistoryResponse
+         * @description GET /indexes/{index_code}/history response.
+         */
+        IndexHistoryResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Index Code */
+            index_code: string;
+            /** Name */
+            name: string;
+            /** Range */
+            range?: ("1m" | "3m" | "6m" | "1y" | "3y" | "all") | null;
+            /** Points */
+            points: components["schemas"]["IndexPoint"][];
+            /** Period Return */
+            period_return?: number | null;
+        };
+        /**
+         * IndexPoint
+         * @description One trading day's closing level.
+         */
+        IndexPoint: {
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Close */
+            close: number;
         };
         /**
          * ManualImportRequest
@@ -2599,6 +2700,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FundSyncStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_indexes_api_v1_indexes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexCatalogResponse"];
+                };
+            };
+        };
+    };
+    get_index_history_api_v1_indexes__index_code__history_get: {
+        parameters: {
+            query?: {
+                /** @description 图表区间：1m/3m/6m/1y/3y/all */
+                range?: "1m" | "3m" | "6m" | "1y" | "3y" | "all";
+            };
+            header?: never;
+            path: {
+                index_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexHistoryResponse"];
                 };
             };
             /** @description Validation Error */

@@ -835,6 +835,101 @@
         }
       }
     },
+    "/api/v1/indexes": {
+      "get": {
+        "tags": [
+          "Indexes"
+        ],
+        "summary": "List Indexes",
+        "description": "Benchmarks the fund-detail comparison line can be switched to.",
+        "operationId": "list_indexes_api_v1_indexes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexCatalogResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/indexes/{index_code}/history": {
+      "get": {
+        "tags": [
+          "Indexes"
+        ],
+        "summary": "Get Index History",
+        "description": "Daily closes for one benchmark, served from PostgreSQL with lazy backfill.",
+        "operationId": "get_index_history_api_v1_indexes__index_code__history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "index_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Index Code"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "3y",
+                "all"
+              ],
+              "type": "string",
+              "description": "图表区间：1m/3m/6m/1y/3y/all",
+              "default": "1y",
+              "title": "Range"
+            },
+            "description": "图表区间：1m/3m/6m/1y/3y/all"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/watchlist/groups": {
       "get": {
         "tags": [
@@ -3576,6 +3671,136 @@
         "type": "object",
         "title": "ImportItemUpdateRequest",
         "description": "PATCH /holding-imports/{import_id}/items/{item_id} request."
+      },
+      "IndexCatalogItem": {
+        "properties": {
+          "index_code": {
+            "type": "string",
+            "title": "Index Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_code",
+          "name"
+        ],
+        "title": "IndexCatalogItem",
+        "description": "One selectable benchmark."
+      },
+      "IndexCatalogResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IndexCatalogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "IndexCatalogResponse",
+        "description": "GET /indexes response."
+      },
+      "IndexHistoryResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "index_code": {
+            "type": "string",
+            "title": "Index Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "1m",
+                  "3m",
+                  "6m",
+                  "1y",
+                  "3y",
+                  "all"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/IndexPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "period_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_code",
+          "name",
+          "points"
+        ],
+        "title": "IndexHistoryResponse",
+        "description": "GET /indexes/{index_code}/history response."
+      },
+      "IndexPoint": {
+        "properties": {
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trade_date",
+          "close"
+        ],
+        "title": "IndexPoint",
+        "description": "One trading day's closing level."
       },
       "ManualImportRequest": {
         "properties": {
