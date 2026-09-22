@@ -3,12 +3,19 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Async, EmptyState, LoadingState, describeError } from '@/components/states';
+import { GroupPicker } from '@/components/GroupPicker';
 import { Button, Card, Chip, Screen, SectionTitle, Stat } from '@/components/ui';
 import { NavChart } from '@/components/NavChart';
 import { theme } from '@/constants/theme';
 import { NAV_RANGES, useFundDetail, useFundNav, useRefreshFund, type NavRange } from '@/hooks/useFunds';
 import { usePosition } from '@/hooks/usePortfolio';
-import { useAddWatchlistFund, useRemoveWatchlistFund, useWatchlist } from '@/hooks/useWatchlist';
+import {
+  useAddWatchlistFund,
+  useCreateWatchlistGroup,
+  useRemoveWatchlistFund,
+  useWatchlist,
+  useWatchlistGroups,
+} from '@/hooks/useWatchlist';
 import { useUiStore } from '@/stores/ui';
 import {
   formatDate,
@@ -26,15 +33,17 @@ export default function FundDetailScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const [range, setRange] = useState<NavRange>('1y');
   const accountId = useUiStore((state) => state.accountId);
-  const groupId = useUiStore((state) => state.groupId);
   const detail = useFundDetail(code ?? null);
   const nav = useFundNav(code ?? null, range);
   const position = usePosition(accountId, code ?? null);
   const watchlist = useWatchlist(null);
+  const groups = useWatchlistGroups();
   const add = useAddWatchlistFund();
+  const createGroup = useCreateWatchlistGroup();
   const remove = useRemoveWatchlistFund();
   const refresh = useRefreshFund(code ?? null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pickingGroup, setPickingGroup] = useState(false);
 
   const isWatchlisted = (watchlist.data?.items ?? []).some((item) => item.fund_code === code);
 
@@ -45,10 +54,18 @@ export default function FundDetailScreen() {
       remove.mutate(code, { onError: (error) => setNotice(error.message) });
       return;
     }
-    add.mutate(
-      { fund_code: code, group_ids: groupId ? [groupId] : [] },
-      { onError: (error) => setNotice(error.message) },
-    );
+    // Adding is never silent: the caller picks groups, or 不分组, first (spec 3.3).
+    setPickingGroup(true);
+  }
+
+  async function createGroupNamed(name: string): Promise<number | null> {
+    try {
+      const group = await createGroup.mutateAsync({ name });
+      return group.id;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '分组创建失败');
+      return null;
+    }
   }
 
   return (
@@ -157,6 +174,29 @@ export default function FundDetailScreen() {
       <View style={{ marginTop: 10 }}>
         <Button label="问 Agent" variant="secondary" onPress={() => router.push(`/(tabs)/agent?fund_code=${code}`)} />
       </View>
+      {notice ? (
+        <Text style={{ fontSize: 12, color: theme.primary, marginTop: 10, textAlign: 'center' }}>{notice}</Text>
+      ) : null}
+
+      <GroupPicker
+        visible={pickingGroup}
+        fundName={detail.data?.fund_name ?? code ?? ''}
+        groups={groups.data?.items ?? []}
+        busy={add.isPending}
+        onCreateGroup={createGroupNamed}
+        onCancel={() => setPickingGroup(false)}
+        onConfirm={(groupIds) => {
+          setPickingGroup(false);
+          if (!code) return;
+          add.mutate(
+            { fund_code: code, group_ids: groupIds },
+            {
+              onSuccess: () => setNotice(groupIds.length > 0 ? `已加入自选与 ${groupIds.length} 个分组` : '已加入自选（不分组）'),
+              onError: (error) => setNotice(error.message),
+            },
+          );
+        }}
+      />
     </Screen>
   );
 }

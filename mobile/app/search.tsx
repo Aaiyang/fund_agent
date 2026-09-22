@@ -5,33 +5,34 @@ import { Text, TextInput, View } from 'react-native';
 import { Async, EmptyState } from '@/components/states';
 import { Card, Screen, SectionTitle } from '@/components/ui';
 import { FundRow } from '@/components/FundRow';
+import { GroupPicker } from '@/components/GroupPicker';
 import { theme } from '@/constants/theme';
 import { useFundSearch } from '@/hooks/useFunds';
-import { useAddWatchlistFund, useWatchlist } from '@/hooks/useWatchlist';
-import { useUiStore } from '@/stores/ui';
+import { useAddWatchlistFund, useCreateWatchlistGroup, useWatchlist, useWatchlistGroups } from '@/hooks/useWatchlist';
 import { formatNumber, formatReturnPoints } from '@/utils/format';
 
 export default function SearchScreen() {
   const [keyword, setKeyword] = useState('');
   // Typing Chinese needs an IME commit; only query the settled text.
   const settledKeyword = useDeferredValue(keyword);
-  const groupId = useUiStore((state) => state.groupId);
   const search = useFundSearch(settledKeyword);
   const watchlist = useWatchlist(null);
+  const groups = useWatchlistGroups();
   const add = useAddWatchlistFund();
+  const createGroup = useCreateWatchlistGroup();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [picking, setPicking] = useState<{ code: string; name: string } | null>(null);
 
   const added = new Set((watchlist.data?.items ?? []).map((item) => item.fund_code));
 
-  function addToWatchlist(fundCode: string) {
-    setFeedback(null);
-    add.mutate(
-      { fund_code: fundCode, group_ids: groupId ? [groupId] : [] },
-      {
-        onSuccess: () => setFeedback(`${fundCode} 已加入自选${groupId ? '并加入当前分组' : ''}`),
-        onError: (error) => setFeedback(error.message),
-      },
-    );
+  async function createGroupNamed(name: string): Promise<number | null> {
+    try {
+      const group = await createGroup.mutateAsync({ name });
+      return group.id;
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : '分组创建失败');
+      return null;
+    }
   }
 
   return (
@@ -54,11 +55,6 @@ export default function SearchScreen() {
             backgroundColor: theme.surface,
           }}
         />
-        {groupId ? (
-          <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 8 }}>
-            当前分组已选中：加入自选时会同时加入该分组
-          </Text>
-        ) : null}
         {feedback ? <Text style={{ fontSize: 12, color: theme.primary, marginTop: 8 }}>{feedback}</Text> : null}
       </Card>
 
@@ -86,7 +82,7 @@ export default function SearchScreen() {
                     action={
                       item.is_watchlisted || added.has(item.fund_code)
                         ? { label: '已自选', tone: 'muted', onPress: () => router.push('/watchlist') }
-                        : { label: '+ 自选', onPress: () => addToWatchlist(item.fund_code) }
+                        : { label: '+ 自选', onPress: () => setPicking({ code: item.fund_code, name: item.fund_name }) }
                     }
                     pending={add.isPending}
                   />
@@ -99,6 +95,28 @@ export default function SearchScreen() {
           </Async>
         )}
       </Card>
+
+      <GroupPicker
+        visible={picking !== null}
+        fundName={picking?.name ?? ''}
+        groups={groups.data?.items ?? []}
+        busy={add.isPending}
+        onCreateGroup={createGroupNamed}
+        onCancel={() => setPicking(null)}
+        onConfirm={(groupIds) => {
+          const target = picking;
+          setPicking(null);
+          if (!target) return;
+          add.mutate(
+            { fund_code: target.code, group_ids: groupIds },
+            {
+              onSuccess: () =>
+                setFeedback(`${target.code} 已加入自选${groupIds.length > 0 ? `与 ${groupIds.length} 个分组` : '（不分组）'}`),
+              onError: (error) => setFeedback(error.message),
+            },
+          );
+        }}
+      />
     </Screen>
   );
 }
