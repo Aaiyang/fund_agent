@@ -2,9 +2,9 @@
 
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.base import BaseResponse
+from app.schemas.base import BaseResponse, clean_required_text
 
 
 class WatchlistFundItem(BaseModel):
@@ -74,6 +74,11 @@ class WatchlistGroupCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     sort_order: int = 0
 
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        return clean_required_text(value) or value
+
 
 class WatchlistGroupUpdateRequest(BaseModel):
     """PATCH /watchlist/groups/{group_id} request."""
@@ -84,3 +89,8 @@ class WatchlistGroupUpdateRequest(BaseModel):
         default=None,
         description="整组覆盖：分组内基金代码及顺序（未在自选内的代码会被忽略）",
     )
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str | None) -> str | None:
+        return clean_required_text(value)

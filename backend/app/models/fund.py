@@ -43,7 +43,9 @@ class FundNav(BaseModel, table=True):
     __tablename__ = "fund_nav"  # pyright: ignore[reportAssignmentType]
 
     id: int | None = Field(default=None, primary_key=True)
-    fund_code: str = Field(max_length=12, index=True)
+    # The FK exists in the migration; declaring it here keeps autogenerate from
+    # proposing to drop it.
+    fund_code: str = Field(max_length=12, index=True, foreign_key="fund.fund_code")
     nav_date: date = Field(index=True)
     unit_nav: float | None = Field(default=None)
     accumulated_nav: float | None = Field(default=None)

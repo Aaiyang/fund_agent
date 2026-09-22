@@ -10,7 +10,7 @@ happens to run in.
 """
 
 import calendar
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -27,6 +27,17 @@ def utc_now() -> datetime:
 def business_today() -> date:
     """Return today's date on the fund market calendar."""
     return datetime.now(ZoneInfo(settings.FUND_BUSINESS_TZ)).date()
+
+
+def business_close_utc(trade_date: date) -> datetime:
+    """Naive UTC instant of a business day's market close.
+
+    When only the calendar date survives, midnight in the business zone is
+    16:00 UTC the previous day, so comparing that raw date against a UTC cutoff
+    would read up to 8 hours staler than it is.
+    """
+    close = datetime.combine(trade_date, time(15, 0), tzinfo=ZoneInfo(settings.FUND_BUSINESS_TZ))
+    return close.astimezone(UTC).replace(tzinfo=None)
 
 
 def range_start(range_key: str, today: date) -> date | None:

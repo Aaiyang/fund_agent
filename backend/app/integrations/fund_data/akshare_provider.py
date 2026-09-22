@@ -37,7 +37,6 @@ from app.integrations.fund_data.normalizer import (
     normalize_nav_rows,
     normalize_profile_rows,
 )
-from app.utils.clock import business_today
 from app.utils.sanitization import sanitize_string
 
 # Cache the full open-fund rank table in-process for cheap search + latest NAV
@@ -87,10 +86,13 @@ class AKShareFundProvider:
         """Fetch the most recent NAV, preferring the rank table then history."""
         index = await self._get_rank_index()
         for record in index:
-            if record.fund_code == fund_code:
+            # A row with no NAV date is skipped rather than dated "today":
+            # fabricating a date would write a fund_nav point on a possibly
+            # non-trading day and anchor every later window calculation on it.
+            if record.fund_code == fund_code and record.nav_date is not None:
                 return FundExternalNav(
                     fund_code=fund_code,
-                    nav_date=record.nav_date or business_today(),
+                    nav_date=record.nav_date,
                     unit_nav=record.latest_nav,
                     daily_return=record.daily_return,
                 )
@@ -127,12 +129,12 @@ class AKShareFundProvider:
         return [
             FundExternalNav(
                 fund_code=record.fund_code,
-                nav_date=record.nav_date or business_today(),
+                nav_date=record.nav_date,
                 unit_nav=record.latest_nav,
                 daily_return=record.daily_return,
             )
             for record in index
-            if record.fund_code in wanted and record.latest_nav is not None
+            if record.fund_code in wanted and record.latest_nav is not None and record.nav_date is not None
         ]
 
     async def get_fund_manager(self, fund_code: str) -> FundExternalManager | None:

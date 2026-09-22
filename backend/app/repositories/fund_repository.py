@@ -19,6 +19,9 @@ from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist
 from app.utils.clock import utc_now
 
+# asyncpg allows at most 32767 bind parameters per statement; 8 columns per row.
+_UPSERT_CHUNK_ROWS = 2000
+
 
 class FundRepository:
     """Async data access for fund master data and NAV history."""
@@ -184,37 +187,46 @@ class FundWriteRepository:
             )
 
     async def upsert_navs(self, navs: list[FundExternalNav]) -> int:
-        """Bulk-upsert NAV rows. Returns the number of rows written."""
+        """Bulk-upsert NAV rows in chunks. Returns the number of rows written.
+
+        One statement carries 8 bind parameters per row and asyncpg caps a
+        statement at 32767, so a full history for a long-lived fund must be
+        split or its sync fails permanently.
+        """
         if not navs:
             return 0
         now = utc_now()
-        rows = [
-            {
-                "fund_code": nav.fund_code,
-                "nav_date": nav.nav_date,
-                "unit_nav": nav.unit_nav,
-                "accumulated_nav": nav.accumulated_nav,
-                "daily_return": nav.daily_return,
-                "source": "akshare",
-                "fetched_at": now,
-            }
-            for nav in navs
-        ]
+        written = 0
         async with get_async_session() as session:
-            statement = pg_insert(FundNav).values(rows)
-            statement = statement.on_conflict_do_update(
-                constraint="uq_fund_nav_code_date",
-                set_={
-                    "unit_nav": statement.excluded.unit_nav,
-                    "accumulated_nav": statement.excluded.accumulated_nav,
-                    "daily_return": statement.excluded.daily_return,
-                    "source": statement.excluded.source,
-                    "fetched_at": statement.excluded.fetched_at,
-                },
-            )
-            await session.execute(statement)
-        logger.debug("fund_navs_upserted", fund_code=navs[0].fund_code, rows=len(rows))
-        return len(rows)
+            for offset in range(0, len(navs), _UPSERT_CHUNK_ROWS):
+                chunk = navs[offset : offset + _UPSERT_CHUNK_ROWS]
+                rows = [
+                    {
+                        "fund_code": nav.fund_code,
+                        "nav_date": nav.nav_date,
+                        "unit_nav": nav.unit_nav,
+                        "accumulated_nav": nav.accumulated_nav,
+                        "daily_return": nav.daily_return,
+                        "source": "akshare",
+                        "fetched_at": now,
+                    }
+                    for nav in chunk
+                ]
+                statement = pg_insert(FundNav).values(rows)
+                statement = statement.on_conflict_do_update(
+                    constraint="uq_fund_nav_code_date",
+                    set_={
+                        "unit_nav": statement.excluded.unit_nav,
+                        "accumulated_nav": statement.excluded.accumulated_nav,
+                        "daily_return": statement.excluded.daily_return,
+                        "source": statement.excluded.source,
+                        "fetched_at": statement.excluded.fetched_at,
+                    },
+                )
+                await session.execute(statement)
+                written += len(rows)
+        logger.debug("fund_navs_upserted", fund_code=navs[0].fund_code, rows=written)
+        return written
 
 
 fund_repository = FundRepository()

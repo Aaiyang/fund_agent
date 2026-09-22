@@ -28,6 +28,20 @@ class AccountNotFoundError(Exception):
     """The account does not exist or belongs to another user (spec 16 isolation)."""
 
 
+def position_profit(position: PortfolioPosition) -> float:
+    """Held profit for a snapshot, derived when the source reported none.
+
+    A manual or screenshot import can carry amount, shares and cost without a
+    profit figure. Reading that NULL as 0 understates the account total, and
+    the value is derivable from the snapshot itself (spec 5.2).
+    """
+    if position.profit_loss is not None:
+        return position.profit_loss
+    if position.market_value is not None and position.cost_amount is not None:
+        return position.market_value - position.cost_amount
+    return 0.0
+
+
 class PortfolioService:
     """Async portfolio operations."""
 
@@ -179,12 +193,14 @@ class PortfolioService:
         positions = await portfolio_repository.list_positions(user_id, account_id)
         summary = PortfolioSummary(fund_count=len(positions))
         latest_at: datetime | None = None
+        # One batched read instead of a per-position NAV query.
+        latest_navs = await fund_repository.get_latest_navs([position.fund_code for position in positions])
 
         for position in positions:
             summary.total_market_value += position.market_value or 0.0
             summary.total_cost += position.cost_amount or 0.0
-            summary.total_profit_loss += position.profit_loss or 0.0
-            latest = await fund_repository.get_latest_nav(position.fund_code)
+            summary.total_profit_loss += position_profit(position)
+            latest = latest_navs.get(position.fund_code)
             if latest is not None:
                 daily = (latest.daily_return or 0.0) * (position.market_value or 0.0) / 100.0
                 summary.daily_profit_loss += daily
@@ -241,9 +257,10 @@ class PortfolioService:
         fund = await fund_repository.get_fund(position.fund_code)
         latest = await fund_repository.get_latest_nav(position.fund_code)
 
+        profit_loss = position_profit(position)
         profit_loss_rate = None
-        if position.profit_loss is not None and position.cost_amount:
-            profit_loss_rate = position.profit_loss / position.cost_amount
+        if position.cost_amount:
+            profit_loss_rate = profit_loss / position.cost_amount
 
         daily_profit_loss = None
         daily_return = latest.daily_return if latest else None
@@ -269,7 +286,7 @@ class PortfolioService:
             cost_amount=position.cost_amount,
             average_cost_nav=average_cost_nav,
             market_value=position.market_value,
-            profit_loss=position.profit_loss,
+            profit_loss=profit_loss,
             profit_loss_rate=profit_loss_rate,
             daily_profit_loss=daily_profit_loss,
             daily_return=daily_return,

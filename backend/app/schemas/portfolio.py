@@ -2,9 +2,9 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.base import BaseResponse
+from app.schemas.base import BaseResponse, clean_required_text
 
 
 # ---------------------------------------------------------------------------
@@ -39,12 +39,22 @@ class AccountCreateRequest(BaseModel):
     account_type: str = Field(default="manual", max_length=30)
     import_mode: str = Field(default="manual", max_length=30)
 
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        return clean_required_text(value) or value
+
 
 class AccountUpdateRequest(BaseModel):
     """PATCH /accounts/{id} request."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     source_app: str | None = Field(default=None, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str | None) -> str | None:
+        return clean_required_text(value)
 
 
 # ---------------------------------------------------------------------------

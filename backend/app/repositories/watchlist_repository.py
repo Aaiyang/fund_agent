@@ -187,17 +187,6 @@ class WatchlistRepository:
             await session.delete(group)
             return True
 
-    async def list_group_fund_codes(self, group_id: int) -> list[str]:
-        """Fund codes inside a group, ordered by item sort_order."""
-        async with get_async_session() as session:
-            result = await session.execute(
-                select(col(Watchlist.fund_code))
-                .join(WatchlistGroupItem, col(WatchlistGroupItem.watchlist_id) == Watchlist.id)
-                .where(col(WatchlistGroupItem.group_id) == group_id)
-                .order_by(col(WatchlistGroupItem.sort_order), col(WatchlistGroupItem.id))
-            )
-            return [row[0] for row in result]
-
     async def add_to_group(self, user_id: int, group_id: int, fund_code: str) -> WatchlistGroupItem | None:
         """Add a watchlisted fund to a group (idempotent)."""
         async with get_async_session() as session:
@@ -355,20 +344,6 @@ class WatchlistRepository:
                 if item is None:
                     session.add(WatchlistGroupItem(group_id=group_id, watchlist_id=entry.id, sort_order=position))
             await session.flush()
-            return True
-
-    async def remove_from_group(self, group_id: int, fund_code: str) -> bool:
-        """Remove a fund from a group."""
-        async with get_async_session() as session:
-            result = await session.execute(
-                select(WatchlistGroupItem)
-                .join(Watchlist, col(Watchlist.id) == WatchlistGroupItem.watchlist_id)
-                .where(col(WatchlistGroupItem.group_id) == group_id, col(Watchlist.fund_code) == fund_code)
-            )
-            item = result.scalars().first()
-            if item is None:
-                return False
-            await session.delete(item)
             return True
 
 

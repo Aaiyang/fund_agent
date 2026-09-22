@@ -34,6 +34,17 @@ from app.services.portfolio_service import AccountNotFoundError
 router = APIRouter()
 
 
+def _state_error_to_http(exc: ImportStateError) -> HTTPException:
+    """A missing batch is 404; a batch in the wrong state is 409.
+
+    Reporting "not found" as 409 makes the client say "someone else updated
+    this" when the real answer is that the batch does not exist for them.
+    """
+    detail = str(exc)
+    status = 404 if detail.endswith("_not_found") else 409
+    return HTTPException(status_code=status, detail=detail)
+
+
 @router.get("/history", response_model=ImportHistoryResponse)
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["holding_imports"][0])
 async def list_import_history(
@@ -114,22 +125,20 @@ async def update_import_item(
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> ImportItemOut:
     """Correct or decide on one pending item before confirmation."""
+    # Only the keys the client actually sent: passing the whole model would send
+    # None for every untouched field and silently blank the user's draft values.
+    fields = payload.model_dump(exclude_unset=True)
+    user_action = fields.pop("user_action", None)
     try:
         return await holding_import_service.update_item(
             identity.user_id,
             import_id,
             item_id,
-            user_action=payload.user_action,
-            fund_code=payload.fund_code,
-            market_value=payload.market_value,
-            shares=payload.shares,
-            cost_amount=payload.cost_amount,
-            average_cost_nav=payload.average_cost_nav,
-            profit_loss=payload.profit_loss,
-            profit_loss_rate=payload.profit_loss_rate,
+            user_action=user_action,
+            **fields,
         )
     except ImportStateError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+        raise _state_error_to_http(e) from e
 
 
 @router.post("/{import_id}/confirm", response_model=ImportConfirmResponse)
@@ -143,7 +152,7 @@ async def confirm_import(
     try:
         result = await holding_import_service.confirm_import(identity.user_id, import_id)
     except ImportStateError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+        raise _state_error_to_http(e) from e
     return ImportConfirmResponse(import_id=import_id, applied=result["applied"], skipped=result["skipped"])
 
 
@@ -158,7 +167,7 @@ async def delete_import(
     try:
         deleted = await holding_import_service.delete_import(identity.user_id, import_id)
     except ImportStateError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+        raise _state_error_to_http(e) from e
     if not deleted:
         raise HTTPException(status_code=404, detail="import_not_found")
     return {"message": "cancelled"}

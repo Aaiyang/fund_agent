@@ -36,4 +36,7 @@ class IndexHistoryResponse(BaseResponse):
     name: str
     range: NavRange | None = None
     points: list[IndexPoint]
+    # Fraction over the window (0.022 = +2.2%), matching FundPerformance's
+    # `return_*` fields — unlike the watchlist `*_return` fields, which are
+    # already percent points.
     period_return: float | None = None

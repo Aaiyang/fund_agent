@@ -62,15 +62,22 @@ class MarketService:
         coverage = await index_repository.get_coverage(index_code)
         if coverage is not None and _covers(coverage, start, today):
             return
-        if not await cache_service.acquire_lock(cache_key("index_sync", index_code), ttl=_SYNC_TTL_SECONDS):
+        lock_key = cache_key("index_sync", index_code)
+        if not await cache_service.acquire_lock(lock_key, ttl=_SYNC_TTL_SECONDS):
             return
 
-        quotes = await akshare_fund_provider.get_index_history(index_code)
-        if not quotes:
-            logger.warning("index_history_empty", index_code=index_code)
-            return
-        await index_repository.upsert_quotes(quotes)
-        logger.info("index_history_synced", index_code=index_code, rows=len(quotes))
+        try:
+            quotes = await akshare_fund_provider.get_index_history(index_code)
+            if quotes:
+                await index_repository.upsert_quotes(quotes)
+                logger.info("index_history_synced", index_code=index_code, rows=len(quotes))
+            else:
+                logger.warning("index_history_empty", index_code=index_code)
+        except Exception as e:
+            # A read must not 500 because the benchmark source is unhappy:
+            # serve whatever is already stored, and let the next request retry.
+            logger.warning("index_history_sync_failed", index_code=index_code, error=str(e))
+            await cache_service.release_lock(lock_key)
 
 
 def _covers(coverage: tuple[date, date], start: date | None, today: date) -> bool:

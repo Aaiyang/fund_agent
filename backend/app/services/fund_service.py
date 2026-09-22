@@ -115,7 +115,13 @@ class FundService:
 
         local_funds = await fund_repository.search_funds(keyword_clean)
         if not local_funds and AKSHARE_AVAILABLE:
-            external = await akshare_fund_provider.search_funds(keyword_clean)
+            try:
+                external = await akshare_fund_provider.search_funds(keyword_clean)
+            except Exception as e:
+                # A provider outage is an empty result page, not a 500: the
+                # caller already sees local matches when the table has them.
+                logger.warning("fund_external_search_failed", keyword=keyword_clean, error=str(e))
+                external = []
             for record in external[:50]:
                 await fund_write_repository.upsert_fund_from_record(record)
             local_funds = await fund_repository.search_funds(keyword_clean)
@@ -293,8 +299,8 @@ class FundService:
                     fund_sync_service.sync_fund(fund_code),
                     timeout=settings.AKSHARE_TIMEOUT_SECONDS * 2,
                 )
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.warning("fund_inline_sync_failed", fund_code=fund_code, error=str(e))
+            except Exception:
+                logger.exception("fund_inline_sync_failed", fund_code=fund_code)
             return
 
         if await fund_sync_service.is_nav_stale(fund_code):
@@ -365,8 +371,13 @@ class FundService:
 
     @staticmethod
     def _to_points(history: list[FundNav]) -> list[NavPoint]:
-        """Convert NAV rows to analytics points, ascending by date."""
-        return [NavPoint(date=row.nav_date, nav=row.unit_nav or 0.0) for row in history]
+        """Convert NAV rows to analytics points, ascending by date.
+
+        Rows without a unit NAV are dropped rather than read as 0.0: a zero on
+        the series makes every window anchored on it report a -100% return and
+        a -100% maximum drawdown.
+        """
+        return [NavPoint(date=row.nav_date, nav=row.unit_nav) for row in history if row.unit_nav is not None]
 
     @staticmethod
     def _encode_funds(funds: list[Fund]) -> str:

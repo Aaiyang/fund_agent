@@ -13,6 +13,8 @@ from alembic import context
 from app.core.config import settings
 from app.models.fund import Fund, FundNav  # noqa: F401
 from app.models.holding_import import HoldingImport, HoldingImportItem  # noqa: F401
+from app.models.job import BackgroundJob  # noqa: F401
+from app.models.market import IndexQuote  # noqa: F401
 from app.models.portfolio import PortfolioAccount, PortfolioPosition, Transaction  # noqa: F401
 from app.models.session import Session  # noqa: F401
 from app.models.thread import Thread  # noqa: F401

@@ -362,12 +362,13 @@ async def refresh_access_token(request: Request, refresh_token: str = Form(...))
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Logout revokes by stamping the user: anything minted before the stamp is dead.
     # Both sides are naive UTC here — Postgres columns store UTC wall time without tz.
+    # `iat` has one-second resolution, so a token minted in the same second as the
+    # logout must count as revoked too: compare with <=.
     revoked_at = user.refresh_revoked_at
     issued_at = payload.get("iat")
     if revoked_at is not None and isinstance(issued_at, (int, float)):
-        if datetime.fromtimestamp(issued_at, UTC).replace(tzinfo=None) < revoked_at:
+        if datetime.fromtimestamp(issued_at, UTC).replace(tzinfo=None) <= revoked_at:
             logger.warning("refresh_token_revoked", user_id=user.id)
             raise HTTPException(
                 status_code=401,
@@ -418,10 +419,12 @@ async def get_current_user_info(request: Request, user: User = Depends(get_curre
 
 
 @router.post("/session", response_model=SessionResponse)
-async def create_session(user: User = Depends(get_current_user)):
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def create_session(request: Request, user: User = Depends(get_current_user)):
     """Create a new chat session for the authenticated user.
 
     Args:
+        request: The FastAPI request object for rate limiting.
         user: The authenticated user
 
     Returns:
@@ -452,12 +455,17 @@ async def create_session(user: User = Depends(get_current_user)):
 
 
 @router.patch("/session/{session_id}/name", response_model=SessionResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
 async def update_session_name(
-    session_id: str, name: str = Form(...), current_session: Session = Depends(get_current_session)
+    request: Request,
+    session_id: str,
+    name: str = Form(...),
+    current_session: Session = Depends(get_current_session),
 ):
     """Update a session's name.
 
     Args:
+        request: The FastAPI request object for rate limiting.
         session_id: The ID of the session to update
         name: The new name for the session
         current_session: The current session from auth
@@ -488,10 +496,12 @@ async def update_session_name(
 
 
 @router.delete("/session/{session_id}")
-async def delete_session(session_id: str, current_session: Session = Depends(get_current_session)):
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def delete_session(request: Request, session_id: str, current_session: Session = Depends(get_current_session)):
     """Delete a session for the authenticated user.
 
     Args:
+        request: The FastAPI request object for rate limiting.
         session_id: The ID of the session to delete
         current_session: The current session from auth
 
@@ -517,10 +527,12 @@ async def delete_session(session_id: str, current_session: Session = Depends(get
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
-async def get_user_sessions(user: User = Depends(get_current_user)):
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def get_user_sessions(request: Request, user: User = Depends(get_current_user)):
     """Get all session IDs for the authenticated user.
 
     Args:
+        request: The FastAPI request object for rate limiting.
         user: The authenticated user
 
     Returns:

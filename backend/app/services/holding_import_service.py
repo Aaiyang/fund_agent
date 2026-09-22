@@ -243,7 +243,16 @@ class HoldingImportService:
         item.validation_status = validated.validation_status
         item.validation_issues = validated.validation_issues
         await import_repository.update_item(item)
-        return self._item_out(item, None, None)
+        # Carry the same diff fields the detail view shows; without them the
+        # review page loses "当前持仓 / 版本" after every edit.
+        current = None
+        if item.matched_fund_code:
+            current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
+        return self._item_out(
+            item,
+            current.market_value if current else None,
+            current.version if current else None,
+        )
 
     # ------------------------------------------------------------------
     # Confirm / cancel

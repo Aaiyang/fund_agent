@@ -1,7 +1,7 @@
 """Fund sync orchestration: lock-guarded, idempotent external data sync."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from app.core.cache import cache_key, cache_service
 from app.core.config import settings
@@ -11,7 +11,7 @@ from app.core.task_queue import enqueue
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
 from app.repositories.fund_repository import fund_repository, fund_write_repository
 from app.repositories.job_repository import job_repository
-from app.utils.clock import business_today, utc_now
+from app.utils.clock import business_close_utc, business_today, utc_now
 from app.workers import FUND_SYNC_TASK
 
 
@@ -129,7 +129,9 @@ class FundSyncService:
         if latest is None:
             return True
         cutoff = utc_now() - timedelta(hours=settings.FUND_NAV_STALE_HOURS)
-        fetched = latest.fetched_at or datetime.combine(latest.nav_date, datetime.min.time())
+        # A row without fetched_at only carries a business date: compare against
+        # that day's market close in UTC, not midnight local.
+        fetched = latest.fetched_at or business_close_utc(latest.nav_date)
         return fetched < cutoff
 
 
