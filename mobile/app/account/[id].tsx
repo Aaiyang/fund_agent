@@ -7,7 +7,7 @@ import { Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { FundRow } from '@/components/FundRow';
 import { theme } from '@/constants/theme';
 import { useAccounts, usePositions, useUpdateAccount } from '@/hooks/usePortfolio';
-import { formatDateTime } from '@/utils/format';
+import { formatDateTime, formatRate } from '@/utils/format';
 
 /** One account: rename, review its holdings and last import (spec 3.6). */
 export default function AccountDetailScreen() {
@@ -59,7 +59,7 @@ export default function AccountDetailScreen() {
                   latestNav={position.market_value}
                   dailyReturn={position.daily_return}
                   navDate={position.nav_date}
-                  extra={`占比 ${((position.position_ratio ?? 0) * 100).toFixed(2)}%`}
+                  extra={`占比 ${formatRate(position.position_ratio)}`}
                 />
               ))}
             </View>

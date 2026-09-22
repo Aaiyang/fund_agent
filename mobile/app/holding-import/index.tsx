@@ -5,6 +5,7 @@ import { Async, EmptyState } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useImportHistory } from '@/hooks/useImports';
+import { formatDateTime } from '@/utils/format';
 
 const STATUS_LABEL: Record<string, string> = {
   UPLOADED: '已上传',
@@ -50,7 +51,7 @@ export default function HoldingImportScreen() {
                   />
                   <Text style={{ fontSize: 12, color: theme.textMuted }}>
                     账户 #{item.account_id} · 识别 {item.items_detected} 条 · 确认 {item.items_confirmed} 条 ·{' '}
-                    {new Date(item.created_at ?? '').toLocaleString()}
+                    {formatDateTime(item.created_at)}
                   </Text>
                   {item.error_message ? (
                     <Text style={{ fontSize: 12, color: theme.danger, marginTop: 4 }}>{item.error_message}</Text>

@@ -65,7 +65,15 @@ export default function ImportReviewScreen() {
               {batch.status === 'REVIEW_REQUIRED' ? (
                 <Card>
                   <Button
-                    label={`确认导入 ${(batch.items ?? []).filter((item) => (item.user_action ?? 'UPDATE') === 'UPDATE').length} 条`}
+                    label={`确认导入 ${
+                      // Mirrors confirm_import's rule: an error row defaults to
+                      // SKIP, and an unmatched row can never be applied.
+                      (batch.items ?? []).filter(
+                        (item) =>
+                          !!item.matched_fund_code &&
+                          (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'UPDATE',
+                      ).length
+                    } 条`}
                     loading={confirm.isPending}
                     onPress={() =>
                       confirm.mutate(undefined, {

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { Button, Card, Field } from '@/components/ui';
@@ -55,8 +55,12 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
-      <Card>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={{ flex: 1, padding: 16 }}>
+        <Card>
         <Text style={{ fontSize: 20, fontWeight: '700', color: theme.text, marginBottom: 4 }}>
           {mode === 'login' ? '登录 Fund Agent' : '注册新账号'}
         </Text>
@@ -80,7 +84,8 @@ export default function LoginScreen() {
             }}
           />
         </View>
-      </Card>
-    </View>
+        </Card>
+      </View>
+    </KeyboardAvoidingView>
   );
 }

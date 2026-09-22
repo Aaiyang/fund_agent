@@ -6,7 +6,9 @@
 import { create } from 'zustand';
 
 import { request } from '@/api/client';
+import { queryClient } from '@/api/queryClient';
 import { clearTokens, loadTokens, saveTokens } from '@/api/tokenStore';
+import { useUiStore } from '@/stores/ui';
 import type { components } from '@/api/schema';
 
 export type CurrentUser = components['schemas']['CurrentUserResponse'];
@@ -77,6 +79,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // A failed revocation must not leave the user stuck in the app.
     }
     await clearTokens();
+    // Cached server data belongs to this user: leaving it in place would render
+    // the previous account's holdings until each query went stale.
+    queryClient.clear();
+    useUiStore.getState().reset();
     set({ status: 'anonymous', user: null });
   },
 }));

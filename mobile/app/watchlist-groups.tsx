@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Button, Card, Chip, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
+import { useUiStore } from '@/stores/ui';
+import { confirmAction } from '@/utils/confirm';
 import {
   useCreateWatchlistGroup,
   useDeleteWatchlistGroup,
@@ -19,6 +21,8 @@ export default function WatchlistGroupsScreen() {
   const create = useCreateWatchlistGroup();
   const update = useUpdateWatchlistGroup();
   const remove = useDeleteWatchlistGroup();
+  const groupId = useUiStore((state) => state.groupId);
+  const setGroupId = useUiStore((state) => state.setGroupId);
   const [name, setName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
 
@@ -80,14 +84,27 @@ export default function WatchlistGroupsScreen() {
                 ))}
               </View>
               {data.items.map((group) => (
-                <GroupRow key={group.id} group={group} update={update} remove={remove} />
+                <GroupRow
+                  key={group.id}
+                  group={group}
+                  update={update}
+                  remove={remove}
+                  onDeleted={() => {
+                    // A filter pointing at a deleted group would leave the 自选
+                    // tab showing an empty list with no way to get out of it.
+                    if (selectedGroup === group.id) setSelectedGroup(null);
+                    if (groupId === group.id) setGroupId(null);
+                  }}
+                />
               ))}
             </View>
           )}
         </Async>
       </Card>
 
-      {selectedGroup !== null ? <GroupOrderEditor groupId={selectedGroup} update={update} /> : null}
+      {/* key remounts per group: the editor seeds its order from the group it
+          was opened for and would otherwise carry the previous group's list. */}
+      {selectedGroup !== null ? <GroupOrderEditor key={selectedGroup} groupId={selectedGroup} update={update} /> : null}
     </Screen>
   );
 }
@@ -96,10 +113,12 @@ function GroupRow({
   group,
   update,
   remove,
+  onDeleted,
 }: {
   group: WatchlistGroup;
   update: ReturnType<typeof useUpdateWatchlistGroup>;
   remove: ReturnType<typeof useDeleteWatchlistGroup>;
+  onDeleted: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -163,10 +182,7 @@ function GroupRow({
         <Pressable
           hitSlop={10}
           onPress={() =>
-            Alert.alert('删除分组', `“${group.name}”将被删除，组内基金仍保留在自选。`, [
-              { text: '取消', style: 'cancel' },
-              { text: '删除', style: 'destructive', onPress: () => remove.mutate(group.id) },
-            ])
+            confirmAction('删除分组', `“${group.name}”将被删除，组内基金仍保留在自选。`, () => remove.mutate(group.id, { onSuccess: onDeleted }))
           }
         >
           <Text style={{ color: theme.danger, fontSize: 13 }}>删除</Text>

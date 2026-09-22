@@ -1,29 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Redirect, Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
-import { ApiError } from '@/api/client';
+import { queryClient } from '@/api/queryClient';
 import { useAuthStore } from '@/stores/auth';
 import { theme } from '@/constants/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Already hidden or not available on this platform.
-});
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      // Client-side rejections (401/404/409/422) never succeed on retry.
-      retry: (failureCount, error) => {
-        const status = error instanceof ApiError ? error.status : undefined;
-        if (status && status >= 400 && status < 500) return false;
-        return failureCount < 2;
-      },
-    },
-  },
 });
 
 export default function RootLayout() {

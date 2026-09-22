@@ -52,7 +52,8 @@ export function useFundNav(code: string | null, range: NavRange) {
  */
 export function useFundNavPages(code: string | null, pageSize = 30) {
   return useInfiniteQuery({
-    queryKey: queryKeys.fundNavPages(code ?? ''),
+    // pageSize is a request input, so it belongs in the key.
+    queryKey: queryKeys.fundNavPages(code ?? '', pageSize),
     queryFn: ({ pageParam }) =>
       api.get<NavHistory>(`/funds/${code}/nav`, { limit: pageSize, before_date: pageParam }),
     initialPageParam: null as string | null,
@@ -73,7 +74,12 @@ export function useRefreshFund(code: string | null) {
     onSuccess: async () => {
       // The worker writes asynchronously; give it a moment, then re-read.
       await new Promise((resolve) => setTimeout(resolve, 2500));
-      await client.invalidateQueries({ queryKey: queryKeys.funds });
+      // Watchlist and holding rows render the same NAV, so they are stale too.
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.funds }),
+        client.invalidateQueries({ queryKey: queryKeys.watchlist }),
+        client.invalidateQueries({ queryKey: queryKeys.portfolio }),
+      ]);
     },
   });
 }

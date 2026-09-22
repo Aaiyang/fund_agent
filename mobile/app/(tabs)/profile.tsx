@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Alert, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Async } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
@@ -7,6 +7,7 @@ import { FundRow } from '@/components/FundRow';
 import { theme } from '@/constants/theme';
 import { useImportHistory } from '@/hooks/useImports';
 import { useAuthStore } from '@/stores/auth';
+import { confirmAction } from '@/utils/confirm';
 import { formatDateTime } from '@/utils/format';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -25,10 +26,9 @@ export default function ProfileScreen() {
   const history = useImportHistory();
 
   function confirmSignOut() {
-    Alert.alert('退出登录', '退出后需要重新登录，且此前签发的刷新令牌会失效。', [
-      { text: '取消', style: 'cancel' },
-      { text: '退出', style: 'destructive', onPress: () => void signOut().then(() => router.replace('/login')) },
-    ]);
+    confirmAction('退出登录', '退出后需要重新登录，且此前签发的刷新令牌会失效。', () =>
+      void signOut().then(() => router.replace('/login')),
+    );
   }
 
   return (

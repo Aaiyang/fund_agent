@@ -12,6 +12,8 @@ type UiState = {
   groupId: number | null;
   setAccountId: (accountId: number | null) => void;
   setGroupId: (groupId: number | null) => void;
+  /** Drop back to the defaults; used when the signed-in user changes. */
+  reset: () => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -19,4 +21,5 @@ export const useUiStore = create<UiState>((set) => ({
   groupId: null,
   setAccountId: (accountId) => set({ accountId }),
   setGroupId: (groupId) => set({ groupId }),
+  reset: () => set({ accountId: null, groupId: null }),
 }));

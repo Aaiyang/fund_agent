@@ -55,11 +55,18 @@ export function NavChart({
 
   const fundBase = fund[0].value;
   const fundSeries = fund.map((point) => ({ ...point, change: (point.value / fundBase - 1) * 100 }));
+  const windowStart = fund[0].time;
+  const windowEnd = fund[fund.length - 1].time;
 
-  const benchmarkRaw = toSeries(benchmark?.points ?? [], (point) => point.trade_date, (point) => point.close);
+  // Trim the benchmark to the fund's own window and index it from the first
+  // close inside it: a longer-lived index would otherwise start left of the
+  // axis (clipped) and quote a change over a different period than the fund.
+  const benchmarkWindow = toSeries(benchmark?.points ?? [], (point) => point.trade_date, (point) => point.close).filter(
+    (point) => point.time >= windowStart && point.time <= windowEnd,
+  );
   const benchmarkSeries =
-    benchmarkRaw.length >= 2
-      ? benchmarkRaw.map((point) => ({ ...point, change: (point.value / benchmarkRaw[0].value - 1) * 100 }))
+    benchmarkWindow.length >= 2
+      ? benchmarkWindow.map((point) => ({ ...point, change: (point.value / benchmarkWindow[0].value - 1) * 100 }))
       : [];
 
   const costChange = costNav && costNav > 0 ? (costNav / fundBase - 1) * 100 : null;

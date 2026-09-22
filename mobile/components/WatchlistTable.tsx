@@ -8,7 +8,7 @@
  */
 
 import { Link } from 'expo-router';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -83,6 +83,16 @@ export function WatchlistTable({
   pendingCode?: string;
 }) {
   const headRef = useRef<ScrollView>(null);
+  const gridRef = useRef<ScrollView>(null);
+  const columnKey = items.map((item) => item.fund_code).join(',');
+
+  useEffect(() => {
+    // The header mirrors the grid, so a grid that keeps its offset while the
+    // rows are replaced (group switch, delete) leaves titles over the wrong
+    // columns until the next scroll.
+    gridRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    headRef.current?.scrollTo({ x: 0, animated: false });
+  }, [columnKey]);
 
   const followGrid = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     headRef.current?.scrollTo({ x: event.nativeEvent.contentOffset.x, animated: false });
@@ -147,7 +157,7 @@ export function WatchlistTable({
           </View>
 
           <View style={{ flex: 1, overflow: 'hidden' }}>
-            <ScrollView horizontal onScroll={followGrid} scrollEventThrottle={16} showsHorizontalScrollIndicator={false}>
+            <ScrollView ref={gridRef} horizontal onScroll={followGrid} scrollEventThrottle={16} showsHorizontalScrollIndicator={false}>
               <View style={{ width: GRID_W }}>
                 {items.map((item) => (
                   <View

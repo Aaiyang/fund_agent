@@ -1,11 +1,12 @@
 import { router } from 'expo-router';
-import { Alert, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useAccounts, useDeleteAccount } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
+import { confirmAction } from '@/utils/confirm';
 import { formatDateTime } from '@/utils/format';
 
 /** Account management: create, switch, rename, delete (spec 3.6). */
@@ -50,13 +51,10 @@ export default function AccountListScreen() {
                         label="删除"
                         variant="danger"
                         onPress={() =>
-                          Alert.alert(
+                          confirmAction(
                             '删除账户',
                             `“${account.name}”的持仓、调整记录与导入批次都会一并删除，且无法恢复。`,
-                            [
-                              { text: '取消', style: 'cancel' },
-                              { text: '确认删除', style: 'destructive', onPress: () => remove.mutate(account.id) },
-                            ],
+                            () => remove.mutate(account.id),
                           )
                         }
                       />
