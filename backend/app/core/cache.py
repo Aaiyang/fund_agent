@@ -6,6 +6,7 @@ Otherwise, falls back to a simple in-memory TTL cache.
 
 import hashlib
 import time
+import uuid
 from typing import (
     TYPE_CHECKING,
     Awaitable,
@@ -31,6 +32,15 @@ else:
         logger.debug("redis_not_available")
         Redis = None
         REDIS_AVAILABLE = False
+
+
+# Deletes the key only when it still holds the token we wrote.
+_RELEASE_LOCK_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
 class InMemoryCacheService:
@@ -104,6 +114,8 @@ class InMemoryCacheService:
         entry = self._cache.get(key)
         if entry is not None and time.monotonic() <= entry[0]:
             return False
+        # One process is the only possible holder here, so there is nothing to
+        # distinguish it from: the cross-worker hazard lives in the Redis path.
         self._cache[key] = (time.monotonic() + ttl, "lock")
         return True
 
@@ -131,6 +143,9 @@ class ValkeyCacheService:
         """
         self._client: Optional[Redis] = None
         self._default_ttl = default_ttl
+        # Key -> token this process wrote; release must not drop a lock that
+        # expired and was then taken by another worker.
+        self._lock_tokens: dict[str, str] = {}
 
     async def initialize(self) -> None:
         """Connect to Redis/Valkey server."""
@@ -228,8 +243,12 @@ class ValkeyCacheService:
         """
         if not self._client:
             return True
+        token = uuid.uuid4().hex
         try:
-            return bool(await self._client.set(key, "lock", nx=True, ex=ttl))
+            acquired = bool(await self._client.set(key, token, nx=True, ex=ttl))
+            if acquired:
+                self._lock_tokens[key] = token
+            return acquired
         except Exception as e:
             logger.warning("cache_lock_acquire_failed", key=key, error=str(e))
             return True
@@ -240,10 +259,13 @@ class ValkeyCacheService:
         Args:
             key: The lock key.
         """
-        if not self._client:
+        token = self._lock_tokens.pop(key, None)
+        if not self._client or token is None:
             return
         try:
-            await self._client.delete(key)
+            # Compare-and-delete: a plain DELETE would free whoever holds the
+            # lock after ours timed out.
+            await self._client.eval(_RELEASE_LOCK_SCRIPT, 1, key, token)
         except Exception as e:
             logger.warning("cache_lock_release_failed", key=key, error=str(e))
 

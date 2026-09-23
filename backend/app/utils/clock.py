@@ -29,6 +29,16 @@ def business_today() -> date:
     return datetime.now(ZoneInfo(settings.FUND_BUSINESS_TZ)).date()
 
 
+def business_now() -> datetime:
+    """Current wall-clock time where the fund market runs.
+
+    For display and prompt context only. Host-local time would tell the model
+    the wrong hour (and therefore the wrong trading session), and this value
+    must never be written to a timestamp column — use :func:`utc_now` for that.
+    """
+    return datetime.now(ZoneInfo(settings.FUND_BUSINESS_TZ))
+
+
 def business_close_utc(trade_date: date) -> datetime:
     """Naive UTC instant of a business day's market close.
 

@@ -4,6 +4,7 @@ Sits between the ScreenshotImportProvider and the Vision/OCR adapter so the
 provider stays business-logic-only (MVP spec 3.7.2 component split).
 """
 
+import asyncio
 import hashlib
 from datetime import date
 from pathlib import Path
@@ -41,7 +42,9 @@ class ScreenshotPositionExtractor:
         seen_hashes: set[str] = set()
 
         for path in image_paths:
-            digest = image_hash(path)
+            # Hashing reads the whole file: up to 8MB per screenshot, so it
+            # must not run on the event loop.
+            digest = await asyncio.to_thread(image_hash, path)
             hashes.append(digest)
             if digest in seen_hashes:
                 logger.info("screenshot_duplicate_skipped", digest=digest)

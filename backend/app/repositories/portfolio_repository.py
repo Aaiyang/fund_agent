@@ -4,6 +4,8 @@ from datetime import date
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.core.database import get_async_session
@@ -156,6 +158,19 @@ class PortfolioRepository:
             )
             return result.scalar_one_or_none()
 
+    async def _select_position(
+        self, session: AsyncSession, user_id: int, account_id: int, fund_code: str
+    ) -> PortfolioPosition | None:
+        """Load one position inside an open session."""
+        result = await session.execute(
+            select(PortfolioPosition).where(
+                col(PortfolioPosition.user_id) == user_id,
+                col(PortfolioPosition.account_id) == account_id,
+                col(PortfolioPosition.fund_code) == fund_code,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def upsert_position(
         self,
         user_id: int,
@@ -189,20 +204,12 @@ class PortfolioRepository:
         spec 3.7.1 allows partial snapshots and forbids fabricating data.
         """
         async with get_async_session() as session:
-            existing = (
-                await session.execute(
-                    select(PortfolioPosition).where(
-                        col(PortfolioPosition.user_id) == user_id,
-                        col(PortfolioPosition.account_id) == account_id,
-                        col(PortfolioPosition.fund_code) == fund_code,
-                    )
-                )
-            ).scalar_one_or_none()
+            existing = await self._select_position(session, user_id, account_id, fund_code)
 
             if existing is None:
                 if expected_version is not None:
                     return None  # caller expected an existing row — treat as conflict
-                position = PortfolioPosition(
+                statement = pg_insert(PortfolioPosition).values(
                     user_id=user_id,
                     account_id=account_id,
                     fund_code=fund_code,
@@ -211,12 +218,20 @@ class PortfolioRepository:
                     average_cost_nav=average_cost_nav,
                     market_value=market_value,
                     profit_loss=profit_loss,
+                    version=1,
+                    updated_at=utc_now(),
+                    created_at=utc_now(),
                 )
-                position.version = 1
-                position.updated_at = utc_now()
-                session.add(position)
-                await session.flush()
-                return position
+                created = (
+                    await session.execute(statement.on_conflict_do_nothing(constraint="uq_position_account_fund"))
+                ).rowcount
+                if created:
+                    return await self._select_position(session, user_id, account_id, fund_code)
+                # A concurrent first write won the race; update that row instead
+                # of raising the unique constraint as a 500.
+                existing = await self._select_position(session, user_id, account_id, fund_code)
+                if existing is None:
+                    return None
 
             if expected_version is not None and existing.version != expected_version:
                 return None  # optimistic lock conflict

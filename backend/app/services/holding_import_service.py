@@ -129,7 +129,7 @@ class HoldingImportService:
             return
 
         started = time.monotonic()
-        image_paths = self._existing_image_paths(import_id)
+        image_paths = await asyncio.to_thread(self._existing_image_paths, import_id)
         try:
             draft = await ScreenshotImportProvider().parse(
                 HoldingImportPayload(

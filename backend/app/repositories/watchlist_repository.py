@@ -2,11 +2,13 @@
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col
 
 from app.core.database import get_async_session
 from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist, WatchlistGroup, WatchlistGroupItem
+from app.utils.clock import utc_now
 
 
 class WatchlistRepository:
@@ -28,19 +30,24 @@ class WatchlistRepository:
             return list(result.scalars().all())
 
     async def add_fund(self, user_id: int, fund_code: str) -> Watchlist:
-        """Add a fund to the watchlist (idempotent)."""
+        """Add a fund to the watchlist, idempotently.
+
+        INSERT ... ON CONFLICT DO NOTHING: the read-then-insert version let two
+        concurrent first adds both see no row, and the loser surfaced the unique
+        constraint as a 500.
+        """
         async with get_async_session() as session:
-            existing = (
-                await session.execute(
-                    select(Watchlist).where(col(Watchlist.user_id) == user_id, col(Watchlist.fund_code) == fund_code)
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                return existing
-            entry = Watchlist(user_id=user_id, fund_code=fund_code)
-            session.add(entry)
-            await session.flush()
-            return entry
+            statement = pg_insert(Watchlist).values(
+                user_id=user_id,
+                fund_code=fund_code,
+                sort_order=0,
+                created_at=utc_now(),
+            )
+            await session.execute(statement.on_conflict_do_nothing(constraint="uq_watchlist_user_fund"))
+            result = await session.execute(
+                select(Watchlist).where(col(Watchlist.user_id) == user_id, col(Watchlist.fund_code) == fund_code)
+            )
+            return result.scalar_one()
 
     async def remove_fund(self, user_id: int, fund_code: str) -> bool:
         """Remove a fund (and its group memberships). Returns True if removed."""

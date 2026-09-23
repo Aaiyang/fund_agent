@@ -1,10 +1,10 @@
 """This file contains the prompts for the agent."""
 
 import os
-from datetime import datetime
 from typing import Optional
 
 from app.core.config import settings
+from app.utils.clock import business_now
 
 _PROMPTS_DIR = os.path.dirname(__file__)
 
@@ -21,7 +21,9 @@ def load_system_prompt(username: Optional[str] = None, **kwargs):
     user_context = f"# User\nYou are talking to {username}.\n" if username else ""
     return _SYSTEM_PROMPT_TEMPLATE.format(
         agent_name=settings.PROJECT_NAME + " Agent",
-        current_date_and_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        # The market's clock, not the host's: the host zone would tell the
+        # model the wrong hour and therefore the wrong trading session.
+        current_date_and_time=business_now().strftime("%Y-%m-%d %H:%M:%S %Z"),
         user_context=user_context,
         **kwargs,
     )

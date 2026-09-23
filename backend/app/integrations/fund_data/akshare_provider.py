@@ -212,25 +212,33 @@ class AKShareFundProvider:
             logger.warning("akshare_not_available", func_name=func_name)
             return []
 
-        async with self._semaphore:
+        # The permit is returned by the worker thread's completion callback, not
+        # when this coroutine resumes: a started thread cannot be cancelled, so
+        # releasing on timeout would let real concurrency creep past
+        # AKSHARE_MAX_CONCURRENCY by one stuck call at a time.
+        await self._semaphore.acquire()
+        try:
+            future = asyncio.get_running_loop().run_in_executor(None, self._call_sync, func_name, *args, **kwargs)
+        except Exception:
+            self._semaphore.release()
+            raise
+        future.add_done_callback(lambda _future: self._semaphore.release())
+
+        try:
             await self._throttle()
-            try:
-                records = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_sync, func_name, *args, **kwargs),
-                    timeout=settings.AKSHARE_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "akshare_call_timeout",
-                    func_name=func_name,
-                    timeout_seconds=settings.AKSHARE_TIMEOUT_SECONDS,
-                )
-                raise TimeoutError(f"akshare call {func_name} timed out")
-            except Exception as e:
-                logger.warning("akshare_call_failed", func_name=func_name, error=str(e))
-                raise
-            logger.debug("akshare_call_successful", func_name=func_name, rows=len(records))
-            return records
+            records = await asyncio.wait_for(future, timeout=settings.AKSHARE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "akshare_call_timeout",
+                func_name=func_name,
+                timeout_seconds=settings.AKSHARE_TIMEOUT_SECONDS,
+            )
+            raise TimeoutError(f"akshare call {func_name} timed out")
+        except Exception as e:
+            logger.warning("akshare_call_failed", func_name=func_name, error=str(e))
+            raise
+        logger.debug("akshare_call_successful", func_name=func_name, rows=len(records))
+        return records
 
     def _call_sync(self, func_name: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         """Blocking AKShare invocation — always runs inside a worker thread."""
