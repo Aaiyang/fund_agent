@@ -139,7 +139,17 @@ export default function FundDetailScreen() {
 
       {detail.data ? (
         <Card>
-          <SectionTitle title="业绩走势" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>业绩走势</Text>
+            <BenchmarkDropdown
+              items={catalog.data?.items ?? []}
+              selected={benchmarkCode}
+              open={pickingBenchmark}
+              onToggle={() => setPickingBenchmark((open) => !open)}
+              onClose={() => setPickingBenchmark(false)}
+              onPick={setBenchmarkCode}
+            />
+          </View>
           <Async query={nav}>
             {(data) => (
               <NavChart
@@ -159,14 +169,6 @@ export default function FundDetailScreen() {
                 <Chip key={item.key} label={item.label} active={range === item.key} onPress={() => setRange(item.key)} />
               ))}
             </ScrollView>
-            <BenchmarkDropdown
-              items={catalog.data?.items ?? []}
-              selected={benchmarkCode}
-              open={pickingBenchmark}
-              onToggle={() => setPickingBenchmark((open) => !open)}
-              onClose={() => setPickingBenchmark(false)}
-              onPick={setBenchmarkCode}
-            />
           </View>
           {detail.data.performance ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
