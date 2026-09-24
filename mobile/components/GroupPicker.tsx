@@ -90,7 +90,7 @@ export function GroupPicker({
               <TextInput
                 value={newName}
                 onChangeText={setNewName}
-                placeholder="新建分组名称"
+                placeholder="请输入新分组名称"
                 placeholderTextColor={theme.textFaint}
                 style={{
                   flex: 1,

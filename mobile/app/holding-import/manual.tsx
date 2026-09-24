@@ -92,7 +92,7 @@ export default function ManualImportScreen() {
             onChangeText={(text) => updateRow(index, { query: text, code: null, name: null })}
             onPick={(fund) => updateRow(index, { query: fund.name, code: fund.code, name: fund.name })}
           />
-          <Field label="当前持有金额" value={row.market_value} onChangeText={(value) => updateRow(index, { market_value: value })} keyboardType="numeric" placeholder="881.99" />
+          <Field label="当前持有金额" value={row.market_value} onChangeText={(value) => updateRow(index, { market_value: value })} keyboardType="numeric" placeholder="请输入当前持有金额" />
         </Card>
       ))}
 

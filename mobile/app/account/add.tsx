@@ -35,7 +35,7 @@ export default function AccountAddScreen() {
     <Screen>
       <Card>
         <SectionTitle title="账户信息" />
-        <Field label="账户名称" value={name} onChangeText={setName} placeholder="例如 支付宝理财" />
+        <Field label="账户名称" value={name} onChangeText={setName} placeholder="请输入账户名称" />
         <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6 }}>来源标签</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
           {SOURCE_LABELS.map((label) => (

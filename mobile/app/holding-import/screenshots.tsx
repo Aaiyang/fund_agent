@@ -87,7 +87,7 @@ export default function ScreenshotImportScreen() {
           ))}
           <Chip label="+ 新增账户" onPress={() => router.push('/account/add')} />
         </View>
-        <Field label="来源应用标签（可选）" value={sourceApp} onChangeText={setSourceApp} placeholder="支付宝 / 天天基金 / 银行" />
+        <Field label="来源应用标签（可选）" value={sourceApp} onChangeText={setSourceApp} placeholder="请输入来源应用名称" />
       </Card>
 
       <Card>

@@ -67,10 +67,10 @@ export default function LoginScreen() {
         <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>
           {mode === 'login' ? '使用邮箱与密码登录' : '注册后自动登录，数据仅保存在本实例数据库'}
         </Text>
-        <Field label="邮箱" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="you@example.com" />
-        <Field label="密码" value={password} onChangeText={setPassword} secureTextEntry placeholder="至少 8 位，含大小写、数字与符号" />
+        <Field label="邮箱" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="请输入邮箱" />
+        <Field label="密码" value={password} onChangeText={setPassword} secureTextEntry placeholder="请输入密码（至少 8 位，含大小写、数字与符号）" />
         {mode === 'register' ? (
-          <Field label="昵称（可选）" value={username} onChangeText={setUsername} placeholder="用于 Agent 称呼你" />
+          <Field label="昵称（可选）" value={username} onChangeText={setUsername} placeholder="请输入昵称" />
         ) : null}
         {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
         <Button label={mode === 'login' ? '登录' : '注册并登录'} onPress={submit} loading={busy} />

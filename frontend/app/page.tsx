@@ -240,7 +240,7 @@ function AuthScreen({
                     autoComplete="nickname"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="例如：杨浩"
+                    placeholder="请输入显示名称"
                     className="h-11 bg-white/[0.035]"
                   />
                 </div>
@@ -254,7 +254,7 @@ function AuthScreen({
                   required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@example.com"
+                  placeholder="请输入邮箱"
                   className="h-11 bg-white/[0.035]"
                 />
               </div>
@@ -270,7 +270,7 @@ function AuthScreen({
                   minLength={8}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="至少 8 位"
+                  placeholder="请输入密码（至少 8 位）"
                   className="h-11 bg-white/[0.035]"
                 />
                 {mode === 'register' && (

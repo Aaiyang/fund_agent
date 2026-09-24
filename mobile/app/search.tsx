@@ -41,7 +41,7 @@ export default function SearchScreen() {
         <TextInput
           value={keyword}
           onChangeText={setKeyword}
-          placeholder="基金代码 / 名称 / 模糊关键词"
+          placeholder="请输入基金代码或名称"
           placeholderTextColor={theme.textFaint}
           autoCapitalize="none"
           style={{

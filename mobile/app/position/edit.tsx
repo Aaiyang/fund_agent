@@ -135,23 +135,23 @@ function PositionForm({
 
       <Card>
         <SectionTitle title="持仓快照" />
-        <Field label="基金代码" value={fundCode} onChangeText={setFundCode} keyboardType="numeric" placeholder="011452" />
+        <Field label="基金代码" value={fundCode} onChangeText={setFundCode} keyboardType="numeric" placeholder="请输入基金代码" />
         <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
           {existing
             ? `已存在持仓：市值 ${text(existing.market_value)} · 版本 v${existing.version}`
             : '该账户下还没有这只基金的持仓'}
         </Text>
-        <Field label="持有金额" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" placeholder="881.99" />
-        <Field label="持有份额（可选）" value={shares} onChangeText={setShares} keyboardType="numeric" placeholder="295.1" />
-        <Field label="持仓成本（可选）" value={costAmount} onChangeText={setCostAmount} keyboardType="numeric" placeholder="1019.19" />
+        <Field label="持有金额" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" placeholder="请输入当前持有金额" />
+        <Field label="持有份额（可选）" value={shares} onChangeText={setShares} keyboardType="numeric" placeholder="请输入持有份额" />
+        <Field label="持仓成本（可选）" value={costAmount} onChangeText={setCostAmount} keyboardType="numeric" placeholder="请输入持仓成本" />
         <Field
           label="平均成本净值（可选）"
           value={averageCostNav}
           onChangeText={setAverageCostNav}
           keyboardType="numeric"
-          placeholder="3.4537"
+          placeholder="请输入平均成本净值"
         />
-        <Field label="持有收益（可选）" value={profitLoss} onChangeText={setProfitLoss} keyboardType="numeric" placeholder="-137.20" />
+        <Field label="持有收益（可选）" value={profitLoss} onChangeText={setProfitLoss} keyboardType="numeric" placeholder="请输入持有收益" />
         <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
           只填你确定知道的字段：留空的字段保持原值，系统不会推算缺失数据。
         </Text>

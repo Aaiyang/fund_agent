@@ -33,7 +33,7 @@ export default function WatchlistGroupsScreen() {
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="分组名称，例如 CPO / 创新药"
+          placeholder="请输入分组名称"
           placeholderTextColor={theme.textFaint}
           style={{
             borderWidth: 1,

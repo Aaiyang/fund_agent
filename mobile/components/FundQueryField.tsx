@@ -41,7 +41,7 @@ export function FundQueryField({
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder="基金代码 / 名称 / 模糊关键词"
+        placeholder="请输入基金代码或名称"
         placeholderTextColor={theme.textFaint}
         style={{
           borderWidth: 1,
@@ -61,7 +61,11 @@ export function FundQueryField({
         <View style={{ marginTop: 6 }}>
           {suggestions.length === 0 ? (
             <Text style={{ fontSize: 12, color: theme.textFaint }}>
-              {search.isFetching ? '搜索中…' : '没有匹配项，也可直接提交，由后端识别'}
+              {search.isFetching
+                ? '搜索中…'
+                : search.isError
+                  ? '搜索请求失败，可直接提交，由后端识别'
+                  : '没有匹配项，也可直接提交，由后端识别'}
             </Text>
           ) : null}
           {suggestions.map((item) => (
