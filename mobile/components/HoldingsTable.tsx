@@ -1,6 +1,7 @@
 /**
  * Holdings grid: the same {@link DataTable} layout as 自选, with the derived
- * holding metrics (占比/收益) as horizontally scrollable columns.
+ * holding metrics (占比/收益) as horizontally scrollable columns. The holding
+ * amount stays in the fixed name column so it never scrolls out of view.
  */
 
 import { DataTable, type DataColumn } from '@/components/DataTable';
@@ -9,7 +10,6 @@ import type { PositionItem } from '@/hooks/usePortfolio';
 import { formatDate, formatMoney, formatNumber, formatRate, formatReturnPoints, formatSignedMoney, trendColor } from '@/utils/format';
 
 const COLUMNS: DataColumn<PositionItem>[] = [
-  { key: 'value', title: '持有金额', width: 92, cell: (item) => ({ text: formatMoney(item.market_value) }) },
   { key: 'ratio', title: '占比', width: 68, cell: (item) => ({ text: formatRate(item.position_ratio) }) },
   {
     key: 'daily',
@@ -50,7 +50,7 @@ const COLUMNS: DataColumn<PositionItem>[] = [
   },
 ];
 
-export function HoldingsTable({ items, accountNames }: { items: PositionItem[]; accountNames: Record<number, string> }) {
+export function HoldingsTable({ items }: { items: PositionItem[] }) {
   return (
     <DataTable
       items={items}
@@ -60,7 +60,7 @@ export function HoldingsTable({ items, accountNames }: { items: PositionItem[]; 
       fundCodeOf={(item) => item.fund_code}
       nameOf={(item) => ({
         title: item.fund_name ?? item.fund_code,
-        sub: [item.fund_code, accountNames[item.account_id] ?? `账户 #${item.account_id}`].join(' · '),
+        sub: `${item.fund_code} · ${formatMoney(item.market_value)}`,
       })}
       columns={COLUMNS}
       hint="左右滑动查看其它列 · 占比与收益由后端在查询时计算，不落库"

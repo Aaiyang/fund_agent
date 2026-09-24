@@ -72,7 +72,7 @@ export default function HoldingsScreen() {
             ) : null
           }
         >
-          {(data) => <HoldingsTable items={data.items} accountNames={Object.fromEntries((accounts.data?.items ?? []).map((account) => [account.id, account.name]))} />}
+          {(data) => <HoldingsTable items={data.items} />}
         </Async>
       </Card>
     </Screen>
