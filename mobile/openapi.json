@@ -177,6 +177,51 @@
             "HTTPBearer": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Update Current User Info",
+        "description": "Change the signed-in user's display name and/or email (spec 3.1).\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    payload: Fields to change; omitted fields keep their current value.\n    user: The authenticated user.\n\nReturns:\n    CurrentUserResponse: The profile after the update.\n\nRaises:\n    HTTPException: 400 when the new email already belongs to another user.",
+        "operationId": "update_current_user_info_api_v1_auth_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/auth/session": {
@@ -4774,6 +4819,39 @@
         ],
         "title": "UserCreate",
         "description": "Request model for user registration.\n\nAttributes:\n    email: User's email address\n    password: User's password\n    username: Optional display name"
+      },
+      "UserProfileUpdateRequest": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "New email address"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username",
+            "description": "New display name"
+          }
+        },
+        "type": "object",
+        "title": "UserProfileUpdateRequest",
+        "description": "Request model for PATCH /auth/me. Omitted fields stay unchanged.\n\nAttributes:\n    email: New email address, or None to keep it\n    username: New display name; an empty string clears it"
       },
       "UserResponse": {
         "properties": {

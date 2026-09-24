@@ -92,6 +92,18 @@ class UserCreate(BaseModel):
         return v
 
 
+class UserProfileUpdateRequest(BaseModel):
+    """Request model for PATCH /auth/me. Omitted fields stay unchanged.
+
+    Attributes:
+        email: New email address, or None to keep it
+        username: New display name; an empty string clears it
+    """
+
+    email: EmailStr | None = Field(default=None, description="New email address")
+    username: str | None = Field(default=None, description="New display name", max_length=50)
+
+
 class UserResponse(BaseResponse):
     """Response model for user operations.
 

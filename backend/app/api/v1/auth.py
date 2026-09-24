@@ -34,6 +34,7 @@ from app.schemas.auth import (
     SessionResponse,
     TokenResponse,
     UserCreate,
+    UserProfileUpdateRequest,
     UserResponse,
 )
 from app.services.database import database_service
@@ -416,6 +417,41 @@ async def get_current_user_info(request: Request, user: User = Depends(get_curre
         CurrentUserResponse: Profile without credentials.
     """
     return CurrentUserResponse(id=user.id, email=user.email, username=user.username, created_at=user.created_at)
+
+
+@router.patch("/me", response_model=CurrentUserResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["auth"][0])
+async def update_current_user_info(
+    request: Request,
+    payload: UserProfileUpdateRequest,
+    user: User = Depends(get_current_user),
+) -> CurrentUserResponse:
+    """Change the signed-in user's display name and/or email (spec 3.1).
+
+    Args:
+        request: The FastAPI request object for rate limiting.
+        payload: Fields to change; omitted fields keep their current value.
+        user: The authenticated user.
+
+    Returns:
+        CurrentUserResponse: The profile after the update.
+
+    Raises:
+        HTTPException: 400 when the new email already belongs to another user.
+    """
+    email = sanitize_email(payload.email) if payload.email else None
+    username = sanitize_string(payload.username) if payload.username is not None else None
+
+    if email and email != user.email:
+        if await db_service.get_user_by_email(email):
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+    updated = await db_service.update_user(user.id, email=email, username=username)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return CurrentUserResponse(
+        id=updated.id, email=updated.email, username=updated.username, created_at=updated.created_at
+    )
 
 
 @router.post("/session", response_model=SessionResponse)

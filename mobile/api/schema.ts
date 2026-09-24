@@ -144,7 +144,22 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Current User Info
+         * @description Change the signed-in user's display name and/or email (spec 3.1).
+         *
+         *     Args:
+         *         request: The FastAPI request object for rate limiting.
+         *         payload: Fields to change; omitted fields keep their current value.
+         *         user: The authenticated user.
+         *
+         *     Returns:
+         *         CurrentUserResponse: The profile after the update.
+         *
+         *     Raises:
+         *         HTTPException: 400 when the new email already belongs to another user.
+         */
+        patch: operations["update_current_user_info_api_v1_auth_me_patch"];
         trace?: never;
     };
     "/api/v1/auth/session": {
@@ -1984,6 +1999,26 @@ export interface components {
             username?: string | null;
         };
         /**
+         * UserProfileUpdateRequest
+         * @description Request model for PATCH /auth/me. Omitted fields stay unchanged.
+         *
+         *     Attributes:
+         *         email: New email address, or None to keep it
+         *         username: New display name; an empty string clears it
+         */
+        UserProfileUpdateRequest: {
+            /**
+             * Email
+             * @description New email address
+             */
+            email?: string | null;
+            /**
+             * Username
+             * @description New display name
+             */
+            username?: string | null;
+        };
+        /**
          * UserResponse
          * @description Response model for user operations.
          *
@@ -2321,6 +2356,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentUserResponse"];
+                };
+            };
+        };
+    };
+    update_current_user_info_api_v1_auth_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

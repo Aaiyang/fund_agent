@@ -24,6 +24,7 @@ type AuthState = {
   bootstrap: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, username?: string) => Promise<void>;
+  updateProfile: (input: { email?: string; username?: string }) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -70,6 +71,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Registration returns an access token only; sign in again to also get the
     // refresh token the client needs for long-lived sessions.
     await get().signIn(email, password);
+  },
+
+  async updateProfile(input) {
+    const user = await request<CurrentUser>('/auth/me', { method: 'PATCH', body: input });
+    set({ user });
   },
 
   async signOut() {

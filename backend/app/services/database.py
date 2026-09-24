@@ -100,6 +100,33 @@ class DatabaseService:
             user = session.get(User, user_id)
             return user
 
+    async def update_user(
+        self, user_id: int, email: Optional[str] = None, username: Optional[str] = None
+    ) -> Optional[User]:
+        """Apply the fields the user changed on their own profile.
+
+        Args:
+            user_id: The signed-in user's ID.
+            email: New address, or None to keep the current one.
+            username: New display name; an empty string clears it.
+
+        Returns:
+            Optional[User]: The updated user, or None when the id is gone.
+        """
+        with Session(self.engine) as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            if email is not None:
+                user.email = email
+            if username is not None:
+                user.username = username.strip() or None
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            logger.info("user_profile_updated", user_id=user_id)
+            return user
+
     async def get_user_by_email(self, email: str) -> Optional[User]:
         """Get a user by email.
 

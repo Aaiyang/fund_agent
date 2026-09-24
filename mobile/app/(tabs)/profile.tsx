@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { Async } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
@@ -34,11 +34,21 @@ export default function ProfileScreen() {
   return (
     <Screen>
       <Card>
-        <Text style={{ fontSize: 17, fontWeight: '700', color: theme.text }}>{user?.username ?? '未设置昵称'}</Text>
-        <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>{user?.email}</Text>
-        <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
-          用户 #{user?.id} · 注册于 {formatDateTime(user?.created_at)}
-        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="编辑资料"
+          onPress={() => router.push('/profile/edit')}
+          style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', opacity: pressed ? 0.7 : 1 }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: theme.text }}>{user?.username ?? '未设置昵称'}</Text>
+            <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>{user?.email}</Text>
+            <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
+              用户 #{user?.id} · 注册于 {formatDateTime(user?.created_at)}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 13, color: theme.primary }}>修改 ›</Text>
+        </Pressable>
       </Card>
 
       <Card>
