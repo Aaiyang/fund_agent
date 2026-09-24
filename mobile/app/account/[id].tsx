@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { Async, EmptyState } from '@/components/states';
+import { Async, EmptyState, describeError } from '@/components/states';
 import { Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { FundRow } from '@/components/FundRow';
 import { theme } from '@/constants/theme';
@@ -18,28 +18,43 @@ export default function AccountDetailScreen() {
   const update = useUpdateAccount();
   const account = accounts.data?.items.find((item) => item.id === accountId);
   const [name, setName] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  function rename() {
+    if (!account) return;
+    const trimmed = (name ?? account.name).trim();
+    const taken = (accounts.data?.items ?? []).some(
+      (other) => other.id !== accountId && other.name.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (taken) {
+      setProblem('该账户名称已存在');
+      return;
+    }
+    setProblem(null);
+    update.mutate(
+      { accountId, name: trimmed },
+      {
+        onSuccess: () => setName(null),
+        onError: (error) => setProblem(describeError(error)),
+      },
+    );
+  }
 
   return (
     <Screen>
       <Card>
         <SectionTitle title={account?.name ?? `账户 #${accountId}`} />
         <Text style={{ fontSize: 12, color: theme.textMuted }}>
-          来源标签 {account?.source_app ?? '--'} · 创建 {formatDateTime(account?.created_at)} · 最近导入{' '}
-          {formatDateTime(account?.last_imported_at)}
+          创建 {formatDateTime(account?.created_at)} · 最近导入 {formatDateTime(account?.last_imported_at)}
         </Text>
-        <Field label="账户名称" value={name ?? account?.name ?? ''} onChangeText={setName} />
+        <Field label="账户名称" value={name ?? account?.name ?? ''} onChangeText={setName} placeholder="请输入账户名称" />
+        {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
         <Button
           label="保存改名"
           variant="secondary"
           loading={update.isPending}
           disabled={!account || !name}
-          onPress={() => {
-            if (!account) return;
-            update.mutate(
-              { accountId, name: (name ?? account.name).trim() },
-              { onSuccess: () => setName(null) },
-            );
-          }}
+          onPress={rename}
         />
       </Card>
 

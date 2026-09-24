@@ -3,7 +3,7 @@
 from datetime import date
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
@@ -40,6 +40,23 @@ class PortfolioRepository:
                 )
             )
             return result.scalar_one_or_none()
+
+    async def find_account_by_name(
+        self, user_id: int, name: str, exclude_id: int | None = None
+    ) -> PortfolioAccount | None:
+        """Load an account whose name matches, ignoring case and padding.
+
+        The unique constraint compares bytes, so "支付宝" and "支付宝 " would
+        both land; the service uses this to reject the near-duplicate first.
+        """
+        async with get_async_session() as session:
+            statement = select(PortfolioAccount).where(
+                col(PortfolioAccount.user_id) == user_id,
+                func.lower(PortfolioAccount.name) == name.strip().lower(),
+            )
+            if exclude_id is not None:
+                statement = statement.where(col(PortfolioAccount.id) != exclude_id)
+            return (await session.execute(statement)).scalar_one_or_none()
 
     async def create_account(
         self,

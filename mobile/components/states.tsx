@@ -70,7 +70,9 @@ export function Async<T>({
 
 export function describeError(error: unknown): string {
   const status = (error as { status?: number } | undefined)?.status;
+  const code = (error as { code?: string } | undefined)?.code;
   const message = error instanceof Error ? error.message : String(error);
+  if (code === 'account_name_taken') return '该账户名称已存在';
   if (status === 401) return '登录已过期，请重新登录';
   if (status === 409) return '数据已被其他操作更新，请刷新后重试';
   return message || '请求失败';

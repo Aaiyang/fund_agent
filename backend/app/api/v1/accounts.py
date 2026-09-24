@@ -16,9 +16,11 @@ from app.schemas.portfolio import (
     AccountUpdateRequest,
     AccountsResponse,
 )
-from app.services.portfolio_service import portfolio_service
+from app.services.portfolio_service import AccountNameConflictError, portfolio_service
 
 router = APIRouter()
+
+NAME_TAKEN_DETAIL = "account_name_taken"
 
 
 @router.get("", response_model=AccountsResponse)
@@ -39,10 +41,13 @@ async def create_account(
     payload: AccountCreateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountItem:
-    """Create a portfolio account (支付宝 / 天天基金 / 银行 / 手工)."""
-    return await portfolio_service.create_account(
-        identity.user_id, payload.name, payload.source_app, payload.account_type, payload.import_mode
-    )
+    """Create a portfolio account; the name must be new for this user."""
+    try:
+        return await portfolio_service.create_account(
+            identity.user_id, payload.name, payload.source_app, payload.account_type, payload.import_mode
+        )
+    except AccountNameConflictError as error:
+        raise HTTPException(status_code=409, detail=NAME_TAKEN_DETAIL) from error
 
 
 @router.get("/{account_id}", response_model=AccountItem)
@@ -69,7 +74,12 @@ async def update_account(
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountItem:
     """Rename an account or change its source label."""
-    updated = await portfolio_service.update_account(identity.user_id, account_id, payload.name, payload.source_app)
+    try:
+        updated = await portfolio_service.update_account(
+            identity.user_id, account_id, payload.name, payload.source_app
+        )
+    except AccountNameConflictError as error:
+        raise HTTPException(status_code=409, detail=NAME_TAKEN_DETAIL) from error
     if updated is None:
         raise HTTPException(status_code=404, detail="account_not_found")
     return updated

@@ -30,6 +30,10 @@ class PortfolioAccount(BaseModel, table=True):
         sa_column_kwargs={"onupdate": utc_now},
     )
 
+    # Two accounts of the same user never share a name: the picker lists them
+    # by name only, so a duplicate is unreadable rather than merely untidy.
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_account_user_name"),)
+
 
 class PortfolioPosition(BaseModel, table=True):
     """Current holdings snapshot for one fund inside one account.

@@ -7,6 +7,8 @@ from stored snapshots + latest NAVs — never persisted, so they can't drift
 
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.logging import logger
 from app.models.portfolio import PortfolioAccount, PortfolioPosition
 from app.repositories.fund_repository import fund_repository
@@ -26,6 +28,15 @@ class PositionConflictError(Exception):
 
 class AccountNotFoundError(Exception):
     """The account does not exist or belongs to another user (spec 16 isolation)."""
+
+
+class AccountNameConflictError(Exception):
+    """Another of the user's accounts already uses this name."""
+
+    def __init__(self, name: str) -> None:
+        """Keep the offending name so the route can echo it back."""
+        super().__init__(name)
+        self.name = name
 
 
 def position_profit(position: PortfolioPosition) -> float:
@@ -74,8 +85,14 @@ class PortfolioService:
         account_type: str,
         import_mode: str,
     ) -> AccountItem:
-        """Create an account."""
-        account = await portfolio_repository.create_account(user_id, name, source_app, account_type, import_mode)
+        """Create an account; names are unique per user."""
+        if await portfolio_repository.find_account_by_name(user_id, name) is not None:
+            raise AccountNameConflictError(name)
+        try:
+            account = await portfolio_repository.create_account(user_id, name, source_app, account_type, import_mode)
+        except IntegrityError as error:
+            # Only a concurrent create can slip past the check above.
+            raise AccountNameConflictError(name) from error
         logger.info("portfolio_account_created", user_id=user_id, account_id=account.id)
         return self._account_item(account)
 
@@ -87,7 +104,12 @@ class PortfolioService:
         source_app: str | None,
     ) -> AccountItem | None:
         """Rename an account / change its source label."""
-        account = await portfolio_repository.update_account(user_id, account_id, name, source_app)
+        if name is not None and await portfolio_repository.find_account_by_name(user_id, name, exclude_id=account_id):
+            raise AccountNameConflictError(name)
+        try:
+            account = await portfolio_repository.update_account(user_id, account_id, name, source_app)
+        except IntegrityError as error:
+            raise AccountNameConflictError(name or "") from error
         return self._account_item(account) if account else None
 
     async def delete_account(self, user_id: int, account_id: int) -> bool:

@@ -703,7 +703,7 @@ export interface paths {
         put?: never;
         /**
          * Create Account
-         * @description Create a portfolio account (支付宝 / 天天基金 / 银行 / 手工).
+         * @description Create a portfolio account; the name must be new for this user.
          */
         post: operations["create_account_api_v1_accounts_post"];
         delete?: never;
