@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
-import { FundRow } from '@/components/FundRow';
+import { HoldingsTable } from '@/components/HoldingsTable';
 import { theme } from '@/constants/theme';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
@@ -72,25 +72,7 @@ export default function HoldingsScreen() {
             ) : null
           }
         >
-          {(data) => (
-            <View>
-              {data.items.map((position) => (
-                <FundRow
-                  key={`${position.account_id}-${position.fund_code}`}
-                  fundCode={position.fund_code}
-                  fundName={position.fund_name ?? position.fund_code}
-                  latestNav={position.market_value}
-                  dailyReturn={position.daily_return}
-                  navDate={position.nav_date}
-                  extra={`占比 ${formatRate(position.position_ratio)} · 持有 ${formatMoney(position.profit_loss)}`}
-                  badges={position.is_updated ? [] : [{ label: '净值未更新', tone: 'muted' }]}
-                />
-              ))}
-              <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 10 }}>
-                左列显示的是持有金额；收益率与占比由后端在查询时计算，不落库。
-              </Text>
-            </View>
-          )}
+          {(data) => <HoldingsTable items={data.items} accountNames={Object.fromEntries((accounts.data?.items ?? []).map((account) => [account.id, account.name]))} />}
         </Async>
       </Card>
     </Screen>
