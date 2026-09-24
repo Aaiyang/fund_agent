@@ -142,7 +142,6 @@ def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundEx
         manager_name=str(_pick(info, "基金经理") or "").strip() or None,
         inception_date=inception,
         asset_size=_text(info, 50, "最新规模", "基金规模", "规模"),
-        benchmark=_text(info, 300, "业绩比较基准"),
     )
 
 

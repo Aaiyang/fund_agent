@@ -161,6 +161,7 @@ export interface paths {
          * @description Create a new chat session for the authenticated user.
          *
          *     Args:
+         *         request: The FastAPI request object for rate limiting.
          *         user: The authenticated user
          *
          *     Returns:
@@ -191,6 +192,7 @@ export interface paths {
          * @description Update a session's name.
          *
          *     Args:
+         *         request: The FastAPI request object for rate limiting.
          *         session_id: The ID of the session to update
          *         name: The new name for the session
          *         current_session: The current session from auth
@@ -216,6 +218,7 @@ export interface paths {
          * @description Delete a session for the authenticated user.
          *
          *     Args:
+         *         request: The FastAPI request object for rate limiting.
          *         session_id: The ID of the session to delete
          *         current_session: The current session from auth
          *
@@ -240,6 +243,7 @@ export interface paths {
          * @description Get all session IDs for the authenticated user.
          *
          *     Args:
+         *         request: The FastAPI request object for rate limiting.
          *         user: The authenticated user
          *
          *     Returns:
@@ -1163,8 +1167,6 @@ export interface components {
             inception_date?: string | null;
             /** Asset Size */
             asset_size?: string | null;
-            /** Benchmark */
-            benchmark?: string | null;
             /** Latest Nav */
             latest_nav?: number | null;
             /** Accumulated Nav */

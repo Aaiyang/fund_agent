@@ -53,7 +53,6 @@ class FundDetailResponse(BaseResponse):
     manager_name: str | None = None
     inception_date: date | None = None
     asset_size: str | None = None
-    benchmark: str | None = None
     latest_nav: float | None = None
     accumulated_nav: float | None = None
     nav_date: date | None = None

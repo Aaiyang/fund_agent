@@ -125,7 +125,7 @@ class TestNormalizeProfile:
         assert profile is not None
         assert profile.inception_date == date(2021, 3, 5)
 
-    def test_reads_scale_and_stated_benchmark(self) -> None:
+    def test_reads_the_stated_scale(self) -> None:
         profile = normalize_profile_rows(
             [
                 {"item": "基金简称", "value": "示例混合"},
@@ -136,15 +136,14 @@ class TestNormalizeProfile:
         )
         assert profile is not None
         assert profile.asset_size == "226.75亿"
-        assert profile.benchmark == "中证800指数收益率*60%+上证国债指数收益率*40%"
 
-    def test_truncates_an_over_long_benchmark(self) -> None:
+    def test_truncates_an_over_long_scale(self) -> None:
         profile = normalize_profile_rows(
-            [{"item": "基金简称", "value": "示例"}, {"item": "业绩比较基准", "value": "长" * 400}],
+            [{"item": "基金简称", "value": "示例"}, {"item": "最新规模", "value": "长" * 60}],
             "011452",
         )
         assert profile is not None
-        assert len(profile.benchmark or "") == 300
+        assert len(profile.asset_size or "") == 50
 
     def test_none_without_a_name(self) -> None:
         assert normalize_profile_rows([{"item": "基金类型", "value": "股票型"}], "011452") is None

@@ -31,7 +31,6 @@ class FundExternalProfile(BaseModel):
     manager_name: str | None = None
     inception_date: date | None = None
     asset_size: str | None = None
-    benchmark: str | None = None
 
 
 class FundExternalNav(BaseModel):

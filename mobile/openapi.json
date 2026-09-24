@@ -185,7 +185,7 @@
           "Auth"
         ],
         "summary": "Create Session",
-        "description": "Create a new chat session for the authenticated user.\n\nArgs:\n    user: The authenticated user\n\nReturns:\n    SessionResponse: The session ID, name, and access token",
+        "description": "Create a new chat session for the authenticated user.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    user: The authenticated user\n\nReturns:\n    SessionResponse: The session ID, name, and access token",
         "operationId": "create_session_api_v1_auth_session_post",
         "responses": {
           "200": {
@@ -212,7 +212,7 @@
           "Auth"
         ],
         "summary": "Update Session Name",
-        "description": "Update a session's name.\n\nArgs:\n    session_id: The ID of the session to update\n    name: The new name for the session\n    current_session: The current session from auth\n\nReturns:\n    SessionResponse: The updated session information",
+        "description": "Update a session's name.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    session_id: The ID of the session to update\n    name: The new name for the session\n    current_session: The current session from auth\n\nReturns:\n    SessionResponse: The updated session information",
         "operationId": "update_session_name_api_v1_auth_session__session_id__name_patch",
         "security": [
           {
@@ -270,7 +270,7 @@
           "Auth"
         ],
         "summary": "Delete Session",
-        "description": "Delete a session for the authenticated user.\n\nArgs:\n    session_id: The ID of the session to delete\n    current_session: The current session from auth\n\nReturns:\n    None",
+        "description": "Delete a session for the authenticated user.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    session_id: The ID of the session to delete\n    current_session: The current session from auth\n\nReturns:\n    None",
         "operationId": "delete_session_api_v1_auth_session__session_id__delete",
         "security": [
           {
@@ -316,7 +316,7 @@
           "Auth"
         ],
         "summary": "Get User Sessions",
-        "description": "Get all session IDs for the authenticated user.\n\nArgs:\n    user: The authenticated user\n\nReturns:\n    List[SessionResponse]: List of session IDs",
+        "description": "Get all session IDs for the authenticated user.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    user: The authenticated user\n\nReturns:\n    List[SessionResponse]: List of session IDs",
         "operationId": "get_user_sessions_api_v1_auth_sessions_get",
         "responses": {
           "200": {
@@ -2779,17 +2779,6 @@
               }
             ],
             "title": "Asset Size"
-          },
-          "benchmark": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Benchmark"
           },
           "latest_nav": {
             "anyOf": [
