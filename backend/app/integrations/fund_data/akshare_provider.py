@@ -7,6 +7,7 @@ minimum-interval throttle, a per-call timeout and tenacity retries
 """
 
 import asyncio
+import functools
 import logging
 import time
 from datetime import date
@@ -218,7 +219,12 @@ class AKShareFundProvider:
         # AKSHARE_MAX_CONCURRENCY by one stuck call at a time.
         await self._semaphore.acquire()
         try:
-            future = asyncio.get_running_loop().run_in_executor(None, self._call_sync, func_name, *args, **kwargs)
+            # run_in_executor forwards positional args only: every AKShare
+            # function here is called with keyword arguments (symbol, indicator),
+            # so they must be bound before the call or the executor rejects them.
+            future = asyncio.get_running_loop().run_in_executor(
+                None, functools.partial(self._call_sync, func_name, *args, **kwargs)
+            )
         except Exception:
             self._semaphore.release()
             raise
