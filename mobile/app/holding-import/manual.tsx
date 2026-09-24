@@ -9,9 +9,9 @@ import { theme } from '@/constants/theme';
 import { useCreateManualImport, type ManualPosition } from '@/hooks/useImports';
 import { useAccounts } from '@/hooks/usePortfolio';
 
-type DraftRow = { query: string; code: string | null; name: string | null; market_value: string };
+type DraftRow = { query: string; code: string | null; name: string | null; market_value: string; profit_loss: string };
 
-const EMPTY_ROW: DraftRow = { query: '', code: null, name: null, market_value: '' };
+const EMPTY_ROW: DraftRow = { query: '', code: null, name: null, market_value: '', profit_loss: '' };
 
 /** Manual batch entry: parsed into a draft, confirmed on the review page. */
 export default function ManualImportScreen() {
@@ -46,6 +46,7 @@ export default function ManualImportScreen() {
         fund_code: row.code ?? (digits ? query : null),
         fund_name: row.name ?? (digits ? null : query),
         market_value: toNumber(row.market_value),
+        profit_loss: toNumber(row.profit_loss),
       };
     });
     create.mutate(
@@ -93,6 +94,7 @@ export default function ManualImportScreen() {
             onPick={(fund) => updateRow(index, { query: fund.name, code: fund.code, name: fund.name })}
           />
           <Field label="当前持有金额" value={row.market_value} onChangeText={(value) => updateRow(index, { market_value: value })} keyboardType="numeric" placeholder="请输入当前持有金额" />
+          <Field label="持有收益（可选）" value={row.profit_loss} onChangeText={(value) => updateRow(index, { profit_loss: value })} keyboardType="numeric" placeholder="请输入持有收益" />
         </Card>
       ))}
 
