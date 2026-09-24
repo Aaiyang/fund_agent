@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { Async, LoadingState } from '@/components/states';
+import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useConfirmImport, useDeleteImport, useImportDetail, useUpdateImportItem, type ImportItem } from '@/hooks/useImports';
@@ -79,10 +79,22 @@ export default function ImportReviewScreen() {
                       confirm.mutate(undefined, {
                         onSuccess: (data) =>
                           setResult(`已写入 ${data.applied} 条持仓，跳过 ${data.skipped} 条。原图已删除。`),
+                        onError: (error) => setResult(`确认失败：${describeError(error)}`),
                       })
                     }
                   />
-                  <Button label="取消并删除该批次" variant="danger" onPress={() => remove.mutate(importId, { onSuccess: () => router.back() })} />
+                  <View style={{ marginTop: 10 }}>
+                    <Button
+                      label="取消并删除该批次"
+                      variant="danger"
+                      onPress={() =>
+                        remove.mutate(importId, {
+                          onSuccess: () => router.back(),
+                          onError: (error) => setResult(`删除失败：${describeError(error)}`),
+                        })
+                      }
+                    />
+                  </View>
                   {result ? <Text style={{ fontSize: 13, color: theme.primary, marginTop: 10 }}>{result}</Text> : null}
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 10 }}>
                     确认后按“覆盖当前快照”写入，并记一条 IMPORT_ADJUSTMENT 审计记录；系统不会据此推断买卖流水。
@@ -116,6 +128,7 @@ function ItemCard({
   updateItem: ReturnType<typeof useUpdateImportItem>;
 }) {
   const [marketValue, setMarketValue] = useState(item.market_value === null || item.market_value === undefined ? '' : String(item.market_value));
+  const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
 
   return (
@@ -158,13 +171,17 @@ function ItemCard({
             label="保存修正"
             variant="secondary"
             loading={updateItem.isPending}
-            onPress={() =>
-              updateItem.mutate({
-                importId,
-                itemId: item.id,
-                market_value: marketValue.trim() === '' ? null : Number(marketValue),
-              })
-            }
+            onPress={() => {
+              setProblem(null);
+              updateItem.mutate(
+                {
+                  importId,
+                  itemId: item.id,
+                  market_value: marketValue.trim() === '' ? null : Number(marketValue),
+                },
+                { onError: (error) => setProblem(describeError(error)) },
+              );
+            }}
           />
         </View>
         <View style={{ flex: 1, marginLeft: 6 }}>
@@ -172,10 +189,17 @@ function ItemCard({
             label={skipped ? '改为导入' : '跳过这条'}
             variant={skipped ? 'primary' : 'secondary'}
             loading={updateItem.isPending}
-            onPress={() => updateItem.mutate({ importId, itemId: item.id, user_action: skipped ? 'UPDATE' : 'SKIP' })}
+            onPress={() => {
+              setProblem(null);
+              updateItem.mutate(
+                { importId, itemId: item.id, user_action: skipped ? 'UPDATE' : 'SKIP' },
+                { onError: (error) => setProblem(describeError(error)) },
+              );
+            }}
           />
         </View>
       </View>
+      {problem ? <Text style={{ fontSize: 12, color: theme.danger, marginTop: 8 }}>{problem}</Text> : null}
     </Card>
   );
 }

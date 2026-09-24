@@ -45,15 +45,27 @@ export function Async<T>({
   children: (data: T) => ReactNode;
   empty?: (data: T) => ReactNode;
 }) {
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) {
-    return <ErrorState message={describeError(query.error)} onRetry={() => void query.refetch()} />;
-  }
   const data = query.data;
-  if (data === undefined || data === null) return <EmptyState title="暂无数据" />;
+  // A failed *background* refetch keeps the data already loaded but still flips
+  // isError on, so the error branch must not win over retained data: that would
+  // swap a working screen (and its buttons) for a bare 重试 after any edit.
+  if (data === undefined || data === null) {
+    if (query.isPending) return <LoadingState />;
+    if (query.isError) {
+      return <ErrorState message={describeError(query.error)} onRetry={() => void query.refetch()} />;
+    }
+    return <EmptyState title="暂无数据" />;
+  }
   const placeholder = empty ? empty(data) : null;
   if (placeholder) return placeholder;
-  return <>{children(data)}</>;
+  return (
+    <>
+      {query.isError ? (
+        <Text style={{ fontSize: 12, color: theme.warning, marginBottom: 8 }}>刷新失败，下面是上次加载的结果</Text>
+      ) : null}
+      {children(data)}
+    </>
+  );
 }
 
 export function describeError(error: unknown): string {
