@@ -1,6 +1,6 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { Async, EmptyState, LoadingState, describeError } from '@/components/states';
@@ -80,7 +80,14 @@ export default function FundDetailScreen() {
   const recentNav = [...navPoints].reverse().slice(0, NAV_ROWS_COLLAPSED);
 
   return (
-    <Screen>
+    <Screen refreshing={refresh.isPending} onRefresh={code ? () => refresh.mutate() : undefined}>
+      {pickingBenchmark ? (
+        <Pressable
+          accessibilityLabel="关闭基准下拉"
+          onPress={() => setPickingBenchmark(false)}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+        />
+      ) : null}
       <Stack.Screen options={{ headerRight: () => <StarButton active={isWatchlisted} onPress={toggleWatchlist} /> }} />
 
       {detail.isPending ? <LoadingState /> : null}
@@ -132,7 +139,7 @@ export default function FundDetailScreen() {
 
       {detail.data ? (
         <Card>
-          <SectionTitle title="业绩走势" action="同步净值" onAction={() => refresh.mutate()} />
+          <SectionTitle title="业绩走势" />
           <Async query={nav}>
             {(data) => (
               <NavChart
@@ -152,17 +159,14 @@ export default function FundDetailScreen() {
                 <Chip key={item.key} label={item.label} active={range === item.key} onPress={() => setRange(item.key)} />
               ))}
             </ScrollView>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="切换业绩比较基准"
-              onPress={() => setPickingBenchmark(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 6 }}
-            >
-              <Text style={{ fontSize: 12, color: theme.textMuted }}>
-                {catalog.data?.items.find((item) => item.index_code === benchmarkCode)?.name ?? '选基准'}
-              </Text>
-              <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 2 }}>▾</Text>
-            </Pressable>
+            <BenchmarkDropdown
+              items={catalog.data?.items ?? []}
+              selected={benchmarkCode}
+              open={pickingBenchmark}
+              onToggle={() => setPickingBenchmark((open) => !open)}
+              onClose={() => setPickingBenchmark(false)}
+              onPick={setBenchmarkCode}
+            />
           </View>
           {detail.data.performance ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
@@ -186,7 +190,7 @@ export default function FundDetailScreen() {
         <Async query={nav}>
           {(data) =>
             data.points.length === 0 ? (
-              <EmptyState title="还没有净值记录" hint="点“同步净值”拉取历史" />
+              <EmptyState title="还没有净值记录" hint="下拉刷新可触发同步" />
             ) : (
               <View>
                 <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border, paddingBottom: 6 }}>
@@ -267,17 +271,6 @@ export default function FundDetailScreen() {
         <Text style={{ fontSize: 12, color: theme.primary, marginTop: 10, textAlign: 'center' }}>{notice}</Text>
       ) : null}
 
-      <BenchmarkPicker
-        visible={pickingBenchmark}
-        items={catalog.data?.items ?? []}
-        selected={benchmarkCode}
-        onCancel={() => setPickingBenchmark(false)}
-        onPick={(indexCode) => {
-          setBenchmarkCode(indexCode);
-          setPickingBenchmark(false);
-        }}
-      />
-
       <GroupPicker
         visible={pickingGroup}
         fundName={detail.data?.fund_name ?? code ?? ''}
@@ -313,47 +306,67 @@ function StarButton({ active, onPress }: { active: boolean; onPress: () => void 
   );
 }
 
-function BenchmarkPicker({
-  visible,
+function BenchmarkDropdown({
   items,
   selected,
-  onCancel,
+  open,
+  onToggle,
+  onClose,
   onPick,
 }: {
-  visible: boolean;
   items: { index_code: string; name: string }[];
   selected: string | null;
-  onCancel: () => void;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
   onPick: (indexCode: string | null) => void;
 }) {
+  const options = [...items.map((item) => ({ value: item.index_code, label: item.name })), { value: null, label: '不比较' }];
+  const current = options.find((option) => option.value === selected)?.label ?? '选基准';
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      {/* No accessibilityRole here: RN-web renders a <button>, and the option
-          rows inside it would be nested buttons. */}
-      <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center' }}>
-        <View style={{ backgroundColor: theme.surface, marginHorizontal: 28, borderRadius: theme.radius, padding: theme.gap }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text, marginBottom: 10 }}>选择比较基准</Text>
-          <ScrollView style={{ maxHeight: 320 }}>
-            {items.map((item) => (
-              <Pressable
-                key={item.index_code}
-                accessibilityRole="button"
-                onPress={() => onPick(item.index_code)}
-                style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: theme.border }}
-              >
-                <Text style={{ fontSize: 15, color: selected === item.index_code ? theme.primary : theme.text }}>{item.name}</Text>
-              </Pressable>
-            ))}
-            <Pressable accessibilityRole="button" onPress={() => onPick(null)} style={{ paddingVertical: 12 }}>
-              <Text style={{ fontSize: 15, color: selected === null ? theme.primary : theme.textMuted }}>不比较</Text>
-            </Pressable>
-          </ScrollView>
-          <View style={{ marginTop: 8 }}>
-            <Button label="取消" variant="secondary" onPress={onCancel} />
-          </View>
-        </View>
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="切换比较基准"
+        onPress={onToggle}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 6 }}
+      >
+        <Text style={{ fontSize: 12, color: theme.textMuted }}>{current}</Text>
+        <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 2 }}>{open ? '▴' : '▾'}</Text>
       </Pressable>
-    </Modal>
+      {open ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: '100%',
+            right: 0,
+            marginTop: 4,
+            minWidth: 128,
+            backgroundColor: theme.surface,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: theme.border,
+            paddingVertical: 4,
+            zIndex: 20,
+            elevation: 6,
+          }}
+        >
+          {options.map((option) => (
+            <Pressable
+              key={option.value ?? 'none'}
+              accessibilityRole="menuitem"
+              onPress={() => {
+                onPick(option.value);
+                onClose();
+              }}
+              style={{ paddingHorizontal: 12, paddingVertical: 9 }}
+            >
+              <Text style={{ fontSize: 13, color: option.value === selected ? theme.primary : theme.text }}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

@@ -1,18 +1,33 @@
 /** Small layout and text primitives shared by every screen. */
 
 import { type ReactNode } from 'react';
-import { type StyleProp, type ViewStyle, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { type StyleProp, type ViewStyle, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
 
-export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
+export function Screen({
+  children,
+  scroll = true,
+  refreshing,
+  onRefresh,
+}: {
+  children: ReactNode;
+  scroll?: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}) {
   return (
     <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
       {scroll ? (
         <ScrollView
           contentContainerStyle={{ padding: theme.gap, paddingBottom: 32 }}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={Boolean(refreshing)} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+            ) : undefined
+          }
         >
           {children}
         </ScrollView>

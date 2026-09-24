@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { type GestureResponderEvent, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
@@ -42,8 +42,11 @@ export function NavChart({
   costNav?: number | null;
 }) {
   const [width, setWidth] = useState(0);
-  const [markerLabel, setMarkerLabel] = useState<string | null>(null);
+  // The pinned day carries the window it was picked in: after a range switch
+  // the stored date belongs to another series, so the crosshair drops itself.
+  const [pinned, setPinned] = useState<{ window: string; label: string } | null>(null);
   const fund = toSeries(points, (point) => point.nav_date, (point) => point.unit_nav);
+  const windowKey = `${points[0]?.nav_date ?? ''}:${points[points.length - 1]?.nav_date ?? ''}`;
 
   if (fund.length < 2) {
     return (
@@ -86,19 +89,26 @@ export function NavChart({
   const lastChange = last.change;
   const benchmarkChange = benchmarkSeries.length ? benchmarkSeries[benchmarkSeries.length - 1].change : null;
 
-  // A tapped day keeps the crosshair and the readout on that date; tapping the
-  // same day again clears it. Keyed by date so a range change cannot dangle.
-  const marker = markerLabel ? fundSeries.find((point) => point.label === markerLabel) ?? null : null;
+  // A pressed day keeps the crosshair and the readout on that date; the legend
+  // above mirrors it, so the pair stays in sync while the finger slides.
+  const marker = pinned && pinned.window === windowKey ? fundSeries.find((point) => point.label === pinned.label) ?? null : null;
   const markerBenchmark = marker && benchmarkSeries.length ? nearestByTime(benchmarkSeries, marker.time) : null;
   const shownFundChange = marker ? marker.change : lastChange;
   const shownBenchmarkChange = marker && markerBenchmark ? markerBenchmark.change : benchmarkChange;
 
-  const locate = (locationX: number) => {
-    if (width <= 0) return;
+  const locate = (event: GestureResponderEvent) => {
+    const locationX = event.nativeEvent.locationX;
+    if (width <= 0 || locationX === undefined || locationX === null) return;
     const ratio = Math.min(Math.max(locationX / width, 0), 1);
     const nearest = nearestByTime(fundSeries, first.time + ratio * (last.time - first.time));
-    setMarkerLabel(nearest.label === markerLabel ? null : nearest.label);
+    setPinned({ window: windowKey, label: nearest.label });
   };
+
+  // The date chip is a fixed-width box, so it is pulled back inside the plot
+  // at both ends of the series instead of overrunning the card.
+  const CHIP_W = 78;
+  const markerX = marker ? x(marker.time) : 0;
+  const chipLeft = marker ? Math.min(Math.max(markerX - CHIP_W / 2, 0), Math.max(width - CHIP_W, 0)) : 0;
 
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
@@ -113,7 +123,14 @@ export function NavChart({
       </View>
 
       {width > 0 ? (
-        <Pressable accessibilityLabel="点选某日查看当日累计涨跌幅" onPress={(event) => locate(event.nativeEvent.locationX ?? 0)}>
+        <View
+          accessibilityLabel="点选或左右拖动查看某日的累计涨跌幅"
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={locate}
+          onResponderMove={locate}
+        >
           <Svg width={width} height={HEIGHT}>
             <Line x1={0} y1={y(0)} x2={width} y2={y(0)} stroke={theme.border} strokeWidth={1} />
             {costChange !== null ? (
@@ -151,7 +168,25 @@ export function NavChart({
               <Circle cx={x(last.time)} cy={y(lastChange)} r={3} fill={lastChange >= 0 ? theme.up : theme.down} />
             )}
           </Svg>
-        </Pressable>
+          {marker ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: chipLeft,
+                width: CHIP_W,
+                borderRadius: 4,
+                backgroundColor: theme.surface,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingVertical: 2,
+              }}
+            >
+              <Text style={{ fontSize: 10, color: theme.text, textAlign: 'center' }}>{formatDate(marker.label)}</Text>
+            </View>
+          ) : null}
+        </View>
       ) : (
         <View style={{ height: HEIGHT }} />
       )}
