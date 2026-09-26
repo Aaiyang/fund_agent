@@ -31,3 +31,12 @@ export function useIndexHistory(indexCode: string | null, range: NavRange) {
     enabled: Boolean(indexCode),
   });
 }
+
+/** Home-page market tape: closes move once a day, so 5 minutes is fresh enough. */
+export function useIndexQuotes() {
+  return useQuery({
+    queryKey: queryKeys.indexQuotes,
+    queryFn: () => api.get<components['schemas']['IndexQuotesResponse']>('/indexes/quotes'),
+    staleTime: 1000 * 60 * 5,
+  });
+}

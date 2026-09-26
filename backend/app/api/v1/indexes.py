@@ -6,7 +6,7 @@ from app.api.v1.auth import AuthIdentity, get_current_identity
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.schemas.fund import NavRange
-from app.schemas.market import IndexCatalogResponse, IndexHistoryResponse
+from app.schemas.market import IndexCatalogResponse, IndexHistoryResponse, IndexQuotesResponse
 from app.services.market_service import market_service
 
 router = APIRouter()
@@ -21,6 +21,17 @@ async def list_indexes(
     """Benchmarks the fund-detail comparison line can be switched to."""
     items = market_service.catalog()
     return IndexCatalogResponse(items=items, total=len(items))
+
+
+@router.get("/quotes", response_model=IndexQuotesResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["indexes"][0])
+async def list_index_quotes(
+    request: Request,
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> IndexQuotesResponse:
+    """Latest close and day change for every benchmark, for the home tape."""
+    items = await market_service.get_quotes()
+    return IndexQuotesResponse(items=items, total=len(items))
 
 
 @router.get("/{index_code}/history", response_model=IndexHistoryResponse)

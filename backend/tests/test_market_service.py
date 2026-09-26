@@ -2,7 +2,7 @@
 
 from datetime import date, timedelta
 
-from app.services.market_service import _covers, _window_change
+from app.services.market_service import _covers, _daily_change, _window_change
 from app.schemas.market import IndexPoint
 
 TODAY = date(2026, 9, 22)
@@ -32,3 +32,15 @@ class TestWindowChange:
             IndexPoint(trade_date=date(2026, 9, 22), close=108.0),
         ]
         assert _window_change(points) == 0.08
+
+
+class TestDailyChange:
+    def test_close_to_close_change_in_percent_points(self) -> None:
+        assert _daily_change([4500.0, 4439.144]) == -1.3524
+
+    def test_needs_two_sessions(self) -> None:
+        assert _daily_change([4439.144]) is None
+        assert _daily_change([]) is None
+
+    def test_flat_series_is_zero(self) -> None:
+        assert _daily_change([100.0, 100.0]) == 0.0

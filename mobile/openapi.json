@@ -994,6 +994,33 @@
         ]
       }
     },
+    "/api/v1/indexes/quotes": {
+      "get": {
+        "tags": [
+          "Indexes"
+        ],
+        "summary": "List Index Quotes",
+        "description": "Latest close and day change for every benchmark, for the home tape.",
+        "operationId": "list_index_quotes_api_v1_indexes_quotes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexQuotesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/indexes/{index_code}/history": {
       "get": {
         "tags": [
@@ -4134,6 +4161,87 @@
         ],
         "title": "IndexPoint",
         "description": "One trading day's closing level."
+      },
+      "IndexQuoteItem": {
+        "properties": {
+          "index_code": {
+            "type": "string",
+            "title": "Index Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_code",
+          "name"
+        ],
+        "title": "IndexQuoteItem",
+        "description": "One index's latest close and its day change."
+      },
+      "IndexQuotesResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IndexQuoteItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "IndexQuotesResponse",
+        "description": "GET /indexes/quotes response."
       },
       "ManualImportRequest": {
         "properties": {

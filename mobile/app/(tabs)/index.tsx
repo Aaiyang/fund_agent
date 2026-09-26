@@ -5,9 +5,18 @@ import { Async, EmptyState } from '@/components/states';
 import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
 import { HoldingsTable } from '@/components/HoldingsTable';
 import { theme } from '@/constants/theme';
+import { useIndexQuotes } from '@/hooks/useIndexes';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
-import { formatDateTime, formatMoney, formatRate, formatSignedMoney, trendColor } from '@/utils/format';
+import {
+  formatDateTime,
+  formatMoney,
+  formatNumber,
+  formatRate,
+  formatReturnPoints,
+  formatSignedMoney,
+  trendColor,
+} from '@/utils/format';
 
 export default function HoldingsScreen() {
   const accountId = useUiStore((state) => state.accountId);
@@ -15,6 +24,7 @@ export default function HoldingsScreen() {
   const summary = usePortfolioSummary(accountId);
   const positions = usePositions(accountId);
   const accounts = useAccounts();
+  const quotes = useIndexQuotes();
 
   return (
     <Screen
@@ -35,6 +45,17 @@ export default function HoldingsScreen() {
           <Text style={{ fontSize: 11, color: theme.textFaint }}>
             共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
           </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 2 }}>
+            {(quotes.data?.items ?? []).map((index) => (
+              <View key={index.index_code} style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 16 }}>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>{index.name}</Text>
+                <Text style={{ fontSize: 13, color: theme.text, marginLeft: 5 }}>{formatNumber(index.close, 2)}</Text>
+                <Text style={{ fontSize: 12, color: trendColor(index.change_pct), marginLeft: 5 }}>
+                  {formatReturnPoints(index.change_pct)}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
       }
     >

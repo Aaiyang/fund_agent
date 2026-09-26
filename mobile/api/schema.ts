@@ -536,6 +536,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/indexes/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Index Quotes
+         * @description Latest close and day change for every benchmark, for the home tape.
+         */
+        get: operations["list_index_quotes_api_v1_indexes_quotes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/indexes/{index_code}/history": {
         parameters: {
             query?: never;
@@ -1661,6 +1681,38 @@ export interface components {
             trade_date: string;
             /** Close */
             close: number;
+        };
+        /**
+         * IndexQuoteItem
+         * @description One index's latest close and its day change.
+         */
+        IndexQuoteItem: {
+            /** Index Code */
+            index_code: string;
+            /** Name */
+            name: string;
+            /** Close */
+            close?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Trade Date */
+            trade_date?: string | null;
+        };
+        /**
+         * IndexQuotesResponse
+         * @description GET /indexes/quotes response.
+         */
+        IndexQuotesResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Items */
+            items: components["schemas"]["IndexQuoteItem"][];
+            /** Total */
+            total: number;
         };
         /**
          * ManualImportRequest
@@ -2939,6 +2991,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IndexCatalogResponse"];
+                };
+            };
+        };
+    };
+    list_index_quotes_api_v1_indexes_quotes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexQuotesResponse"];
                 };
             };
         };

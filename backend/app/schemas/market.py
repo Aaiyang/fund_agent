@@ -29,6 +29,25 @@ class IndexPoint(BaseModel):
     close: float
 
 
+class IndexQuoteItem(BaseModel):
+    """One index's latest close and its day change."""
+
+    index_code: str
+    name: str
+    close: float | None = None
+    # Percent points (2.2 = +2.2%), like the fund `daily_return` column, so the
+    # same formatter handles funds and indexes on the tape.
+    change_pct: float | None = None
+    trade_date: date | None = None
+
+
+class IndexQuotesResponse(BaseResponse):
+    """GET /indexes/quotes response."""
+
+    items: list[IndexQuoteItem]
+    total: int
+
+
 class IndexHistoryResponse(BaseResponse):
     """GET /indexes/{index_code}/history response."""
 

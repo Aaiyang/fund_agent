@@ -8,7 +8,7 @@ from app.core.logging import logger
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
 from app.repositories.index_repository import index_repository
 from app.schemas.fund import NavRange
-from app.schemas.market import IndexCatalogItem, IndexHistoryResponse, IndexPoint
+from app.schemas.market import IndexCatalogItem, IndexHistoryResponse, IndexPoint, IndexQuoteItem
 from app.utils.clock import business_today, range_start
 
 # The picker's fixed catalog. Codes are looked up here before reaching AKShare,
@@ -24,6 +24,8 @@ BENCHMARK_INDEXES: dict[str, str] = {
 # Public series that moves once a day: one provider pull per index per window.
 _SYNC_TTL_SECONDS = 6 * 3600
 _STALE_DAYS = 3
+# Long enough to always hold two trading days, including a holiday stretch.
+_QUOTE_LOOKBACK_DAYS = 20
 
 
 class MarketService:
@@ -57,6 +59,31 @@ class MarketService:
             period_return=_window_change(points),
         )
 
+    async def get_quotes(self) -> list[IndexQuoteItem]:
+        """Latest close and day change for every catalog index, picker order.
+
+        The tape is public data with no per-user part, so it is safe to serve
+        from the same stored series the chart uses; a cold index just pays one
+        provider pull here as it would on the fund page.
+        """
+        today = business_today()
+        start = today - timedelta(days=_QUOTE_LOOKBACK_DAYS)
+        quotes: list[IndexQuoteItem] = []
+        for code, name in BENCHMARK_INDEXES.items():
+            await self._ensure_stored(code, start, today)
+            rows = await index_repository.get_history(code, start, today)
+            closes = [row.close for row in rows if row.close is not None]
+            quotes.append(
+                IndexQuoteItem(
+                    index_code=code,
+                    name=name,
+                    close=closes[-1] if closes else None,
+                    change_pct=_daily_change(closes),
+                    trade_date=rows[-1].trade_date if rows else None,
+                )
+            )
+        return quotes
+
     async def _ensure_stored(self, index_code: str, start: date | None, today: date) -> None:
         """Pull the full daily series when what is stored cannot serve the range."""
         coverage = await index_repository.get_coverage(index_code)
@@ -78,6 +105,13 @@ class MarketService:
             # serve whatever is already stored, and let the next request retry.
             logger.warning("index_history_sync_failed", index_code=index_code, error=str(e))
             await cache_service.release_lock(lock_key)
+
+
+def _daily_change(closes: list[float]) -> float | None:
+    """Close-to-close change of the last two sessions, in percent points."""
+    if len(closes) < 2 or not closes[-2]:
+        return None
+    return round((closes[-1] - closes[-2]) / closes[-2] * 100, 4)
 
 
 def _covers(coverage: tuple[date, date], start: date | None, today: date) -> bool:

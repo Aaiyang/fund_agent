@@ -12,6 +12,7 @@ export const queryKeys = {
   fundHoldings: (code: string) => ['funds', 'holdings', code] as const,
 
   indexes: ['indexes'] as const,
+  indexQuotes: ['indexes', 'quotes'] as const,
   indexHistory: (code: string, range: string) => ['indexes', code, range] as const,
 
   watchlist: ['watchlist'] as const,
