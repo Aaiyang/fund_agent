@@ -53,6 +53,20 @@ def position_profit(position: PortfolioPosition) -> float:
     return 0.0
 
 
+def position_shares(position: PortfolioPosition, unit_nav: float | None) -> float | None:
+    """Shares held for a snapshot, derived from the amount when absent.
+
+    A third-party holdings screen often shows only 当前持有金额, so the imported
+    row has no share count. Amount over the NAV it was priced on is the same
+    figure the amount came from (spec 5.2: derived at query time, never stored).
+    """
+    if position.shares is not None:
+        return position.shares
+    if position.market_value is not None and unit_nav:
+        return position.market_value / unit_nav
+    return None
+
+
 class PortfolioService:
     """Async portfolio operations."""
 
@@ -304,7 +318,7 @@ class PortfolioService:
             account_id=position.account_id,
             fund_code=position.fund_code,
             fund_name=fund.fund_name if fund else None,
-            shares=position.shares,
+            shares=position_shares(position, latest.unit_nav if latest else None),
             cost_amount=position.cost_amount,
             average_cost_nav=average_cost_nav,
             market_value=position.market_value,
