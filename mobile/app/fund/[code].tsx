@@ -93,7 +93,12 @@ export default function FundDetailScreen() {
 
       {detail.data ? (
         <Card>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>{detail.data.fund_name}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="查看前十大重仓股"
+            onPress={() => router.push(`/fund-holdings?code=${code}`)}
+          >
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>{detail.data.fund_name}</Text>
           <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
             {detail.data.fund_code}
             {detail.data.fund_type ? ` · ${detail.data.fund_type}` : ''}
@@ -128,6 +133,8 @@ export default function FundDetailScreen() {
             来源 {detail.data.source ?? '--'} · 数据截止 {formatDate(detail.data.source_as_of)} · 抓取于{' '}
             {formatDateTime(detail.data.nav_fetched_at ?? detail.data.updated_at)}
           </Text>
+            <Text style={{ fontSize: 12, color: theme.primary, marginTop: 10 }}>前十大重仓股 ›</Text>
+          </Pressable>
         </Card>
       ) : null}
 

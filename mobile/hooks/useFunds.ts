@@ -8,6 +8,8 @@ import type { components } from '@/api/schema';
 
 export type FundSearchItem = components['schemas']['FundSearchItem'];
 export type FundDetail = components['schemas']['FundDetailResponse'];
+export type FundHoldingItem = components['schemas']['FundHoldingItem'];
+export type FundHoldings = components['schemas']['FundHoldingsResponse'];
 export type NavHistory = components['schemas']['FundNavHistoryResponse'];
 export type NavRange = '1m' | '3m' | '6m' | '1y' | '3y' | 'all';
 
@@ -63,6 +65,21 @@ export function useFundNavPages(code: string | null, pageSize = 30) {
       return dates.length ? dates.reduce((oldest, value) => (value < oldest ? value : oldest)) : undefined;
     },
     enabled: Boolean(code),
+  });
+}
+
+/**
+ * Top-ten holdings with quotes, polled while the page is open. 30s is the
+ * balance between "实时涨幅" feeling live and hitting the source 3x harder;
+ * the backend caches the quarterly disclosure for an hour and only the quote
+ * fetch repeats.
+ */
+export function useFundHoldings(code: string | null) {
+  return useQuery({
+    queryKey: queryKeys.fundHoldings(code ?? ''),
+    queryFn: () => request<FundHoldings>(`/funds/${code}/holdings`),
+    enabled: Boolean(code),
+    refetchInterval: 30_000,
   });
 }
 

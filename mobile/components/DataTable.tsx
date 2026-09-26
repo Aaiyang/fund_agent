@@ -17,6 +17,15 @@ const NAME_W = 132;
 const ACTION_W = 56;
 const ROW_H = 58;
 
+const nameCellStyle = {
+  width: NAME_W,
+  height: ROW_H,
+  justifyContent: 'center',
+  paddingEnd: 8,
+  borderBottomWidth: 1,
+  borderColor: theme.border,
+} as const;
+
 export type DataCell = { text: string; color?: string; sub?: string; subColor?: string };
 
 export type DataColumn<T> = {
@@ -48,8 +57,8 @@ export function DataTable<T>({
 }: {
   items: T[];
   keyOf: (item: T) => string;
-  /** Row target: the grid always links to the fund detail page. */
-  fundCodeOf: (item: T) => string;
+  /** Row target: when set, the name column links to that fund's detail page. */
+  fundCodeOf?: (item: T) => string;
   /** Left column: fund name plus the small line under it. */
   nameOf: (item: T) => { title: string; sub: string };
   columns: DataColumn<T>[];
@@ -121,33 +130,30 @@ export function DataTable<T>({
   const rows = (
     <View style={{ flexDirection: 'row' }}>
       <View style={{ width: NAME_W }}>
-        {sorted.map((item) => (
-          <Link
-            key={keyOf(item)}
-            href={{ pathname: '/fund/[code]', params: { code: fundCodeOf(item) } }}
-            asChild
-          >
-            <Pressable
-              accessibilityRole="link"
-              accessibilityLabel={`查看 ${nameOf(item).title}`}
-              style={{
-                width: NAME_W,
-                height: ROW_H,
-                justifyContent: 'center',
-                paddingEnd: 8,
-                borderBottomWidth: 1,
-                borderColor: theme.border,
-              }}
-            >
+        {sorted.map((item) => {
+          const name = nameOf(item);
+          const content = (
+            <>
               <Text style={{ fontSize: 14, color: theme.text, fontWeight: '500' }} numberOfLines={1}>
-                {nameOf(item).title}
+                {name.title}
               </Text>
               <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }} numberOfLines={1}>
-                {nameOf(item).sub}
+                {name.sub}
               </Text>
-            </Pressable>
-          </Link>
-        ))}
+            </>
+          );
+          return fundCodeOf ? (
+            <Link key={keyOf(item)} href={{ pathname: '/fund/[code]', params: { code: fundCodeOf(item) } }} asChild>
+              <Pressable accessibilityRole="link" accessibilityLabel={`查看 ${name.title}`} style={nameCellStyle}>
+                {content}
+              </Pressable>
+            </Link>
+          ) : (
+            <View key={keyOf(item)} style={nameCellStyle}>
+              {content}
+            </View>
+          );
+        })}
       </View>
 
       <View style={{ flex: 1, overflow: 'hidden' }}>

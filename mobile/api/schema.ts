@@ -436,6 +436,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/funds/{fund_code}/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fund Holdings
+         * @description Top-ten disclosed holdings with live quotes (spec 3.5.4).
+         */
+        get: operations["get_fund_holdings_api_v1_funds__fund_code__holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/funds/{fund_code}/performance": {
         parameters: {
             query?: never;
@@ -1210,6 +1230,49 @@ export interface components {
             updated_at?: string | null;
             /** Nav Fetched At */
             nav_fetched_at?: string | null;
+        };
+        /**
+         * FundHoldingItem
+         * @description One disclosed holding with its quote and quarter-over-quarter change.
+         */
+        FundHoldingItem: {
+            /** Stock Code */
+            stock_code: string;
+            /** Stock Name */
+            stock_name?: string | null;
+            /** Weight */
+            weight?: number | null;
+            /** Weight Change */
+            weight_change?: number | null;
+            /** Price */
+            price?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Quote Time */
+            quote_time?: string | null;
+        };
+        /**
+         * FundHoldingsResponse
+         * @description GET /funds/{fund_code}/holdings response (top ten by disclosed weight).
+         */
+        FundHoldingsResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Fund Code */
+            fund_code: string;
+            /** Quarter */
+            quarter?: string | null;
+            /** Previous Quarter */
+            previous_quarter?: string | null;
+            /**
+             * Items
+             * @default []
+             */
+            items?: components["schemas"]["FundHoldingItem"][];
         };
         /**
          * FundNavHistoryResponse
@@ -2701,6 +2764,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FundNavHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fund_holdings_api_v1_funds__fund_code__holdings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fund_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundHoldingsResponse"];
                 };
             };
             /** @description Validation Error */

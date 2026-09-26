@@ -41,6 +41,12 @@ export function formatReturnPoints(value: number | null | undefined, digits = 2)
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
 }
 
+/** For a magnitude already in percent points, without a sign: 占净值比例. */
+export function formatPoints(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--';
+  return `${value.toFixed(digits)}%`;
+}
+
 export function formatNumber(value: number | null | undefined, digits = 3): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
   return value.toFixed(digits).replace(/\.?0+$/, '') || '0';
