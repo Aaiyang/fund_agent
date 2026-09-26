@@ -203,9 +203,9 @@ export function DataTable<T>({
 
   const header = (
     <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
-      <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>
-        <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }}>基金</Text>
-      </View>
+      {/* The name column needs no title: every row already reads fund name +
+          code, so a heading above it is just a second label for the same thing. */}
+      <View style={{ width: NAME_W }} />
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <ScrollView ref={headRef} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false}>
           {columns.map((column) => (
