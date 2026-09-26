@@ -26,7 +26,14 @@ const nameCellStyle = {
   borderColor: theme.border,
 } as const;
 
-export type DataCell = { text: string; color?: string; sub?: string; subColor?: string };
+export type DataCell = {
+  text: string;
+  color?: string;
+  sub?: string;
+  subColor?: string;
+  /** For non-numeric placeholders (新增/未接入) that read better centered. */
+  align?: 'left' | 'center';
+};
 
 export type DataColumn<T> = {
   key: string;
@@ -174,7 +181,10 @@ export function DataTable<T>({
                   const cell = column.cell(item);
                   return (
                     <View key={column.key} style={{ width: column.width, paddingHorizontal: 6 }}>
-                      <Text style={{ fontSize: 13, color: cell.color ?? theme.text }} numberOfLines={1}>
+                      <Text
+                        style={{ fontSize: 13, color: cell.color ?? theme.text, textAlign: cell.align ?? 'left' }}
+                        numberOfLines={1}
+                      >
                         {cell.text}
                       </Text>
                       {cell.sub ? (

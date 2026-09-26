@@ -35,7 +35,7 @@ const COLUMNS: DataColumn<FundHoldingItem>[] = [
     sortValue: (item) => item.weight_change,
     cell: (item) =>
       item.is_new
-        ? { text: '新增', color: theme.primary }
+        ? { text: '新增', color: theme.text, align: 'center' }
         : { text: formatReturnPoints(item.weight_change), color: trendColor(item.weight_change) },
   },
   { key: 'price', title: '现价', width: 84, sortValue: (item) => item.price, cell: (item) => ({ text: formatNumber(item.price, 2) }) },
