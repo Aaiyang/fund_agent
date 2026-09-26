@@ -28,8 +28,6 @@ export type DataColumn<T> = {
   sortValue?: (item: T) => number | string | null | undefined;
 };
 
-const NAME_KEY = '__name__';
-
 function sortArrow(active: 'asc' | 'desc' | null) {
   if (active === 'asc') return '↑';
   if (active === 'desc') return '↓';
@@ -72,10 +70,7 @@ export function DataTable<T>({
 
   const sorted = (() => {
     if (sort === null) return items;
-    const pick =
-      sort.key === NAME_KEY
-        ? (item: T) => nameOf(item).title as number | string | null | undefined
-        : columns.find((column) => column.key === sort.key)?.sortValue;
+    const pick = columns.find((column) => column.key === sort.key)?.sortValue;
     if (!pick) return items;
     return [...items].sort((left, right) => {
       const a = pick(left);
@@ -208,7 +203,9 @@ export function DataTable<T>({
 
   const header = (
     <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
-      <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>{sortableHeader(NAME_KEY, '基金')}</View>
+      <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>
+        <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }}>基金</Text>
+      </View>
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <ScrollView ref={headRef} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false}>
           {columns.map((column) => (
