@@ -14,16 +14,18 @@ function periodColumn(key: string, title: string, pick: (item: WatchlistFund) =>
     key,
     title,
     width: 76,
+    sortValue: pick,
     cell: (item) => ({ text: formatReturnPoints(pick(item)), color: trendColor(pick(item)) }),
   };
 }
 
 const COLUMNS: DataColumn<WatchlistFund>[] = [
-  { key: 'nav', title: '最新净值', width: 80, cell: (item) => ({ text: formatNumber(item.latest_nav) }) },
+  { key: 'nav', title: '最新净值', width: 80, sortValue: (item) => item.latest_nav, cell: (item) => ({ text: formatNumber(item.latest_nav) }) },
   {
     key: 'daily',
     title: '当日涨跌',
     width: 84,
+    sortValue: (item) => item.daily_return,
     cell: (item) => ({
       text: formatReturnPoints(item.daily_return),
       color: trendColor(item.daily_return),
@@ -73,7 +75,7 @@ export function WatchlistTable({
         label: (item) => (pendingCode === item.fund_code ? '删除中' : '删除'),
         onPress: (item) => onRemove(item.fund_code),
       }}
-      hint="左右滑动查看其它列 · 当日涨跌下方为净值日期，橙色表示尚未更新 · 当日涨幅待估值接口接入"
+      hint="点表头排序（再点切换升/降） · 左右滑动查看其它列 · 橙色日期表示净值未更新 · 当日涨幅待估值接口接入"
     />
   );
 }

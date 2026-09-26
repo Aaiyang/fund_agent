@@ -9,7 +9,7 @@
 
 import { Link } from 'expo-router';
 import { type StyleProp, type ViewStyle, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, ScrollView, Text, View } from 'react-native';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { theme } from '@/constants/theme';
 
@@ -24,7 +24,17 @@ export type DataColumn<T> = {
   title: string;
   width: number;
   cell: (item: T) => DataCell;
+  /** Raw value behind the formatted cell; omit it to make the column unsortable. */
+  sortValue?: (item: T) => number | string | null | undefined;
 };
+
+const NAME_KEY = '__name__';
+
+function sortArrow(active: 'asc' | 'desc' | null) {
+  if (active === 'asc') return '↑';
+  if (active === 'desc') return '↓';
+  return '⇅';
+}
 
 export function DataTable<T>({
   items,
@@ -56,8 +66,50 @@ export function DataTable<T>({
 }) {
   const headRef = useRef<ScrollView>(null);
   const gridRef = useRef<ScrollView>(null);
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
   const columnKey = items.map(keyOf).join(',');
   const gridWidth = columns.reduce((total, column) => total + column.width, 0) + (action ? ACTION_W : 0);
+
+  const sorted = (() => {
+    if (sort === null) return items;
+    const pick =
+      sort.key === NAME_KEY
+        ? (item: T) => nameOf(item).title as number | string | null | undefined
+        : columns.find((column) => column.key === sort.key)?.sortValue;
+    if (!pick) return items;
+    return [...items].sort((left, right) => {
+      const a = pick(left);
+      const b = pick(right);
+      // A missing figure is not a zero: it stays at the bottom either way.
+      if (a === null || a === undefined) return b === null || b === undefined ? 0 : 1;
+      if (b === null || b === undefined) return -1;
+      const order =
+        typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'zh');
+      return sort.dir === 'asc' ? order : -order;
+    });
+  })();
+
+  const toggleSort = (key: string) => {
+    setSort((current) =>
+      current && current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' },
+    );
+  };
+
+  const sortableHeader = (key: string, title: string) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`按${title}排序`}
+      onPress={() => toggleSort(key)}
+      style={{ flexDirection: 'row', alignItems: 'center' }}
+    >
+      <Text style={{ fontSize: 12, color: sort?.key === key ? theme.text : theme.textMuted, fontWeight: '600' }} numberOfLines={1}>
+        {title}
+      </Text>
+      <Text style={{ fontSize: 11, color: sort?.key === key ? theme.primary : theme.textFaint, marginLeft: 3 }}>
+        {sortArrow(sort?.key === key ? sort.dir : null)}
+      </Text>
+    </Pressable>
+  );
 
   useEffect(() => {
     // The header mirrors the grid, so a grid that keeps its offset while the
@@ -74,7 +126,7 @@ export function DataTable<T>({
   const rows = (
     <View style={{ flexDirection: 'row' }}>
       <View style={{ width: NAME_W }}>
-        {items.map((item) => (
+        {sorted.map((item) => (
           <Link
             key={keyOf(item)}
             href={{ pathname: '/fund/[code]', params: { code: fundCodeOf(item) } }}
@@ -106,7 +158,7 @@ export function DataTable<T>({
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <ScrollView ref={gridRef} horizontal onScroll={followGrid} scrollEventThrottle={16} showsHorizontalScrollIndicator={false}>
           <View style={{ width: gridWidth }}>
-            {items.map((item) => (
+            {sorted.map((item) => (
               <View
                 key={keyOf(item)}
                 style={{
@@ -156,16 +208,18 @@ export function DataTable<T>({
 
   const header = (
     <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
-      <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>
-        <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }}>基金</Text>
-      </View>
+      <View style={{ width: NAME_W, paddingVertical: 8, paddingEnd: 8 }}>{sortableHeader(NAME_KEY, '基金')}</View>
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <ScrollView ref={headRef} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false}>
           {columns.map((column) => (
             <View key={column.key} style={{ width: column.width, paddingVertical: 8, paddingHorizontal: 6 }}>
-              <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }} numberOfLines={1}>
-                {column.title}
-              </Text>
+              {column.sortValue ? (
+                sortableHeader(column.key, column.title)
+              ) : (
+                <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }} numberOfLines={1}>
+                  {column.title}
+                </Text>
+              )}
             </View>
           ))}
           {action ? (
