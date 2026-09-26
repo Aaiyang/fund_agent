@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { type GestureResponderEvent, Text, View } from 'react-native';
+import { type GestureResponderEvent, Pressable, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
@@ -32,14 +32,25 @@ function nearestByTime<T extends { time: number }>(series: T[], target: number):
   return series.reduce((best, item) => (Math.abs(item.time - target) < Math.abs(best.time - target) ? item : best));
 }
 
+export type BenchmarkPicker = {
+  open: boolean;
+  options: { value: string | null; label: string }[];
+  selected: string | null;
+  onToggle: () => void;
+  onPick: (value: string | null) => void;
+};
+
 export function NavChart({
   points,
   benchmark,
   costNav,
+  benchmarkPicker,
 }: {
   points: FundPoint[];
   benchmark?: { name: string; points: BenchmarkPoint[] } | null;
   costNav?: number | null;
+  /** When set, the legend's benchmark entry becomes the switcher's trigger. */
+  benchmarkPicker?: BenchmarkPicker | null;
 }) {
   const [width, setWidth] = useState(0);
   // The pinned day carries the window it was picked in: after a range switch
@@ -110,14 +121,66 @@ export function NavChart({
   const markerX = marker ? x(marker.time) : 0;
   const chipLeft = marker ? Math.min(Math.max(markerX - CHIP_W / 2, 0), Math.max(width - CHIP_W, 0)) : 0;
 
+  const benchmarkLegend =
+    benchmarkSeries.length && benchmark ? (
+      <Legend color={theme.warning} label={benchmark.name} value={shownBenchmarkChange} />
+    ) : null;
+
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-        <Legend color={theme.primary} label="本基金" value={shownFundChange} />
-        {benchmarkSeries.length && benchmark ? <Legend color={theme.warning} label={benchmark.name} value={shownBenchmarkChange} /> : null}
-        {costChange !== null ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
-            <Text style={{ fontSize: 12, color: theme.textFaint }}>成本价 {costNav?.toFixed(4)}</Text>
+      <View style={{ marginBottom: 6 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
+          <Legend color={theme.primary} label="本基金" value={shownFundChange} />
+          {benchmarkPicker ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="切换比较基准"
+              onPress={benchmarkPicker.onToggle}
+              style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}
+            >
+              {benchmarkLegend ?? <Text style={{ fontSize: 12, color: theme.textMuted }}>选基准</Text>}
+              <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 4 }}>
+                {benchmarkPicker.open ? '▴' : '▾'}
+              </Text>
+            </Pressable>
+          ) : (
+            benchmarkLegend
+          )}
+          {costChange !== null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
+              <Text style={{ fontSize: 12, color: theme.textFaint }}>成本价 {costNav?.toFixed(4)}</Text>
+            </View>
+          ) : null}
+        </View>
+        {benchmarkPicker?.open ? (
+          <View
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              marginTop: 4,
+              minWidth: 128,
+              backgroundColor: theme.surface,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              paddingVertical: 4,
+              zIndex: 20,
+              elevation: 6,
+            }}
+          >
+            {benchmarkPicker.options.map((option) => (
+              <Pressable
+                key={option.value ?? 'none'}
+                accessibilityRole="menuitem"
+                onPress={() => benchmarkPicker.onPick(option.value)}
+                style={{ paddingHorizontal: 12, paddingVertical: 9 }}
+              >
+                <Text style={{ fontSize: 13, color: option.value === benchmarkPicker.selected ? theme.primary : theme.text }}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         ) : null}
       </View>

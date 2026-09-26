@@ -78,6 +78,10 @@ export default function FundDetailScreen() {
 
   const navPoints = nav.data?.points ?? [];
   const recentNav = [...navPoints].reverse().slice(0, NAV_ROWS_COLLAPSED);
+  const benchmarkOptions = [
+    ...(catalog.data?.items ?? []).map((item) => ({ value: item.index_code as string | null, label: item.name })),
+    { value: null, label: '不比较' },
+  ];
 
   return (
     <Screen refreshing={refresh.isPending} onRefresh={code ? () => refresh.mutate() : undefined}>
@@ -139,17 +143,7 @@ export default function FundDetailScreen() {
 
       {detail.data ? (
         <Card>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>业绩走势</Text>
-            <BenchmarkDropdown
-              items={catalog.data?.items ?? []}
-              selected={benchmarkCode}
-              open={pickingBenchmark}
-              onToggle={() => setPickingBenchmark((open) => !open)}
-              onClose={() => setPickingBenchmark(false)}
-              onPick={setBenchmarkCode}
-            />
-          </View>
+          <SectionTitle title="业绩走势" />
           <Async query={nav}>
             {(data) => (
               <NavChart
@@ -160,6 +154,16 @@ export default function FundDetailScreen() {
                     : null
                 }
                 costNav={position.data?.average_cost_nav ?? null}
+                benchmarkPicker={{
+                  open: pickingBenchmark,
+                  options: benchmarkOptions,
+                  selected: benchmarkCode,
+                  onToggle: () => setPickingBenchmark((open) => !open),
+                  onPick: (indexCode) => {
+                    setBenchmarkCode(indexCode);
+                    setPickingBenchmark(false);
+                  },
+                }}
               />
             )}
           </Async>
@@ -305,70 +309,6 @@ function StarButton({ active, onPress }: { active: boolean; onPress: () => void 
         size={22}
       />
     </Pressable>
-  );
-}
-
-function BenchmarkDropdown({
-  items,
-  selected,
-  open,
-  onToggle,
-  onClose,
-  onPick,
-}: {
-  items: { index_code: string; name: string }[];
-  selected: string | null;
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  onPick: (indexCode: string | null) => void;
-}) {
-  const options = [...items.map((item) => ({ value: item.index_code, label: item.name })), { value: null, label: '不比较' }];
-  const current = options.find((option) => option.value === selected)?.label ?? '选基准';
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="切换比较基准"
-        onPress={onToggle}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 6 }}
-      >
-        <Text style={{ fontSize: 12, color: theme.textMuted }}>{current}</Text>
-        <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 2 }}>{open ? '▴' : '▾'}</Text>
-      </Pressable>
-      {open ? (
-        <View
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 4,
-            minWidth: 128,
-            backgroundColor: theme.surface,
-            borderRadius: 10,
-            borderWidth: 1,
-            borderColor: theme.border,
-            paddingVertical: 4,
-            zIndex: 20,
-            elevation: 6,
-          }}
-        >
-          {options.map((option) => (
-            <Pressable
-              key={option.value ?? 'none'}
-              accessibilityRole="menuitem"
-              onPress={() => {
-                onPick(option.value);
-                onClose();
-              }}
-              style={{ paddingHorizontal: 12, paddingVertical: 9 }}
-            >
-              <Text style={{ fontSize: 13, color: option.value === selected ? theme.primary : theme.text }}>{option.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-    </View>
   );
 }
 
