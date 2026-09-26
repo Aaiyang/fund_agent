@@ -99,6 +99,13 @@ class FundHoldingItem(BaseModel):
     quote_time: str | None = None  # raw source timestamp, per-market format
 
 
+class FundIndustryItem(BaseModel):
+    """One industry's share of the fund, from the same disclosure cycle."""
+
+    industry: str
+    weight: float | None = None  # 占净值比例, percent points
+
+
 class FundHoldingsResponse(BaseResponse):
     """GET /funds/{fund_code}/holdings response (top ten by disclosed weight)."""
 
@@ -106,6 +113,8 @@ class FundHoldingsResponse(BaseResponse):
     quarter: str | None = None
     previous_quarter: str | None = None
     items: list[FundHoldingItem] = []
+    industries: list[FundIndustryItem] = []
+    industries_as_of: date | None = None
 
 
 class FundPerformanceResponse(BaseResponse):

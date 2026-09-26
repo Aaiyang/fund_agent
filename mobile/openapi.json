@@ -3114,6 +3114,26 @@
             "type": "array",
             "title": "Items",
             "default": []
+          },
+          "industries": {
+            "items": {
+              "$ref": "#/components/schemas/FundIndustryItem"
+            },
+            "type": "array",
+            "title": "Industries",
+            "default": []
+          },
+          "industries_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industries As Of"
           }
         },
         "type": "object",
@@ -3122,6 +3142,31 @@
         ],
         "title": "FundHoldingsResponse",
         "description": "GET /funds/{fund_code}/holdings response (top ten by disclosed weight)."
+      },
+      "FundIndustryItem": {
+        "properties": {
+          "industry": {
+            "type": "string",
+            "title": "Industry"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "type": "object",
+        "required": [
+          "industry"
+        ],
+        "title": "FundIndustryItem",
+        "description": "One industry's share of the fund, from the same disclosure cycle."
       },
       "FundNavHistoryResponse": {
         "properties": {

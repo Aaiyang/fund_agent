@@ -1278,6 +1278,23 @@ export interface components {
              * @default []
              */
             items?: components["schemas"]["FundHoldingItem"][];
+            /**
+             * Industries
+             * @default []
+             */
+            industries?: components["schemas"]["FundIndustryItem"][];
+            /** Industries As Of */
+            industries_as_of?: string | null;
+        };
+        /**
+         * FundIndustryItem
+         * @description One industry's share of the fund, from the same disclosure cycle.
+         */
+        FundIndustryItem: {
+            /** Industry */
+            industry: string;
+            /** Weight */
+            weight?: number | null;
         };
         /**
          * FundNavHistoryResponse

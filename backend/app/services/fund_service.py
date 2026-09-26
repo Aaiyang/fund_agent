@@ -31,6 +31,7 @@ from app.schemas.fund import (
     FundDetailResponse,
     FundHoldingItem,
     FundHoldingsResponse,
+    FundIndustryItem,
     FundNavHistoryResponse,
     FundNavPoint,
     FundPerformance,
@@ -297,9 +298,16 @@ class FundService:
         A source outage returns an empty page instead of failing the request.
         """
         holdings = await self._disclosed_holdings(fund_code)
+        industries, industries_as_of = await self._industry_allocation(fund_code)
         quarter, previous_quarter, items = summarize_holdings(holdings)
         if not items:
-            return FundHoldingsResponse(fund_code=fund_code, quarter=quarter, previous_quarter=previous_quarter)
+            return FundHoldingsResponse(
+                fund_code=fund_code,
+                quarter=quarter,
+                previous_quarter=previous_quarter,
+                industries=industries,
+                industries_as_of=industries_as_of,
+            )
 
         symbols = {item.stock_code: sina_symbol(item.stock_code) for item in items}
         # The provider maps raw listing codes to quote symbols itself; feeding it
@@ -317,7 +325,41 @@ class FundService:
             quarter=quarter,
             previous_quarter=previous_quarter,
             items=items,
+            industries=industries,
+            industries_as_of=industries_as_of,
         )
+
+    async def _industry_allocation(self, fund_code: str) -> tuple[list[FundIndustryItem], date | None]:
+        """Latest disclosed industry weights, cached like the holdings table."""
+        key = cache_key("fund_industries", fund_code)
+        cached = await cache_service.get(key)
+        if cached:
+            payload = json.loads(cached)
+            as_of = payload.get("as_of")
+            return (
+                [FundIndustryItem.model_validate(row) for row in payload["items"]],
+                date.fromisoformat(as_of) if as_of else None,
+            )
+        try:
+            rows = await akshare_fund_provider.get_industry_allocation(fund_code)
+        except Exception:
+            logger.exception("fund_industry_fetch_failed", fund_code=fund_code)
+            return [], None
+        items = [FundIndustryItem(industry=row.industry, weight=row.weight) for row in rows]
+        as_of = rows[0].as_of if rows else None
+        if items:
+            await cache_service.set(
+                key,
+                json.dumps(
+                    {
+                        "items": [item.model_dump() for item in items],
+                        "as_of": as_of.isoformat() if as_of else None,
+                    },
+                    ensure_ascii=False,
+                ),
+                ttl=_HOLDINGS_CACHE_TTL_SECONDS,
+            )
+        return items, as_of
 
     async def _disclosed_holdings(self, fund_code: str) -> list[FundExternalHolding]:
         """Load the two latest disclosure quarters, cached because they are quarterly."""

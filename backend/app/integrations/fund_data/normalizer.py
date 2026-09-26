@@ -11,6 +11,7 @@ from typing import Any
 from app.core.logging import logger
 from app.integrations.fund_data.models import (
     FundExternalHolding,
+    FundExternalIndustry,
     FundExternalNav,
     FundExternalProfile,
     FundExternalRecord,
@@ -299,3 +300,45 @@ def parse_sina_quotes(payload: str) -> list[StockExternalQuote]:
                 )
             )
     return quotes
+
+
+_SWEN_PREFIX = re.compile(r"^\d{1,3}(?=[\u4e00-\u9fff])")
+
+
+def normalize_industry_rows(rows: list[dict[str, Any]], fund_code: str) -> list[FundExternalIndustry]:
+    """Keep the newest disclosure's industry weights, heaviest first.
+
+    One yearly call returns every quarter published so far, and the industry
+    names come with their Shenwan index prefix ("50通信服务"), which is noise to
+    a reader comparing it against the holdings table.
+    """
+    parsed: list[tuple[date | None, str, float | None, float | None]] = []
+    for row in rows:
+        name = _pick(row, "行业类别", "行业", "industry")
+        if name is None:
+            continue
+        parsed.append(
+            (
+                to_date(_pick(row, "截止时间", "截至时间", "date")),
+                _SWEN_PREFIX.sub("", str(name).strip()),
+                to_float(_pick(row, "占净值比例", "weight")),
+                to_float(_pick(row, "市值", "market_value")),
+            )
+        )
+    if not parsed:
+        return []
+
+    latest_as_of = max((as_of for as_of, *_rest in parsed if as_of is not None), default=None)
+    industries = [
+        FundExternalIndustry(
+            fund_code=fund_code,
+            industry=name,
+            weight=weight,
+            market_value=market_value,
+            as_of=as_of,
+        )
+        for as_of, name, weight, market_value in parsed
+        if (latest_as_of is None or as_of == latest_as_of) and weight
+    ]
+    industries.sort(key=lambda industry: industry.weight or 0.0, reverse=True)
+    return industries

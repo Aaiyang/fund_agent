@@ -62,6 +62,16 @@ class FundExternalHolding(BaseModel):
     quarter: str | None = None  # e.g. "2026年2季度"
 
 
+class FundExternalIndustry(BaseModel):
+    """One industry's share of a fund's net asset value, per disclosure."""
+
+    fund_code: str
+    industry: str
+    weight: float | None = None  # 占净值比例, percent points
+    market_value: float | None = None
+    as_of: date | None = None  # 截止时间 of the reporting period
+
+
 class StockExternalQuote(BaseModel):
     """One quote of an individual stock, across A-share / HK / US markets."""
 

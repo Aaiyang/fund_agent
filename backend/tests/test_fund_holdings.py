@@ -1,7 +1,14 @@
 """Holdings parsing: mixed-market quote symbols and the quarter-over-quarter diff."""
 
+from datetime import date
+
 from app.integrations.fund_data.models import FundExternalHolding
-from app.integrations.fund_data.normalizer import parse_quarter, parse_sina_quotes, sina_symbol
+from app.integrations.fund_data.normalizer import (
+    normalize_industry_rows,
+    parse_quarter,
+    parse_sina_quotes,
+    sina_symbol,
+)
 from app.services.fund_service import summarize_holdings
 
 A_SHARE_LINE = (
@@ -123,3 +130,27 @@ class TestSummarizeHoldings:
         _, _, items = summarize_holdings(holdings)
         assert len(items) == 10
         assert items[0].weight == 20.0
+
+
+class TestNormalizeIndustryRows:
+    def test_keeps_only_the_latest_period_and_sorts_by_weight(self) -> None:
+        rows = [
+            {"行业类别": "医疗保健", "占净值比例": "42.65", "市值": "9.4e8", "截止时间": "2025-12-31"},
+            {"行业类别": "制造业", "占净值比例": "49.8", "市值": "7.8e4", "截止时间": "2026-06-30"},
+            {"行业类别": "医疗保健", "占净值比例": "32.7", "市值": "5.1e8", "截止时间": "2026-06-30"},
+        ]
+        industries = normalize_industry_rows(rows, "022287")
+        assert [industry.industry for industry in industries] == ["制造业", "医疗保健"]
+        assert industries[0].as_of == date(2026, 6, 30)
+
+    def test_strips_the_shenwan_index_prefix_and_drops_zero_rows(self) -> None:
+        rows = [
+            {"行业类别": "50通信服务", "占净值比例": "5.91", "截止时间": "2026-06-30"},
+            {"行业类别": "45信息技术", "占净值比例": "0.00", "截止时间": "2026-06-30"},
+        ]
+        industries = normalize_industry_rows(rows, "011452")
+        assert [industry.industry for industry in industries] == ["通信服务"]
+
+    def test_empty_payload_yields_nothing(self) -> None:
+        assert normalize_industry_rows([], "011452") == []
+        assert normalize_industry_rows([{"占净值比例": "1"}], "011452") == []

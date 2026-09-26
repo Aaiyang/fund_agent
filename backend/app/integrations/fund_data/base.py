@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from app.integrations.fund_data.models import (
     FundExternalHolding,
+    FundExternalIndustry,
     FundExternalManager,
     FundExternalNav,
     FundExternalProfile,
@@ -57,4 +58,8 @@ class FundDataProvider(Protocol):
 
     async def get_stock_quotes(self, stock_codes: list[str]) -> list[StockExternalQuote]:
         """Quote the held stocks across A-share / HK / US markets."""
+        ...
+
+    async def get_industry_allocation(self, fund_code: str) -> list[FundExternalIndustry]:
+        """Fetch the latest disclosed industry weights."""
         ...

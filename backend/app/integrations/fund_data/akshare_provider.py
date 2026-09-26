@@ -26,6 +26,7 @@ from app.core.logging import logger
 from app.integrations.fund_data.akshare_client import AKSHARE_AVAILABLE, ak
 from app.integrations.fund_data.models import (
     FundExternalHolding,
+    FundExternalIndustry,
     FundExternalManager,
     FundExternalNav,
     FundExternalProfile,
@@ -37,6 +38,7 @@ from app.integrations.fund_data.normalizer import (
     normalize_fund_record,
     normalize_holding_rows,
     normalize_index_rows,
+    normalize_industry_rows,
     normalize_nav_rows,
     normalize_profile_rows,
     parse_quarter,
@@ -178,6 +180,25 @@ class AKShareFundProvider:
             # A quote outage costs one column, not the whole holdings page.
             logger.warning("stock_quotes_unavailable", count=len(symbols), error=str(e))
             return []
+
+    async def get_industry_allocation(self, fund_code: str) -> list[FundExternalIndustry]:
+        """Fetch the industry weights of the latest disclosure.
+
+        The endpoint raises for a year the fund has no disclosure in (a fund
+        newer than the requested year), so each candidate year is tried on its
+        own rather than letting one miss fail the lookup.
+        """
+        year = business_today().year
+        for candidate in (year, year - 1):
+            try:
+                rows = await self._call("fund_portfolio_industry_allocation_em", symbol=fund_code, date=str(candidate))
+            except Exception as e:
+                logger.debug("fund_industry_year_unavailable", fund_code=fund_code, year=candidate, error=str(e))
+                continue
+            industries = normalize_industry_rows(rows or [], fund_code)
+            if industries:
+                return industries
+        return []
 
     async def get_index_history(
         self,

@@ -14,7 +14,7 @@ import { Card, Screen, SectionTitle } from '@/components/ui';
 import { DataTable, type DataColumn } from '@/components/DataTable';
 import { theme } from '@/constants/theme';
 import { useFundDetail, useFundHoldings, type FundHoldingItem } from '@/hooks/useFunds';
-import { formatNumber, formatPoints, formatReturnPoints, trendColor } from '@/utils/format';
+import { formatDate, formatNumber, formatPoints, formatReturnPoints, trendColor } from '@/utils/format';
 const COLUMNS: DataColumn<FundHoldingItem>[] = [
   { key: 'weight', title: '持仓占比', width: 84, sortValue: (item) => item.weight, cell: (item) => ({ text: formatPoints(item.weight) }) },
   {
@@ -83,6 +83,45 @@ export default function FundHoldingsScreen() {
           }}
         </Async>
       </Card>
+
+      <Async query={holdings}>
+        {(data) => {
+          const industries = data.industries ?? [];
+          if (industries.length === 0) return null;
+          return (
+            <Card>
+              <SectionTitle title="行业分布" />
+              <Text style={{ fontSize: 11, color: theme.textFaint, marginBottom: 10 }}>
+                占净值比例 · 披露截止 {formatDate(data.industries_as_of)}
+              </Text>
+              {industries.map((industry) => (
+                <IndustryBar
+                  key={industry.industry}
+                  name={industry.industry ?? '--'}
+                  weight={industry.weight}
+                  share={Math.max(...industries.map((row) => row.weight ?? 0))}
+                />
+              ))}
+            </Card>
+          );
+        }}
+      </Async>
     </Screen>
+  );
+}
+
+function IndustryBar({ name, weight, share }: { name: string; weight: number | null | undefined; share: number }) {
+  const value = weight ?? 0;
+  const width = share > 0 ? Math.max((value / share) * 100, 1.5) : 0;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+      <Text style={{ width: 104, fontSize: 12, color: theme.textMuted, marginRight: 8 }} numberOfLines={1}>
+        {name}
+      </Text>
+      <View style={{ flex: 1, height: 10, backgroundColor: theme.background, borderRadius: 5, overflow: 'hidden' }}>
+        <View style={{ width: `${width}%`, height: 10, backgroundColor: theme.primary, borderRadius: 5 }} />
+      </View>
+      <Text style={{ width: 56, fontSize: 12, color: theme.text, textAlign: 'right' }}>{formatPoints(weight)}</Text>
+    </View>
   );
 }
