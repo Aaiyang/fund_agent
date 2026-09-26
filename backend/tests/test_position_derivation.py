@@ -1,7 +1,12 @@
 """Snapshot fields a holdings import may leave empty are derived, not read as zero."""
 
 from app.models.portfolio import PortfolioPosition
-from app.services.portfolio_service import position_cost, position_profit, position_shares
+from app.services.portfolio_service import (
+    period_profit_loss,
+    position_cost,
+    position_profit,
+    position_shares,
+)
 
 
 def _position(**values: object) -> PortfolioPosition:
@@ -47,3 +52,16 @@ class TestPositionShares:
         assert position_shares(_position(market_value=23121.0), None) is None
         assert position_shares(_position(market_value=23121.0), 0.0) is None
         assert position_shares(_position(), 3.42) is None
+
+
+class TestPeriodProfitLoss:
+    def test_amount_times_the_window_return(self) -> None:
+        assert period_profit_loss(23121.0, 0.04) == 924.84
+
+    def test_loss_window_returns_a_negative_amount(self) -> None:
+        assert period_profit_loss(23121.0, -0.02) < 0
+
+    def test_none_when_either_side_is_missing(self) -> None:
+        assert period_profit_loss(None, 0.04) is None
+        assert period_profit_loss(23121.0, None) is None
+        assert period_profit_loss(None, None) is None

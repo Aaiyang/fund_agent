@@ -77,6 +77,9 @@ class PositionItem(BaseModel):
     profit_loss_rate: float | None = None
     daily_profit_loss: float | None = None
     daily_return: float | None = None
+    unit_nav: float | None = None
+    weekly_profit_loss: float | None = None
+    monthly_profit_loss: float | None = None
     position_ratio: float | None = None
     nav_date: date | None = None
     is_updated: bool = False

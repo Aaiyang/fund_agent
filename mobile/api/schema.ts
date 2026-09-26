@@ -1719,6 +1719,12 @@ export interface components {
             daily_profit_loss?: number | null;
             /** Daily Return */
             daily_return?: number | null;
+            /** Unit Nav */
+            unit_nav?: number | null;
+            /** Weekly Profit Loss */
+            weekly_profit_loss?: number | null;
+            /** Monthly Profit Loss */
+            monthly_profit_loss?: number | null;
             /** Position Ratio */
             position_ratio?: number | null;
             /** Nav Date */

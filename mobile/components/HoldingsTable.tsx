@@ -10,10 +10,11 @@ import type { PositionItem } from '@/hooks/usePortfolio';
 import { formatDate, formatMoney, formatNumber, formatRate, formatReturnPoints, formatSignedMoney, trendColor } from '@/utils/format';
 
 const COLUMNS: DataColumn<PositionItem>[] = [
-  { key: 'ratio', title: '占比', width: 68, cell: (item) => ({ text: formatRate(item.position_ratio) }) },
+  { key: 'nav', title: '最新净值', width: 80, cell: (item) => ({ text: formatNumber(item.unit_nav) }) },
+  { key: 'ratio', title: '持仓占比', width: 84, cell: (item) => ({ text: formatRate(item.position_ratio) }) },
   {
     key: 'daily',
-    title: '当日涨跌',
+    title: '最新涨幅',
     width: 84,
     cell: (item) => ({
       text: formatReturnPoints(item.daily_return),
@@ -21,6 +22,18 @@ const COLUMNS: DataColumn<PositionItem>[] = [
       sub: formatDate(item.nav_date),
       subColor: item.is_updated ? theme.textFaint : theme.warning,
     }),
+  },
+  {
+    key: 'weeklyProfit',
+    title: '本周收益',
+    width: 88,
+    cell: (item) => ({ text: formatSignedMoney(item.weekly_profit_loss), color: trendColor(item.weekly_profit_loss) }),
+  },
+  {
+    key: 'monthlyProfit',
+    title: '本月收益',
+    width: 88,
+    cell: (item) => ({ text: formatSignedMoney(item.monthly_profit_loss), color: trendColor(item.monthly_profit_loss) }),
   },
   {
     key: 'dailyProfit',

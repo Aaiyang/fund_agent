@@ -5,11 +5,14 @@ from stored snapshots + latest NAVs — never persisted, so they can't drift
 (MVP spec 12.8). All future agents/tools must go through this service.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
+from app.analytics import period_return, window_return
+from app.analytics.returns import NavPoint
 from app.core.logging import logger
+from app.models.fund import FundNav
 from app.models.portfolio import PortfolioAccount, PortfolioPosition
 from app.repositories.fund_repository import fund_repository
 from app.repositories.portfolio_repository import portfolio_repository
@@ -53,6 +56,10 @@ def position_profit(position: PortfolioPosition) -> float:
     return 0.0
 
 
+_WEEKLY_DAYS = 7
+_WINDOW_LOOKBACK_DAYS = 45
+
+
 def position_shares(position: PortfolioPosition, unit_nav: float | None) -> float | None:
     """Shares held for a snapshot, derived from the amount when absent.
 
@@ -80,6 +87,18 @@ def position_cost(position: PortfolioPosition) -> float | None:
     if position.market_value is not None and position.profit_loss is not None:
         return position.market_value - position.profit_loss
     return None
+
+
+def period_profit_loss(market_value: float | None, fraction: float | None) -> float | None:
+    """Money gained over a window, on the same base as 昨日收益.
+
+    The daily column multiplies the *current* amount by the return rather than
+    the start-of-window amount; one convention keeps the week/month/day columns
+    from disagreeing by a rounding-sized gap.
+    """
+    if market_value is None or fraction is None:
+        return None
+    return market_value * fraction
 
 
 class PortfolioService:
@@ -157,9 +176,10 @@ class PortfolioService:
             await self.ensure_account(user_id, account_id)
         positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in positions) or 0.0
+        histories = await self._recent_history([position.fund_code for position in positions])
         items = []
         for position in positions:
-            items.append(await self._position_item(position, total_value))
+            items.append(await self._position_item(position, total_value, histories.get(position.fund_code)))
         return items
 
     async def get_position(self, user_id: int, account_id: int, fund_code: str) -> PositionItem | None:
@@ -170,7 +190,8 @@ class PortfolioService:
             return None
         siblings = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in siblings)
-        item = await self._position_item(position, total_value)
+        histories = await self._recent_history([fund_code])
+        item = await self._position_item(position, total_value, histories.get(fund_code))
         first_activity = await portfolio_repository.first_activity_date(user_id, account_id, fund_code)
         if first_activity is not None:
             item.holding_days = (business_today() - first_activity).days
@@ -216,7 +237,8 @@ class PortfolioService:
         )
         account_positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in account_positions)
-        return await self._position_item(updated, total_value)
+        histories = await self._recent_history([fund_code])
+        return await self._position_item(updated, total_value, histories.get(fund_code))
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """Remove a position and write an audit adjustment."""
@@ -303,7 +325,20 @@ class PortfolioService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _position_item(self, position: PortfolioPosition, total_value: float) -> PositionItem:
+    @staticmethod
+    async def _recent_history(fund_codes: list[str]) -> dict[str, list[FundNav]]:
+        """NAV rows for the trailing windows, one batched query per call.
+
+        Only a month-plus is read: the longest window shown is 本月收益, and
+        pulling every historical row per position would dwarf the answer.
+        """
+        return await fund_repository.get_nav_history_map(
+            fund_codes, start_date=business_today() - timedelta(days=_WINDOW_LOOKBACK_DAYS)
+        )
+
+    async def _position_item(
+        self, position: PortfolioPosition, total_value: float, history: list[FundNav] | None = None
+    ) -> PositionItem:
         """Enrich a stored position with query-time derived metrics."""
         fund = await fund_repository.get_fund(position.fund_code)
         latest = await fund_repository.get_latest_nav(position.fund_code)
@@ -311,12 +346,21 @@ class PortfolioService:
         profit_loss = position_profit(position)
         cost_amount = position_cost(position)
         profit_loss_rate = profit_loss / cost_amount if cost_amount else None
-        shares = position_shares(position, latest.unit_nav if latest else None)
+        unit_nav = latest.unit_nav if latest else None
+        shares = position_shares(position, unit_nav)
 
         daily_profit_loss = None
         daily_return = latest.daily_return if latest else None
         if latest and latest.daily_return is not None and position.market_value:
             daily_profit_loss = latest.daily_return * position.market_value / 100.0
+
+        weekly_profit_loss = monthly_profit_loss = None
+        if latest is not None and history:
+            points = [NavPoint(row.nav_date, row.unit_nav) for row in history if row.unit_nav is not None]
+            weekly_profit_loss = period_profit_loss(
+                position.market_value, window_return(points, latest.nav_date, _WEEKLY_DAYS)
+            )
+            monthly_profit_loss = period_profit_loss(position.market_value, period_return(points, latest.nav_date, 1))
 
         position_ratio = None
         if total_value > 0 and position.market_value is not None:
@@ -341,6 +385,9 @@ class PortfolioService:
             profit_loss_rate=profit_loss_rate,
             daily_profit_loss=daily_profit_loss,
             daily_return=daily_return,
+            unit_nav=unit_nav,
+            weekly_profit_loss=weekly_profit_loss,
+            monthly_profit_loss=monthly_profit_loss,
             position_ratio=position_ratio,
             nav_date=latest.nav_date if latest else None,
             is_updated=latest is not None,

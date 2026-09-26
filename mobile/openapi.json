@@ -4286,6 +4286,39 @@
             ],
             "title": "Daily Return"
           },
+          "unit_nav": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Nav"
+          },
+          "weekly_profit_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Profit Loss"
+          },
+          "monthly_profit_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Profit Loss"
+          },
           "position_ratio": {
             "anyOf": [
               {
