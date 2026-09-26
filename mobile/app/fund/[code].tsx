@@ -85,13 +85,6 @@ export default function FundDetailScreen() {
 
   return (
     <Screen refreshing={refresh.isPending} onRefresh={code ? () => refresh.mutate() : undefined}>
-      {pickingBenchmark ? (
-        <Pressable
-          accessibilityLabel="关闭基准下拉"
-          onPress={() => setPickingBenchmark(false)}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
-        />
-      ) : null}
       <Stack.Screen options={{ headerRight: () => <StarButton active={isWatchlisted} onPress={toggleWatchlist} /> }} />
 
       {detail.isPending ? <LoadingState /> : null}

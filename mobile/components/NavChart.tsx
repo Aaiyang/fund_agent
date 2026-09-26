@@ -8,7 +8,7 @@
  * do not line up one for one.
  */
 
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { type GestureResponderEvent, Pressable, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
@@ -121,14 +121,22 @@ export function NavChart({
   const markerX = marker ? x(marker.time) : 0;
   const chipLeft = marker ? Math.min(Math.max(markerX - CHIP_W / 2, 0), Math.max(width - CHIP_W, 0)) : 0;
 
+  const pickerArrow = (
+    <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 3 }}>{benchmarkPicker?.open ? '▴' : '▾'}</Text>
+  );
   const benchmarkLegend =
     benchmarkSeries.length && benchmark ? (
-      <Legend color={theme.warning} label={benchmark.name} value={shownBenchmarkChange} />
-    ) : null;
+      <Legend color={theme.warning} label={benchmark.name} value={shownBenchmarkChange} trailing={pickerArrow} />
+    ) : (
+      <Text style={{ fontSize: 12, color: theme.textMuted, marginRight: 12 }}>选基准</Text>
+    );
 
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-      <View style={{ marginBottom: 6 }}>
+      {/* Every RN-web View is its own stacking context (position:relative +
+          z-index:0), so the open menu needs a rank here or the chart painted
+          later in the tree swallows its taps. */}
+      <View style={{ marginBottom: 6, zIndex: benchmarkPicker?.open ? 20 : 0 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
           <Legend color={theme.primary} label="本基金" value={shownFundChange} />
           {benchmarkPicker ? (
@@ -136,15 +144,12 @@ export function NavChart({
               accessibilityRole="button"
               accessibilityLabel="切换比较基准"
               onPress={benchmarkPicker.onToggle}
-              style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}
+              style={{ flexDirection: 'row', alignItems: 'center' }}
             >
-              {benchmarkLegend ?? <Text style={{ fontSize: 12, color: theme.textMuted }}>选基准</Text>}
-              <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 4 }}>
-                {benchmarkPicker.open ? '▴' : '▾'}
-              </Text>
+              {benchmarkLegend}
             </Pressable>
           ) : (
-            benchmarkLegend
+            benchmarkSeries.length && benchmark ? benchmarkLegend : null
           )}
           {costChange !== null ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
@@ -152,6 +157,13 @@ export function NavChart({
             </View>
           ) : null}
         </View>
+        {benchmarkPicker?.open ? (
+          <Pressable
+            accessibilityLabel="关闭基准下拉"
+            onPress={benchmarkPicker.onToggle}
+            style={{ position: 'absolute', top: -600, left: -600, right: -600, bottom: -600, zIndex: 10 }}
+          />
+        ) : null}
         {benchmarkPicker?.open ? (
           <View
             style={{
@@ -265,11 +277,23 @@ export function NavChart({
   );
 }
 
-function Legend({ color, label, value }: { color: string; label: string; value: number | null }) {
+function Legend({
+  color,
+  label,
+  value,
+  trailing,
+}: {
+  color: string;
+  label: string;
+  value: number | null;
+  /** Sits between the name and the figure, e.g. the picker's arrow. */
+  trailing?: ReactNode;
+}) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
       <View style={{ width: 12, height: 2, backgroundColor: color, marginRight: 5 }} />
       <Text style={{ fontSize: 12, color: theme.textMuted }}>{label}</Text>
+      {trailing}
       <Text style={{ fontSize: 12, marginLeft: 4, color: (value ?? 0) >= 0 ? theme.up : theme.down }}>
         {value === null ? '--' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`}
       </Text>
