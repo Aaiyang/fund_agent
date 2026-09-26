@@ -11,14 +11,30 @@ export function Screen({
   scroll = true,
   refreshing,
   onRefresh,
+  pinned,
 }: {
   children: ReactNode;
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Bar rendered above the scroller so it stays visible while content moves. */
+  pinned?: ReactNode;
 }) {
   return (
     <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
+      {pinned ? (
+        <View
+          style={{
+            backgroundColor: theme.surface,
+            borderBottomWidth: 1,
+            borderColor: theme.border,
+            paddingHorizontal: theme.gap,
+            paddingVertical: 8,
+          }}
+        >
+          {pinned}
+        </View>
+      ) : null}
       {scroll ? (
         <ScrollView
           contentContainerStyle={{ padding: theme.gap, paddingBottom: 32 }}

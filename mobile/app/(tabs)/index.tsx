@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
@@ -17,25 +17,27 @@ export default function HoldingsScreen() {
   const accounts = useAccounts();
 
   return (
-    <Screen>
-      <Card>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 }}>
-          <Chip label="账户汇总" active={accountId === null} onPress={() => setAccountId(null)} />
-          {(accounts.data?.items ?? []).map((account) => (
-            <Chip
-              key={account.id}
-              label={account.name}
-              active={accountId === account.id}
-              onPress={() => setAccountId(account.id)}
-            />
-          ))}
-          <Chip label="+ 添加账户" onPress={() => router.push('/account/add')} />
+    <Screen
+      pinned={
+        <View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <Chip label="账户汇总" active={accountId === null} onPress={() => setAccountId(null)} />
+            {(accounts.data?.items ?? []).map((account) => (
+              <Chip
+                key={account.id}
+                label={account.name}
+                active={accountId === account.id}
+                onPress={() => setAccountId(account.id)}
+              />
+            ))}
+            <Chip label="+ 添加账户" onPress={() => router.push('/account/add')} />
+          </ScrollView>
+          <Text style={{ fontSize: 11, color: theme.textFaint }}>
+            共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
+          </Text>
         </View>
-        <Text style={{ fontSize: 12, color: theme.textFaint }}>
-          共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
-        </Text>
-      </Card>
-
+      }
+    >
       <Async query={summary}>
         {(data) => {
           const stats = data.summary;
