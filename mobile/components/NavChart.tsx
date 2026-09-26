@@ -34,10 +34,10 @@ function nearestByTime<T extends { time: number }>(series: T[], target: number):
 
 export type BenchmarkPicker = {
   open: boolean;
-  options: { value: string | null; label: string }[];
+  options: { value: string; label: string }[];
   selected: string | null;
   onToggle: () => void;
-  onPick: (value: string | null) => void;
+  onPick: (value: string) => void;
 };
 
 export function NavChart({
@@ -134,67 +134,72 @@ export function NavChart({
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       {/* Every RN-web View is its own stacking context (position:relative +
-          z-index:0), so the open menu needs a rank here or the chart painted
-          later in the tree swallows its taps. */}
+          z-index:0), so the open menu needs a rank on both levels: the row one
+          to clear the chart painted later in the tree, the trigger one to keep
+          the panel anchored directly under the benchmark name. */}
       <View style={{ marginBottom: 6, zIndex: benchmarkPicker?.open ? 20 : 0 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
           <Legend color={theme.primary} label="本基金" value={shownFundChange} />
           {benchmarkPicker ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="切换比较基准"
-              onPress={benchmarkPicker.onToggle}
-              style={{ flexDirection: 'row', alignItems: 'center' }}
-            >
-              {benchmarkLegend}
-            </Pressable>
-          ) : (
-            benchmarkSeries.length && benchmark ? benchmarkLegend : null
-          )}
+            <View style={{ zIndex: benchmarkPicker.open ? 20 : 0 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="切换比较基准"
+                onPress={benchmarkPicker.onToggle}
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+              >
+                {benchmarkLegend}
+              </Pressable>
+              {benchmarkPicker.open ? (
+                <Pressable
+                  accessibilityLabel="关闭基准下拉"
+                  onPress={benchmarkPicker.onToggle}
+                  style={{ position: 'absolute', top: -600, left: -600, right: -600, bottom: -600, zIndex: 10 }}
+                />
+              ) : null}
+              {benchmarkPicker.open ? (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: 4,
+                    minWidth: 128,
+                    backgroundColor: theme.surface,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    paddingVertical: 4,
+                    zIndex: 20,
+                    elevation: 6,
+                  }}
+                >
+                  {benchmarkPicker.options.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="menuitem"
+                      onPress={() => benchmarkPicker.onPick(option.value)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 9 }}
+                    >
+                      <Text
+                        style={{ fontSize: 13, color: option.value === benchmarkPicker.selected ? theme.primary : theme.text }}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : benchmarkSeries.length && benchmark ? (
+            benchmarkLegend
+          ) : null}
           {costChange !== null ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
               <Text style={{ fontSize: 12, color: theme.textFaint }}>成本价 {costNav?.toFixed(4)}</Text>
             </View>
           ) : null}
         </View>
-        {benchmarkPicker?.open ? (
-          <Pressable
-            accessibilityLabel="关闭基准下拉"
-            onPress={benchmarkPicker.onToggle}
-            style={{ position: 'absolute', top: -600, left: -600, right: -600, bottom: -600, zIndex: 10 }}
-          />
-        ) : null}
-        {benchmarkPicker?.open ? (
-          <View
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              marginTop: 4,
-              minWidth: 128,
-              backgroundColor: theme.surface,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: theme.border,
-              paddingVertical: 4,
-              zIndex: 20,
-              elevation: 6,
-            }}
-          >
-            {benchmarkPicker.options.map((option) => (
-              <Pressable
-                key={option.value ?? 'none'}
-                accessibilityRole="menuitem"
-                onPress={() => benchmarkPicker.onPick(option.value)}
-                style={{ paddingHorizontal: 12, paddingVertical: 9 }}
-              >
-                <Text style={{ fontSize: 13, color: option.value === benchmarkPicker.selected ? theme.primary : theme.text }}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
       </View>
 
       {width > 0 ? (

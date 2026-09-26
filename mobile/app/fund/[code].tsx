@@ -78,10 +78,7 @@ export default function FundDetailScreen() {
 
   const navPoints = nav.data?.points ?? [];
   const recentNav = [...navPoints].reverse().slice(0, NAV_ROWS_COLLAPSED);
-  const benchmarkOptions = [
-    ...(catalog.data?.items ?? []).map((item) => ({ value: item.index_code as string | null, label: item.name })),
-    { value: null, label: '不比较' },
-  ];
+  const benchmarkOptions = (catalog.data?.items ?? []).map((item) => ({ value: item.index_code, label: item.name }));
 
   return (
     <Screen refreshing={refresh.isPending} onRefresh={code ? () => refresh.mutate() : undefined}>
