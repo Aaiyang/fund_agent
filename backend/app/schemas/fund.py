@@ -93,6 +93,7 @@ class FundHoldingItem(BaseModel):
     stock_name: str | None = None
     weight: float | None = None  # 占净值比例, percent points
     weight_change: float | None = None  # 较上期, percentage points
+    is_new: bool = False  # absent from the previous disclosure
     price: float | None = None
     change_pct: float | None = None  # live during a session, last close otherwise
     quote_time: str | None = None  # raw source timestamp, per-market format

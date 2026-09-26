@@ -25,7 +25,7 @@ const COLUMNS: DataColumn<FundHoldingItem>[] = [
     cell: (item) => ({
       text: formatReturnPoints(item.change_pct),
       color: trendColor(item.change_pct),
-      sub: item.quote_time ? item.quote_time.slice(5, 16) : '--',
+      sub: item.quote_time ? item.quote_time.slice(5, 16).replace('/', '-') : '--',
     }),
   },
   {
@@ -33,10 +33,10 @@ const COLUMNS: DataColumn<FundHoldingItem>[] = [
     title: '较上期占比',
     width: 96,
     sortValue: (item) => item.weight_change,
-    cell: (item) => ({
-      text: formatReturnPoints(item.weight_change),
-      color: trendColor(item.weight_change),
-    }),
+    cell: (item) =>
+      item.is_new
+        ? { text: '新增', color: theme.primary }
+        : { text: formatReturnPoints(item.weight_change), color: trendColor(item.weight_change) },
   },
   { key: 'price', title: '现价', width: 84, sortValue: (item) => item.price, cell: (item) => ({ text: formatNumber(item.price, 2) }) },
 ];

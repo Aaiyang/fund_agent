@@ -86,6 +86,9 @@ def summarize_holdings(
             stock_name=holding.stock_name,
             weight=holding.weight,
             weight_change=_weight_change(holding.weight, previous_weights.get(holding.stock_code)),
+            # A code missing from the previous disclosure is a new position, not
+            # a data gap; without an earlier quarter at all nothing is provable.
+            is_new=previous_key is not None and holding.stock_code not in previous_weights,
         )
         for holding in by_quarter[latest_key]
     ]

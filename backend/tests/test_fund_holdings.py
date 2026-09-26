@@ -88,13 +88,30 @@ class TestSummarizeHoldings:
         assert items[0].weight_change == -0.01
         assert items[1].weight_change == -2.43
 
-    def test_new_entry_has_no_delta(self) -> None:
+    def test_new_entry_is_flagged_instead_of_having_no_delta(self) -> None:
         holdings = [
             _holding("300308", "2026年1季度股票投资明细", 10.0),
             _holding("600487", "2026年2季度股票投资明细", 7.47),
         ]
         _, _, items = summarize_holdings(holdings)
         assert len(items) == 1
+        assert items[0].weight_change is None
+        assert items[0].is_new is True
+
+    def test_carried_over_entry_reports_a_delta_and_is_not_new(self) -> None:
+        holdings = [
+            _holding("300308", "2026年1季度股票投资明细", 10.0),
+            _holding("300308", "2026年2季度股票投资明细", 9.99),
+        ]
+        _, _, items = summarize_holdings(holdings)
+        assert items[0].weight_change == -0.01
+        assert items[0].is_new is False
+
+    def test_a_single_disclosure_proves_nothing_new(self) -> None:
+        holdings = [_holding("300308", "2026年2季度股票投资明细", 9.99)]
+        _, previous, items = summarize_holdings(holdings)
+        assert previous is None
+        assert items[0].is_new is False
         assert items[0].weight_change is None
 
     def test_rows_without_a_quarter_are_ignored(self) -> None:

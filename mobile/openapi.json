@@ -3027,6 +3027,11 @@
             ],
             "title": "Weight Change"
           },
+          "is_new": {
+            "type": "boolean",
+            "title": "Is New",
+            "default": false
+          },
           "price": {
             "anyOf": [
               {

@@ -1244,6 +1244,11 @@ export interface components {
             weight?: number | null;
             /** Weight Change */
             weight_change?: number | null;
+            /**
+             * Is New
+             * @default false
+             */
+            is_new?: boolean;
             /** Price */
             price?: number | null;
             /** Change Pct */
