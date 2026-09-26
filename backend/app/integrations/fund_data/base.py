@@ -9,6 +9,7 @@ from app.integrations.fund_data.models import (
     FundExternalNav,
     FundExternalProfile,
     FundExternalRecord,
+    StockExternalQuote,
 )
 
 
@@ -51,5 +52,9 @@ class FundDataProvider(Protocol):
         ...
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
-        """Fetch the fund's stock holdings (empty when unsupported)."""
+        """Fetch the fund's disclosed stock holdings, latest two quarters."""
+        ...
+
+    async def get_stock_quotes(self, stock_codes: list[str]) -> list[StockExternalQuote]:
+        """Quote the held stocks across A-share / HK / US markets."""
         ...

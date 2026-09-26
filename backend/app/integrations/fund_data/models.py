@@ -51,12 +51,25 @@ class FundExternalManager(BaseModel):
 
 
 class FundExternalHolding(BaseModel):
-    """A stock holding inside a fund portfolio (future enhancement)."""
+    """One stock in a fund's reported holdings, for a given reporting quarter."""
 
     fund_code: str
-    stock_code: str | None = None
+    stock_code: str
     stock_name: str | None = None
-    weight: float | None = None
+    weight: float | None = None  # 占净值比例, in percent points
+    shares: float | None = None  # 持股数, in 万股 as the source reports it
+    market_value: float | None = None  # 持仓市值, in 万元
+    quarter: str | None = None  # e.g. "2026年2季度"
+
+
+class StockExternalQuote(BaseModel):
+    """One quote of an individual stock, across A-share / HK / US markets."""
+
+    symbol: str  # source-prefixed instrument id, e.g. sz300570, hk01810, gb_aapl
+    name: str | None = None
+    price: float | None = None
+    change_pct: float | None = None  # percent points, matching fund daily_return
+    quote_time: str | None = None  # raw source timestamp; formats differ per market
 
 
 class IndexExternalQuote(BaseModel):

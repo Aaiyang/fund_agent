@@ -16,6 +16,7 @@ from app.core.limiter import limiter
 from app.core.logging import logger
 from app.schemas.fund import (
     FundDetailResponse,
+    FundHoldingsResponse,
     FundNavHistoryResponse,
     FundPerformanceResponse,
     FundSearchResponse,
@@ -77,6 +78,19 @@ async def get_fund_nav_history(
         limit=limit,
         before_date=before_date,
     )
+
+
+@router.get("/{fund_code}/holdings", response_model=FundHoldingsResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["funds"][0])
+async def get_fund_holdings(
+    request: Request,
+    fund_code: str,
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> FundHoldingsResponse:
+    """Top-ten disclosed holdings with live quotes (spec 3.5.4)."""
+    holdings = await fund_service.get_holdings(fund_code)
+    logger.info("fund_holdings_requested", fund_code=fund_code, count=len(holdings.items), user_id=identity.user_id)
+    return holdings
 
 
 @router.get("/{fund_code}/performance", response_model=FundPerformanceResponse)

@@ -31,13 +31,19 @@ from app.integrations.fund_data.models import (
     FundExternalProfile,
     FundExternalRecord,
     IndexExternalQuote,
+    StockExternalQuote,
 )
 from app.integrations.fund_data.normalizer import (
     normalize_fund_record,
+    normalize_holding_rows,
     normalize_index_rows,
     normalize_nav_rows,
     normalize_profile_rows,
+    parse_quarter,
+    sina_symbol,
 )
+from app.integrations.fund_data.sina_client import fetch_quotes
+from app.utils.clock import business_today
 from app.utils.sanitization import sanitize_string
 
 # Cache the full open-fund rank table in-process for cheap search + latest NAV
@@ -146,8 +152,32 @@ class AKShareFundProvider:
         return FundExternalManager(fund_code=fund_code, manager_name=profile.manager_name)
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
-        """Stock holdings are not part of the MVP sync scope (spec 5.7)."""
-        return []
+        """Fetch the disclosed stock holdings of the two latest reporting quarters.
+
+        The quarter-over-quarter change the UI shows needs the previous
+        disclosure too, and the endpoint is yearly, so the year before is only
+        pulled when the current one has a single quarter published.
+        """
+        year = business_today().year
+        rows: list[dict[str, Any]] = []
+        for candidate in (year, year - 1):
+            rows.extend(await self._call("fund_portfolio_hold_em", symbol=fund_code, date=str(candidate)))
+            quarters = {parse_quarter(row.get("季度")) for row in rows}
+            if len(quarters - {None}) >= 2:
+                break
+        return normalize_holding_rows(rows, fund_code)
+
+    async def get_stock_quotes(self, stock_codes: list[str]) -> list[StockExternalQuote]:
+        """Quote holdings across A-share/HK/US markets in one batched request."""
+        symbols = [symbol for symbol in (sina_symbol(code) for code in stock_codes) if symbol]
+        if not symbols:
+            return []
+        try:
+            return await fetch_quotes(symbols)
+        except Exception as e:
+            # A quote outage costs one column, not the whole holdings page.
+            logger.warning("stock_quotes_unavailable", count=len(symbols), error=str(e))
+            return []
 
     async def get_index_history(
         self,

@@ -10,10 +10,12 @@ from typing import Any
 
 from app.core.logging import logger
 from app.integrations.fund_data.models import (
+    FundExternalHolding,
     FundExternalNav,
     FundExternalProfile,
     FundExternalRecord,
     IndexExternalQuote,
+    StockExternalQuote,
 )
 
 _PERCENT_SUFFIX = re.compile(r"%\s*$")
@@ -190,4 +192,110 @@ def normalize_index_rows(rows: list[dict[str, Any]], index_code: str) -> list[In
             continue
         quotes.append(IndexExternalQuote(index_code=index_code, trade_date=trade_date, close=close))
     quotes.sort(key=lambda quote: quote.trade_date)
+    return quotes
+
+
+_QUARTER_PATTERN = re.compile(r"(\d{4})年(\d)季度")
+
+
+def parse_quarter(label: Any) -> tuple[int, int] | None:
+    """Order key for a reporting period like ``2026年2季度股票投资明细``."""
+    if label is None:
+        return None
+    match = _QUARTER_PATTERN.search(str(label))
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def normalize_holding_rows(rows: list[dict[str, Any]], fund_code: str) -> list[FundExternalHolding]:
+    """Convert ``fund_portfolio_hold_em`` rows into holdings with their quarter."""
+    holdings: list[FundExternalHolding] = []
+    for row in rows:
+        stock_code = _pick(row, "股票代码", "证券代码", "stock_code")
+        if stock_code is None:
+            continue
+        quarter_label = _pick(row, "季度", "period")
+        holdings.append(
+            FundExternalHolding(
+                fund_code=fund_code,
+                stock_code=str(stock_code).strip(),
+                stock_name=str(_pick(row, "股票名称", "证券简称", "stock_name") or "").strip() or None,
+                weight=to_float(_pick(row, "占净值比例", "占净值比例(%)", "weight")),
+                shares=to_float(_pick(row, "持股数", "持仓数量")),
+                market_value=to_float(_pick(row, "持仓市值", "市值")),
+                quarter=str(quarter_label).strip() if quarter_label else None,
+            )
+        )
+    return holdings
+
+
+def sina_symbol(stock_code: str) -> str | None:
+    """Map a holding's code to its quote symbol; markets are encoded in the shape.
+
+    The holdings table carries no market column, so a 6-digit code is a Chinese
+    listing (5/6/9 Shanghai, otherwise Shenzhen), a 5-digit one is Hong Kong, and
+    a lettered ticker is a US listing.
+    """
+    code = stock_code.strip()
+    if code.isdigit():
+        if len(code) == 6:
+            return ("sh" if code[0] in "569" else "sz") + code
+        if len(code) == 5:
+            return "hk" + code
+        return None
+    if re.fullmatch(r"[A-Za-z][A-Za-z.\-]{0,9}", code):
+        return "gb_" + code.lower()
+    return None
+
+
+_SINA_LINE = re.compile(r'var hq_str_(?P<symbol>\w+)="(?P<body>[^"]*)"')
+
+
+def parse_sina_quotes(payload: str) -> list[StockExternalQuote]:
+    """Parse the batched quote reply; each market has its own field layout."""
+    quotes: list[StockExternalQuote] = []
+    for match in _SINA_LINE.finditer(payload):
+        symbol = match.group("symbol")
+        fields = match.group("body").split(",")
+        if len(fields) < 4 or not fields[0]:
+            continue
+        if symbol.startswith("gb_"):
+            # 名称,现价,涨跌幅,时间,涨跌额,昨收,开盘,最高,最低,...
+            quotes.append(
+                StockExternalQuote(
+                    symbol=symbol,
+                    name=fields[0],
+                    price=to_float(fields[1]),
+                    change_pct=to_float(fields[2]),
+                    quote_time=fields[3] or None,
+                )
+            )
+        elif symbol.startswith("hk"):
+            # 英文名,名称,昨收,开盘,最高,最低,现价,涨跌额,涨跌幅,...,日期,时间
+            quotes.append(
+                StockExternalQuote(
+                    symbol=symbol,
+                    name=fields[1],
+                    price=to_float(fields[6]),
+                    change_pct=to_float(fields[8]),
+                    quote_time=" ".join(fields[-2:]) if len(fields) > 2 else None,
+                )
+            )
+        else:
+            # A股: 名称,今开,昨收,现价,最高,最低,...,日期(30),时间(31)
+            previous_close = to_float(fields[2])
+            price = to_float(fields[3])
+            change_pct = None
+            if previous_close and price is not None:
+                change_pct = round((price - previous_close) / previous_close * 100, 4)
+            quotes.append(
+                StockExternalQuote(
+                    symbol=symbol,
+                    name=fields[0],
+                    price=price,
+                    change_pct=change_pct,
+                    quote_time=" ".join(fields[30:32]) if len(fields) > 31 else None,
+                )
+            )
     return quotes

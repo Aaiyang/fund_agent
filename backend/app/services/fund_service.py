@@ -21,12 +21,16 @@ from app.core.database import get_async_session
 from app.core.logging import logger
 from app.integrations.fund_data.akshare_client import AKSHARE_AVAILABLE
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
+from app.integrations.fund_data.models import FundExternalHolding
+from app.integrations.fund_data.normalizer import parse_quarter, sina_symbol
 from app.models.fund import Fund, FundNav
 from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist
 from app.repositories.fund_repository import fund_repository, fund_write_repository
 from app.schemas.fund import (
     FundDetailResponse,
+    FundHoldingItem,
+    FundHoldingsResponse,
     FundNavHistoryResponse,
     FundNavPoint,
     FundPerformance,
@@ -38,6 +42,63 @@ from app.utils.clock import business_today, range_start
 
 _LATEST_NAV_CACHE_TTL_SECONDS = 300
 _SEARCH_CACHE_TTL_SECONDS = 300
+# Disclosed holdings change once a quarter, so the fetch is cached even though
+# the quotes on top of them are not.
+_HOLDINGS_CACHE_TTL_SECONDS = 3600
+_TOP_HOLDINGS = 10
+
+
+def _weight_change(weight: float | None, previous: float | None) -> float | None:
+    """Quarter-over-quarter move of a holding's 占净值比例, in percentage points."""
+    if weight is None or previous is None:
+        return None
+    return round(weight - previous, 4)
+
+
+def summarize_holdings(
+    holdings: list[FundExternalHolding],
+) -> tuple[str | None, str | None, list[FundHoldingItem]]:
+    """Latest disclosed quarter, each row compared against the one before it.
+
+    Returns:
+        The latest quarter label, the previous quarter label, and the top
+        holdings ordered by weight. Rows without a parsable quarter (the source
+        renames this column between versions) are dropped rather than guessed.
+    """
+    by_quarter: dict[tuple[int, int], list[FundExternalHolding]] = {}
+    for holding in holdings:
+        key = parse_quarter(holding.quarter)
+        if key is not None:
+            by_quarter.setdefault(key, []).append(holding)
+    if not by_quarter:
+        return None, None, []
+
+    ordered = sorted(by_quarter)
+    latest_key = ordered[-1]
+    previous_key = ordered[-2] if len(ordered) > 1 else None
+    previous_weights = (
+        {holding.stock_code: holding.weight for holding in by_quarter[previous_key]} if previous_key else {}
+    )
+
+    items = [
+        FundHoldingItem(
+            stock_code=holding.stock_code,
+            stock_name=holding.stock_name,
+            weight=holding.weight,
+            weight_change=_weight_change(holding.weight, previous_weights.get(holding.stock_code)),
+        )
+        for holding in by_quarter[latest_key]
+    ]
+    items.sort(key=lambda item: item.weight if item.weight is not None else -1.0, reverse=True)
+
+    def label(key: tuple[int, int]) -> str:
+        return f"{key[0]}年{key[1]}季度"
+
+    return (
+        label(latest_key),
+        label(previous_key) if previous_key else None,
+        items[:_TOP_HOLDINGS],
+    )
 
 
 class FundService:
@@ -223,6 +284,56 @@ class FundService:
                 for row in page
             ],
         )
+
+    async def get_holdings(self, fund_code: str) -> FundHoldingsResponse:
+        """Top-ten disclosed holdings with their current quotes.
+
+        Read live rather than from PostgreSQL: the disclosure is quarterly but
+        sparse, and a page that only opens on tap should not carry a sync job,
+        cache-invalidation path and migration for data nobody looks at daily.
+        A source outage returns an empty page instead of failing the request.
+        """
+        holdings = await self._disclosed_holdings(fund_code)
+        quarter, previous_quarter, items = summarize_holdings(holdings)
+        if not items:
+            return FundHoldingsResponse(fund_code=fund_code, quarter=quarter, previous_quarter=previous_quarter)
+
+        symbols = {item.stock_code: sina_symbol(item.stock_code) for item in items}
+        # The provider maps raw listing codes to quote symbols itself; feeding it
+        # prefixed symbols would make it map them a second time and drop them all.
+        quotes = {quote.symbol: quote for quote in await akshare_fund_provider.get_stock_quotes(list(symbols.keys()))}
+        for item in items:
+            quote = quotes.get(symbols.get(item.stock_code) or "")
+            if quote is not None:
+                item.price = quote.price
+                item.change_pct = quote.change_pct
+                item.quote_time = quote.quote_time
+
+        return FundHoldingsResponse(
+            fund_code=fund_code,
+            quarter=quarter,
+            previous_quarter=previous_quarter,
+            items=items,
+        )
+
+    async def _disclosed_holdings(self, fund_code: str) -> list[FundExternalHolding]:
+        """Load the two latest disclosure quarters, cached because they are quarterly."""
+        key = cache_key("fund_holdings", fund_code)
+        cached = await cache_service.get(key)
+        if cached:
+            return [FundExternalHolding.model_validate(row) for row in json.loads(cached)]
+        try:
+            holdings = await akshare_fund_provider.get_holdings(fund_code)
+        except Exception:
+            logger.exception("fund_holdings_fetch_failed", fund_code=fund_code)
+            return []
+        if holdings:
+            await cache_service.set(
+                key,
+                json.dumps([holding.model_dump(mode="json") for holding in holdings], ensure_ascii=False),
+                ttl=_HOLDINGS_CACHE_TTL_SECONDS,
+            )
+        return holdings
 
     def _compute_performance(self, points: list[NavPoint], end: date) -> FundPerformance:
         """Compute deterministic period metrics from a NAV series."""
