@@ -1,11 +1,26 @@
 """Snapshot fields a holdings import may leave empty are derived, not read as zero."""
 
 from app.models.portfolio import PortfolioPosition
-from app.services.portfolio_service import position_profit, position_shares
+from app.services.portfolio_service import position_cost, position_profit, position_shares
 
 
 def _position(**values: object) -> PortfolioPosition:
     return PortfolioPosition(user_id=1, account_id=1, fund_code="011452", **values)  # pyright: ignore[reportCallIssue]
+
+
+class TestPositionCost:
+    def test_uses_the_stored_cost(self) -> None:
+        assert position_cost(_position(cost_amount=22232.0, market_value=23121.0, profit_loss=889.0)) == 22232.0
+
+    def test_derives_from_amount_minus_profit(self) -> None:
+        assert position_cost(_position(market_value=23121.0, profit_loss=889.0)) == 22232.0
+
+    def test_keeps_a_negative_cost_of_a_lost_position(self) -> None:
+        assert position_cost(_position(market_value=800.0, profit_loss=-200.0)) == 1000.0
+
+    def test_none_when_profit_is_the_missing_figure(self) -> None:
+        assert position_cost(_position(market_value=23121.0)) is None
+        assert position_cost(_position()) is None
 
 
 class TestPositionProfit:

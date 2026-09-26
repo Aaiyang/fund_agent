@@ -67,6 +67,21 @@ def position_shares(position: PortfolioPosition, unit_nav: float | None) -> floa
     return None
 
 
+def position_cost(position: PortfolioPosition) -> float | None:
+    """Cost basis for a snapshot, derived when only amount and profit are known.
+
+    The mirror of `position_profit`: a holdings screen that shows 当前持有金额
+    and 持有收益 implies the cost between them, and without it 收益率 and
+    成本净值 have no denominator at all. NULL stays NULL when neither pair is
+    complete, so nothing is invented from a single figure.
+    """
+    if position.cost_amount is not None:
+        return position.cost_amount
+    if position.market_value is not None and position.profit_loss is not None:
+        return position.market_value - position.profit_loss
+    return None
+
+
 class PortfolioService:
     """Async portfolio operations."""
 
@@ -234,7 +249,7 @@ class PortfolioService:
 
         for position in positions:
             summary.total_market_value += position.market_value or 0.0
-            summary.total_cost += position.cost_amount or 0.0
+            summary.total_cost += position_cost(position) or 0.0
             summary.total_profit_loss += position_profit(position)
             latest = latest_navs.get(position.fund_code)
             if latest is not None:
@@ -294,9 +309,9 @@ class PortfolioService:
         latest = await fund_repository.get_latest_nav(position.fund_code)
 
         profit_loss = position_profit(position)
-        profit_loss_rate = None
-        if position.cost_amount:
-            profit_loss_rate = profit_loss / position.cost_amount
+        cost_amount = position_cost(position)
+        profit_loss_rate = profit_loss / cost_amount if cost_amount else None
+        shares = position_shares(position, latest.unit_nav if latest else None)
 
         daily_profit_loss = None
         daily_return = latest.daily_return if latest else None
@@ -310,16 +325,16 @@ class PortfolioService:
         # Snapshot imports leave the stored column empty; cost per unit NAV is
         # derivable from amount and shares (spec 5.2: derived, never persisted).
         average_cost_nav = position.average_cost_nav
-        if average_cost_nav is None and position.shares and position.cost_amount:
-            average_cost_nav = position.cost_amount / position.shares
+        if average_cost_nav is None and shares and cost_amount:
+            average_cost_nav = cost_amount / shares
 
         return PositionItem(
             id=position.id,
             account_id=position.account_id,
             fund_code=position.fund_code,
             fund_name=fund.fund_name if fund else None,
-            shares=position_shares(position, latest.unit_nav if latest else None),
-            cost_amount=position.cost_amount,
+            shares=shares,
+            cost_amount=cost_amount,
             average_cost_nav=average_cost_nav,
             market_value=position.market_value,
             profit_loss=profit_loss,
