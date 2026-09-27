@@ -14,8 +14,9 @@ from app.integrations.fund_data.models import (
 from app.schemas.base import BaseResponse
 from app.schemas.fund import NavRange
 
-# Weekly bars exist so a three-year window stays a few dozen points, not 750.
-MarketPeriod = Literal["day", "week"]
+# Weekly and monthly bars exist so a long window stays a few dozen points, not
+# hundreds. The feed only answers for 月K when an adjustment is requested.
+MarketPeriod = Literal["day", "week", "month"]
 
 
 class IndexCatalogItem(BaseModel):

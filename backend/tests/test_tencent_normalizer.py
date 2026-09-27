@@ -166,6 +166,14 @@ class TestCandleParsing:
         payload: dict[str, Any] = {"data": {"sh600519": {"qfqweek": [["2026-09-24", "1", "2", "3", "0.5", "10"]]}}}
         assert [bar.close for bar in parse_tencent_candles(payload, "sh600519")] == [2.0]
 
+    def test_monthly_bars_are_read_from_either_key(self) -> None:
+        # A股 gets the adjusted key; indexes, 港股 and 美股 come back plain even
+        # though the request asked for 前复权.
+        row = ["2026-09-24", "3979.880", "3888.370", "3995.180", "3842.720", "8924426945.000"]
+        for key, symbol in (("qfqmonth", "sh600519"), ("month", "sh000001"), ("month", "hk01810")):
+            payload: dict[str, Any] = {"data": {symbol: {key: [row]}}}
+            assert parse_tencent_candles(payload, symbol)[0].close == 3888.370, key
+
     def test_trailing_corporate_action_row_still_parses(self) -> None:
         row = [
             "2026-09-25",

@@ -63,7 +63,8 @@ _SYMBOL_HISTORY_TTL_SECONDS = 600
 _COMPANY_TTL_SECONDS = 24 * 3600
 # Trading sessions behind each named range, used to size the bar request.
 _TRADING_DAYS: dict[str, int] = {"1m": 22, "3m": 63, "6m": 126, "1y": 250, "3y": 750, "all": 1200}
-_TRADING_DAYS_PER_WEEK = 5
+# How many trading days one bar of each period stands for.
+_TRADING_DAYS_PER_BAR: dict[MarketPeriod, int] = {"day": 1, "week": 5, "month": 21}
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -271,10 +272,9 @@ def _daily_change(closes: list[float]) -> float | None:
 
 def _bar_count(period: MarketPeriod, range_key: NavRange) -> int:
     """Bars to request so the window is covered without fetching a decade."""
+    per_bar = _TRADING_DAYS_PER_BAR[period]
     days = _TRADING_DAYS[range_key]
-    if period == "week":
-        return max(days // _TRADING_DAYS_PER_WEEK, 8)
-    return days
+    return days if per_bar == 1 else max(days // per_bar, 6)
 
 
 def _bars_change(bars: list[CandleExternalBar]) -> float | None:

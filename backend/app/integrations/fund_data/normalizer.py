@@ -446,7 +446,7 @@ def parse_tencent_candles(payload: dict[str, Any], symbol: str) -> list[CandleEx
     slice is positional from the left rather than "everything but the last".
     """
     node = _tencent_node(payload, symbol)
-    for key in ("qfqday", "day", "qfqweek", "week"):
+    for key in ("qfqday", "day", "qfqweek", "week", "qfqmonth", "month"):
         rows = node.get(key)
         if isinstance(rows, list) and rows:
             bars: list[CandleExternalBar] = []
