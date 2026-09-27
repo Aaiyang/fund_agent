@@ -34,6 +34,8 @@ export type ChartMinute = {
   price: number;
   volume?: number | null;
   average_price?: number | null;
+  /** Filled by the 五日 series, where the points span several sessions. */
+  trade_date?: string | null;
 };
 
 const PRICE_HEIGHT = 190;
@@ -43,6 +45,9 @@ const PADDING = 6;
 const CHIP_WIDTH = 116;
 // One candle per trading day, ~3 months across a phone-width card.
 const CANDLE_SLOT_W = 7;
+// A 五日 line is ~1,200 minutes; one volume bar each would be a solid mass, so
+// the bars are summed into at most this many buckets.
+const MAX_VOLUME_BARS = 300;
 
 type Slot = {
   label: string;
@@ -55,6 +60,8 @@ type Slot = {
   high?: number;
   low?: number;
   average?: number | null;
+  /** First minute of a new session, in the 五日 series. */
+  newDay?: boolean;
 };
 
 function candleSlots(bars: ChartBar[]): Slot[] {
@@ -73,13 +80,15 @@ function candleSlots(bars: ChartBar[]): Slot[] {
 
 function minuteSlots(points: ChartMinute[], prevClose: number | null): Slot[] {
   return points.map((point, index) => ({
-    label: point.time,
+    // A single session reads as a clock time; five of them need the date too.
+    label: point.trade_date ? `${point.trade_date.slice(5)} ${point.time}` : point.time,
     price: point.price,
     changePct: prevClose ? ((point.price - prevClose) / prevClose) * 100 : null,
     volume: point.volume ?? null,
     // A minute counts as up when it traded at or above the minute before it.
     up: index === 0 ? point.price >= (prevClose ?? point.price) : point.price >= points[index - 1].price,
     average: point.average_price ?? null,
+    newDay: index === 0 || Boolean(point.trade_date && point.trade_date !== points[index - 1].trade_date),
   }));
 }
 
@@ -140,16 +149,33 @@ export function MarketChart({
   const x = (index: number) => index * slotWidth + slotWidth / 2;
   const y = (price: number) => PADDING + ((high - price) / span) * (PRICE_HEIGHT - PADDING * 2);
 
-  const maxVolume = Math.max(...slots.map((slot) => slot.volume ?? 0), 0);
-  const volumeHeight = (volume: number | null) =>
-    volume && maxVolume ? (volume / maxVolume) * VOLUME_HEIGHT : 0;
+  // One bar per point turns a 五日 series into a solid mass, so consecutive
+  // points are summed into at most MAX_VOLUME_BARS buckets.
+  const bucket = Math.max(Math.ceil(slots.length / MAX_VOLUME_BARS), 1);
+  const groups: { start: number; volume: number; up: boolean }[] = [];
+  for (let index = 0; index < slots.length; index += bucket) {
+    const slice = slots.slice(index, index + bucket);
+    groups.push({
+      start: index,
+      volume: slice.reduce((sum, slot) => sum + (slot.volume ?? 0), 0),
+      up: slice[slice.length - 1].up,
+    });
+  }
+  const maxVolume = Math.max(...groups.map((group) => group.volume), 0);
+  const barWidth = Math.max(Math.min(slotWidth * bucket * 0.62, 14), 1);
+
+  const dayStarts = slots.map((slot, index) => (slot.newDay ? index : -1)).filter((index) => index >= 0);
+  const multiDay = dayStarts.length > 1;
 
   const bodyWidth = Math.max(Math.min(slotWidth * 0.62, 14), 1);
   const marker = pinned && pinned.series === seriesKey ? pinned.index : null;
   const shown = marker === null ? null : slots[marker];
   // The volume pane's number tracks the crosshair, falling back to the newest
-  // bar; without it the bars show shape but no quantity.
-  const readout = shown ?? slots[slots.length - 1];
+  // bar; without it the bars show shape but no quantity. It reads the *bucket*
+  // the crosshair lands in, so the figure always matches the bar's height.
+  const readoutIndex = marker ?? slots.length - 1;
+  const readout =
+    groups.find((group) => readoutIndex >= group.start && readoutIndex < group.start + bucket) ?? groups[groups.length - 1];
 
   const locate = (event: GestureResponderEvent) => {
     const locationX = event.nativeEvent.locationX;
@@ -231,21 +257,38 @@ export function MarketChart({
               <Polyline points={averagePath} fill="none" stroke={theme.warning} strokeWidth={1.2} />
             )}
 
-            {slots.map((slot, index) => {
-              const height = volumeHeight(slot.volume);
+            {groups.map((group) => {
+              const height = maxVolume ? (group.volume / maxVolume) * VOLUME_HEIGHT : 0;
               if (!height) return null;
               return (
                 <Rect
-                  key={`volume-${slot.label}-${index}`}
-                  x={x(index) - bodyWidth / 2}
+                  key={`volume-${group.start}`}
+                  x={x(group.start) - barWidth / 2}
                   y={PRICE_HEIGHT + GAP + VOLUME_HEIGHT - height}
-                  width={bodyWidth}
+                  width={barWidth}
                   height={height}
-                  fill={slot.up ? theme.up : theme.down}
+                  fill={group.up ? theme.up : theme.down}
                   opacity={0.55}
                 />
               );
             })}
+
+            {/* Session boundaries, so a five-day line can be read day by day. */}
+            {multiDay
+              ? dayStarts
+                  .filter((index) => index > 0)
+                  .map((index) => (
+                    <Line
+                      key={`day-${index}`}
+                      x1={x(index) - slotWidth / 2}
+                      y1={0}
+                      x2={x(index) - slotWidth / 2}
+                      y2={PRICE_HEIGHT + GAP + VOLUME_HEIGHT}
+                      stroke={theme.border}
+                      strokeWidth={1}
+                    />
+                  ))
+              : null}
 
             {marker === null ? null : (
               <Line
@@ -342,19 +385,32 @@ export function MarketChart({
         <View style={{ height: PRICE_HEIGHT + VOLUME_HEIGHT + GAP }} />
       )}
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-        <Text style={{ fontSize: 11, color: theme.textFaint }}>
-          {isCandle ? formatDate(slots[0].label) : slots[0].label}
-        </Text>
-        <Text style={{ fontSize: 11, color: theme.textFaint }}>
-          {reference
-            ? `${(((high - reference) / reference) * 100).toFixed(2)}% ~ ${(((low - reference) / reference) * 100).toFixed(2)}%`
-            : `${low.toFixed(2)} ~ ${high.toFixed(2)}`}
-        </Text>
-        <Text style={{ fontSize: 11, color: theme.textFaint }}>
-          {isCandle ? formatDate(slots[slots.length - 1].label) : slots[slots.length - 1].label}
-        </Text>
-      </View>
+      {multiDay ? (
+        <View style={{ position: 'relative', height: 14, marginTop: 4 }}>
+          {dayStarts.map((index) => (
+            <Text
+              key={`axis-${index}`}
+              style={{ position: 'absolute', left: Math.min(x(index), plotWidth - 34), fontSize: 11, color: theme.textFaint }}
+            >
+              {slots[index].label.slice(0, 5)}
+            </Text>
+          ))}
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+          <Text style={{ fontSize: 11, color: theme.textFaint }}>
+            {isCandle ? formatDate(slots[0].label) : slots[0].label}
+          </Text>
+          <Text style={{ fontSize: 11, color: theme.textFaint }}>
+            {reference
+              ? `${(((high - reference) / reference) * 100).toFixed(2)}% ~ ${(((low - reference) / reference) * 100).toFixed(2)}%`
+              : `${low.toFixed(2)} ~ ${high.toFixed(2)}`}
+          </Text>
+          <Text style={{ fontSize: 11, color: theme.textFaint }}>
+            {isCandle ? formatDate(slots[slots.length - 1].label) : slots[slots.length - 1].label}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

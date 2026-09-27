@@ -35,10 +35,11 @@ import {
   trendColor,
 } from '@/utils/format';
 
-type Mode = 'intraday' | 'day' | 'week' | 'month';
+type Mode = 'intraday' | 'fiveday' | 'day' | 'week' | 'month';
 
 const MODES: { key: Mode; label: string }[] = [
   { key: 'intraday', label: '分时' },
+  { key: 'fiveday', label: '五日' },
   { key: 'day', label: '日K' },
   { key: 'week', label: '周K' },
   { key: 'month', label: '月K' },
@@ -57,17 +58,19 @@ export default function MarketScreen() {
   const [mode, setMode] = useState<Mode>('day');
   const target = symbol ?? null;
   const quote = useMarketQuote(target);
-  const period: MarketPeriod = mode === 'intraday' ? 'day' : mode;
+  const isMinute = mode === 'intraday' || mode === 'fiveday';
+  const period: MarketPeriod = isMinute ? 'day' : mode;
   const history = useMarketHistory(target, period, HISTORY[period].range);
-  const intraday = useMarketIntraday(target, mode === 'intraday');
+  const intraday = useMarketIntraday(target, isMinute, mode === 'fiveday' ? 5 : 1);
   const company = useMarketCompany(target);
   const data = quote.data;
   const sign = currencySign(data?.currency);
   const profile = company.data?.company;
-  // The feed serves a minute line for A股 and 港股 only; a US 分时 tab would
-  // exist purely to fail, so it is not offered at all. The symbol shape is
-  // checked too so the tab never appears for one frame before the quote lands.
-  const modes = data?.currency === 'USD' || /^us[A-Za-z]/.test(symbol ?? '') ? MODES.slice(1) : MODES;
+  // The feed serves minute lines for A股 and 港股 only, for one session or five;
+  // a US market would offer two tabs that can only fail, so neither is shown.
+  // The symbol shape is checked too so the tabs never appear for one frame
+  // before the quote lands.
+  const modes = data?.currency === 'USD' || /^us[A-Za-z]/.test(symbol ?? '') ? MODES.slice(2) : MODES;
 
   const refresh = () => {
     void Promise.all([quote.refetch(), history.refetch(), intraday.refetch()]);
@@ -130,14 +133,14 @@ export default function MarketScreen() {
               <NavTab key={entry.key} label={entry.label} active={mode === entry.key} onPress={() => setMode(entry.key)} />
             ))}
           </View>
-          {mode === 'intraday' ? null : (
+          {isMinute ? null : (
             <Text style={{ fontSize: 12, color: theme.textMuted }}>
               {HISTORY[period].label} {formatSignedRate(history.data?.period_return)}
             </Text>
           )}
         </View>
 
-        {mode === 'intraday' ? (
+        {isMinute ? (
           <Async query={intraday}>
             {(series) => (
               <MarketChart minutes={series.points ?? []} prevClose={series.prev_close} volumeUnit={data?.volume_unit} />
@@ -149,9 +152,11 @@ export default function MarketScreen() {
           </Async>
         )}
 
-        {mode === 'intraday' ? (
+        {isMinute ? (
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
-            分时为最近一个交易日的分钟线，虚线是昨收 {formatPrice(intraday.data?.prev_close)}
+            {mode === 'fiveday'
+              ? `最近 5 个交易日、每天 ${Math.round((intraday.data?.total ?? 0) / 5)} 个分钟点，虚线是 ${formatPrice(intraday.data?.prev_close)}（窗口前一日收盘）`
+              : `分时为最近一个交易日的分钟线，虚线是昨收 ${formatPrice(intraday.data?.prev_close)}`}
           </Text>
         ) : (
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>

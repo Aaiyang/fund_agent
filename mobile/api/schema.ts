@@ -625,7 +625,9 @@ export interface paths {
         };
         /**
          * Get Symbol Intraday
-         * @description The current session's minute line, with the previous close as its axis.
+         * @description Minute line for one session, or for the last five stitched together.
+         *
+         *     The response's `prev_close` is the reference the chart measures against.
          */
         get: operations["get_symbol_intraday_api_v1_markets__symbol__intraday_get"];
         put?: never;
@@ -1903,10 +1905,12 @@ export interface components {
         };
         /**
          * MinuteExternalPoint
-         * @description One minute of the current trading session.
+         * @description One minute of a trading session.
          *
          *     ``volume`` and ``amount`` are per-minute, derived from the source's running
-         *     totals; ``average_price`` is only meaningful for stocks.
+         *     totals; ``average_price`` is only meaningful for stocks. ``trade_date`` stays
+         *     None for a single session and is filled for the five-day series, where the
+         *     points span several days.
          */
         MinuteExternalPoint: {
             /** Time */
@@ -1919,6 +1923,8 @@ export interface components {
             amount?: number | null;
             /** Average Price */
             average_price?: number | null;
+            /** Trade Date */
+            trade_date?: string | null;
         };
         /**
          * PortfolioSummary
@@ -2211,6 +2217,11 @@ export interface components {
             symbol: string;
             /** Kind */
             kind: string;
+            /**
+             * Days
+             * @enum {integer}
+             */
+            days: 1 | 5;
             /** Trade Date */
             trade_date?: string | null;
             /** Prev Close */
@@ -3408,7 +3419,10 @@ export interface operations {
     };
     get_symbol_intraday_api_v1_markets__symbol__intraday_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 分钟线覆盖的交易日数：1 或 5 */
+                days?: number;
+            };
             header?: never;
             path: {
                 symbol: string;

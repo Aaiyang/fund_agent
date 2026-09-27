@@ -1228,7 +1228,7 @@
           "Markets"
         ],
         "summary": "Get Symbol Intraday",
-        "description": "The current session's minute line, with the previous close as its axis.",
+        "description": "Minute line for one session, or for the last five stitched together.\n\nThe response's `prev_close` is the reference the chart measures against.",
         "operationId": "get_symbol_intraday_api_v1_markets__symbol__intraday_get",
         "security": [
           {
@@ -1244,6 +1244,18 @@
               "type": "string",
               "title": "Symbol"
             }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "分钟线覆盖的交易日数：1 或 5",
+              "default": 1,
+              "title": "Days"
+            },
+            "description": "分钟线覆盖的交易日数：1 或 5"
           }
         ],
         "responses": {
@@ -4845,6 +4857,18 @@
               }
             ],
             "title": "Average Price"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Date"
           }
         },
         "type": "object",
@@ -4853,7 +4877,7 @@
           "price"
         ],
         "title": "MinuteExternalPoint",
-        "description": "One minute of the current trading session.\n\n``volume`` and ``amount`` are per-minute, derived from the source's running\ntotals; ``average_price`` is only meaningful for stocks."
+        "description": "One minute of a trading session.\n\n``volume`` and ``amount`` are per-minute, derived from the source's running\ntotals; ``average_price`` is only meaningful for stocks. ``trade_date`` stays\nNone for a single session and is filled for the five-day series, where the\npoints span several days."
       },
       "PortfolioSummary": {
         "properties": {
@@ -5497,6 +5521,14 @@
             "type": "string",
             "title": "Kind"
           },
+          "days": {
+            "type": "integer",
+            "enum": [
+              1,
+              5
+            ],
+            "title": "Days"
+          },
           "trade_date": {
             "anyOf": [
               {
@@ -5536,6 +5568,7 @@
         "required": [
           "symbol",
           "kind",
+          "days",
           "points",
           "total"
         ],

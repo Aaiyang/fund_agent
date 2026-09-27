@@ -42,11 +42,11 @@ export function useMarketHistory(symbol: string | null, period: MarketPeriod, ra
   });
 }
 
-/** Only fetched while the 分时 tab is showing, and only while it can change. */
-export function useMarketIntraday(symbol: string | null, enabled: boolean) {
+/** Only fetched while a minute tab is showing, and only while it can change. */
+export function useMarketIntraday(symbol: string | null, enabled: boolean, days: 1 | 5 = 1) {
   return useQuery({
-    queryKey: queryKeys.marketIntraday(symbol ?? ''),
-    queryFn: () => api.get<MarketIntraday>(`/markets/${symbol}/intraday`),
+    queryKey: queryKeys.marketIntraday(symbol ?? '', days),
+    queryFn: () => api.get<MarketIntraday>(`/markets/${symbol}/intraday`, { days }),
     enabled: Boolean(symbol) && enabled,
     refetchInterval: 1000 * 60,
     refetchIntervalInBackground: false,

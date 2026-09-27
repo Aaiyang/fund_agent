@@ -19,7 +19,7 @@ export const queryKeys = {
   marketQuote: (symbol: string) => ['markets', 'quote', symbol] as const,
   marketHistory: (symbol: string, period: string, range: string) =>
     ['markets', 'history', symbol, period, range] as const,
-  marketIntraday: (symbol: string) => ['markets', 'intraday', symbol] as const,
+  marketIntraday: (symbol: string, days: number) => ['markets', 'intraday', symbol, days] as const,
   marketCompany: (symbol: string) => ['markets', 'company', symbol] as const,
 
   watchlist: ['watchlist'] as const,
