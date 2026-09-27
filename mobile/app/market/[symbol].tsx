@@ -55,6 +55,10 @@ export default function MarketScreen() {
   const data = quote.data;
   const sign = currencySign(data?.currency);
   const profile = company.data?.company;
+  // The feed serves a minute line for A股 and 港股 only; a US 分时 tab would
+  // exist purely to fail, so it is not offered at all. The symbol shape is
+  // checked too so the tab never appears for one frame before the quote lands.
+  const modes = data?.currency === 'USD' || /^us[A-Za-z]/.test(symbol ?? '') ? MODES.slice(1) : MODES;
 
   const refresh = () => {
     void Promise.all([quote.refetch(), history.refetch(), intraday.refetch()]);
@@ -113,7 +117,7 @@ export default function MarketScreen() {
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <View style={{ flexDirection: 'row' }}>
-            {MODES.map((entry) => (
+            {modes.map((entry) => (
               <NavTab key={entry.key} label={entry.label} active={mode === entry.key} onPress={() => setMode(entry.key)} />
             ))}
           </View>
