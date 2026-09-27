@@ -4439,6 +4439,17 @@
             "title": "Daily Profit Loss",
             "default": 0
           },
+          "daily_profit_loss_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Profit Loss Rate"
+          },
           "fund_count": {
             "type": "integer",
             "title": "Fund Count",

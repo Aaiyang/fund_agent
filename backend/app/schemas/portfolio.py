@@ -103,6 +103,7 @@ class PortfolioSummary(BaseModel):
     total_profit_loss: float = 0.0
     total_profit_loss_rate: float | None = None
     daily_profit_loss: float = 0.0
+    daily_profit_loss_rate: float | None = None
     fund_count: int = 0
     data_updated_at: datetime | None = None
 

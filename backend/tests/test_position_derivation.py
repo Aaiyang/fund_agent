@@ -2,6 +2,7 @@
 
 from app.models.portfolio import PortfolioPosition
 from app.services.portfolio_service import (
+    daily_profit_rate,
     period_profit_loss,
     position_cost,
     position_profit,
@@ -65,3 +66,16 @@ class TestPeriodProfitLoss:
         assert period_profit_loss(None, 0.04) is None
         assert period_profit_loss(23121.0, None) is None
         assert period_profit_loss(None, None) is None
+
+
+class TestDailyProfitRate:
+    def test_divides_by_yesterdays_value(self) -> None:
+        # +889 on a book now worth 23121 moved 4.0% from 22232.
+        assert round(daily_profit_rate(23121.0, 889.0), 4) == 0.04
+
+    def test_loss_is_negative(self) -> None:
+        assert daily_profit_rate(900.0, -100.0) == -0.1
+
+    def test_none_without_a_base(self) -> None:
+        assert daily_profit_rate(0.0, 0.0) is None
+        assert daily_profit_rate(100.0, 100.0) is None

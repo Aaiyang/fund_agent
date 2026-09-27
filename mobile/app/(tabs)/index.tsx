@@ -15,6 +15,7 @@ import {
   formatRate,
   formatReturnPoints,
   formatSignedMoney,
+  formatSignedRate,
   trendColor,
 } from '@/utils/format';
 
@@ -25,6 +26,19 @@ export default function HoldingsScreen() {
   const positions = usePositions(accountId);
   const accounts = useAccounts();
   const quotes = useIndexQuotes();
+  const dailyRate = summary.data?.summary.daily_profit_loss_rate ?? null;
+  // The book's own day change leads the tape: it is the number the rest of the
+  // page is about, and the indexes are the context it moves in.
+  const tape = [
+    { key: 'mine', label: '净值涨幅', value: null, change: formatSignedRate(dailyRate), tone: trendColor(dailyRate) },
+    ...(quotes.data?.items ?? []).map((index) => ({
+      key: index.index_code,
+      label: index.name,
+      value: formatNumber(index.close, 2),
+      change: formatReturnPoints(index.change_pct),
+      tone: trendColor(index.change_pct),
+    })),
+  ];
 
   return (
     <Screen
@@ -46,13 +60,13 @@ export default function HoldingsScreen() {
             共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 2 }}>
-            {(quotes.data?.items ?? []).map((index) => (
-              <View key={index.index_code} style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 16 }}>
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>{index.name}</Text>
-                <Text style={{ fontSize: 13, color: theme.text, marginLeft: 5 }}>{formatNumber(index.close, 2)}</Text>
-                <Text style={{ fontSize: 12, color: trendColor(index.change_pct), marginLeft: 5 }}>
-                  {formatReturnPoints(index.change_pct)}
-                </Text>
+            {tape.map((entry) => (
+              <View key={entry.key} style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 16 }}>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>{entry.label}</Text>
+                {entry.value ? (
+                  <Text style={{ fontSize: 13, color: theme.text, marginLeft: 5 }}>{entry.value}</Text>
+                ) : null}
+                <Text style={{ fontSize: 12, color: entry.tone, marginLeft: 5 }}>{entry.change}</Text>
               </View>
             ))}
           </ScrollView>

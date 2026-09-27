@@ -13,11 +13,12 @@ from app.utils.clock import business_today, range_start
 
 # The picker's fixed catalog. Codes are looked up here before reaching AKShare,
 # so no caller-controlled string is ever passed to the third-party client.
+# Order is the home tape's order: the two broad market gauges first.
 BENCHMARK_INDEXES: dict[str, str] = {
-    "sh000300": "沪深300",
-    "sz399006": "创业板指",
     "sh000001": "上证指数",
     "sz399001": "深证成指",
+    "sh000300": "沪深300",
+    "sz399006": "创业板指",
     "sh000012": "国债指数",
 }
 
