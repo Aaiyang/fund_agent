@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
+import { useRef } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Chip, Screen, SectionTitle } from '@/components/ui';
 import { WatchlistTable } from '@/components/WatchlistTable';
 import { theme } from '@/constants/theme';
+import { useDragScroll } from '@/hooks/useDragScroll';
 import { useRemoveWatchlistFund, useWatchlist, useWatchlistGroups } from '@/hooks/useWatchlist';
 import { useUiStore } from '@/stores/ui';
 
@@ -14,6 +16,8 @@ export default function WatchlistScreen() {
   const list = useWatchlist(groupId);
   const groups = useWatchlistGroups();
   const remove = useRemoveWatchlistFund();
+  const groupsRef = useRef<ScrollView>(null);
+  useDragScroll(groupsRef);
 
   return (
     <Screen scroll={false}>
@@ -24,7 +28,12 @@ export default function WatchlistScreen() {
             <Text style={{ color: theme.primary, fontSize: 13 }}>管理分组</Text>
           </Pressable>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
+        <ScrollView
+          ref={groupsRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ alignItems: 'center' }}
+        >
           <Chip label="全部" active={groupId === null} onPress={() => setGroupId(null)} />
           {(groups.data?.items ?? []).map((group) => (
             <Chip

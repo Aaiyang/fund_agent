@@ -1,12 +1,13 @@
 import { router } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { Platform, ScrollView, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
 import { HoldingsTable } from '@/components/HoldingsTable';
 import { theme } from '@/constants/theme';
 import { useIndexQuotes } from '@/hooks/useIndexes';
+import { useDragScroll } from '@/hooks/useDragScroll';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -26,39 +27,8 @@ export default function HoldingsScreen() {
   const positions = usePositions(accountId);
   const accounts = useAccounts();
   const quotes = useIndexQuotes();
-  // Mouse-drag panning for the index tape. A phone pans with a finger and the
-  // web panel with a trackpad, but a plain mouse drag does nothing because the
-  // browser only pans a scroll box on its own for wheel/touch. Bound to the
-  // DOM scroller rather than RN responder props so the behaviour is explicit.
   const tapeRef = useRef<ScrollView>(null);
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const node = tapeRef.current?.getScrollableNode() as HTMLElement | null;
-    if (!node) return;
-    let startX = 0;
-    let startLeft = 0;
-    let dragging = false;
-    const onMouseDown = (event: MouseEvent) => {
-      dragging = true;
-      startX = event.clientX;
-      startLeft = node.scrollLeft;
-    };
-    const onMouseMove = (event: MouseEvent) => {
-      if (!dragging) return;
-      node.scrollLeft = Math.max(startLeft + (startX - event.clientX), 0);
-    };
-    const stop = () => {
-      dragging = false;
-    };
-    node.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', stop);
-    return () => {
-      node.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', stop);
-    };
-  }, []);
+  useDragScroll(tapeRef);
   const tape = (quotes.data?.items ?? []).map((index) => ({
     key: index.index_code,
     label: index.name,
