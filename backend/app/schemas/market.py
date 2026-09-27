@@ -1,11 +1,21 @@
-"""Benchmark index API schemas (fund-detail comparison line)."""
+"""Market data API schemas: benchmark index series and listed-instrument analysis."""
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 
+from app.integrations.fund_data.models import (
+    CandleExternalBar,
+    CompanyExternalProfile,
+    MarketExternalQuote,
+    MinuteExternalPoint,
+)
 from app.schemas.base import BaseResponse
 from app.schemas.fund import NavRange
+
+# Weekly bars exist so a three-year window stays a few dozen points, not 750.
+MarketPeriod = Literal["day", "week"]
 
 
 class IndexCatalogItem(BaseModel):
@@ -59,3 +69,48 @@ class IndexHistoryResponse(BaseResponse):
     # `return_*` fields — unlike the watchlist `*_return` fields, which are
     # already percent points.
     period_return: float | None = None
+
+
+class SymbolQuoteResponse(BaseResponse, MarketExternalQuote):
+    """GET /markets/{symbol}/quote response.
+
+    Inherits the snapshot's fields verbatim. Units follow the house rule:
+    ``change_pct``, ``turnover_rate`` and ``amplitude`` are percent points,
+    ``amount`` is in whole currency units and the two market caps are in 亿.
+    """
+
+
+class SymbolHistoryResponse(BaseResponse):
+    """GET /markets/{symbol}/history response."""
+
+    symbol: str
+    kind: str
+    period: MarketPeriod
+    range: NavRange
+    bars: list[CandleExternalBar]
+    total: int
+    # Fraction over the returned window, same convention as IndexHistoryResponse.
+    period_return: float | None = None
+
+
+class SymbolIntradayResponse(BaseResponse):
+    """GET /markets/{symbol}/intraday response."""
+
+    symbol: str
+    kind: str
+    trade_date: date | None = None
+    prev_close: float | None = None
+    points: list[MinuteExternalPoint]
+    total: int
+
+
+class SymbolCompanyResponse(BaseResponse):
+    """GET /markets/{symbol}/company response.
+
+    ``company`` is None for the indexes and non-A股 listings that have no record
+    in the source, which the screen renders as a hidden section rather than an
+    error, so one flaky upstream cannot break the chart above it.
+    """
+
+    symbol: str
+    company: CompanyExternalProfile | None = None

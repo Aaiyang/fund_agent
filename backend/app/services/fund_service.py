@@ -22,7 +22,7 @@ from app.core.logging import logger
 from app.integrations.fund_data.akshare_client import AKSHARE_AVAILABLE
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
 from app.integrations.fund_data.models import FundExternalHolding
-from app.integrations.fund_data.normalizer import parse_quarter, sina_symbol
+from app.integrations.fund_data.normalizer import parse_quarter, sina_symbol, tencent_symbol
 from app.models.fund import Fund, FundNav
 from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist
@@ -84,6 +84,7 @@ def summarize_holdings(
     items = [
         FundHoldingItem(
             stock_code=holding.stock_code,
+            symbol=tencent_symbol(holding.stock_code),
             stock_name=holding.stock_name,
             weight=holding.weight,
             weight_change=_weight_change(holding.weight, previous_weights.get(holding.stock_code)),

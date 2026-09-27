@@ -576,6 +576,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/markets/{symbol}/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol Quote
+         * @description Realtime snapshot: price, session range, turnover, valuation and caps.
+         */
+        get: operations["get_symbol_quote_api_v1_markets__symbol__quote_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/markets/{symbol}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol History
+         * @description Adjusted OHLCV bars for the requested window.
+         */
+        get: operations["get_symbol_history_api_v1_markets__symbol__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/markets/{symbol}/intraday": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol Intraday
+         * @description The current session's minute line, with the previous close as its axis.
+         */
+        get: operations["get_symbol_intraday_api_v1_markets__symbol__intraday_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/markets/{symbol}/company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol Company
+         * @description Company master data. Empty for indexes and non-A股 listings.
+         */
+        get: operations["get_symbol_company_api_v1_markets__symbol__company_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watchlist/groups": {
         parameters: {
             query?: never;
@@ -1126,6 +1206,27 @@ export interface components {
             name: string;
         };
         /**
+         * CandleExternalBar
+         * @description One OHLCV bar; ``volume`` keeps the quote's own unit.
+         */
+        CandleExternalBar: {
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Open */
+            open: number;
+            /** Close */
+            close: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Volume */
+            volume?: number | null;
+        };
+        /**
          * ChatRequest
          * @description Request model for chat endpoint.
          *
@@ -1158,6 +1259,35 @@ export interface components {
              * @description List of messages in the conversation
              */
             messages: components["schemas"]["Message"][];
+        };
+        /**
+         * CompanyExternalProfile
+         * @description Listed company master data (A股 only; other markets return no profile).
+         */
+        CompanyExternalProfile: {
+            /** Symbol */
+            symbol: string;
+            /** Name */
+            name?: string | null;
+            /** Industry */
+            industry?: string | null;
+            /** Region */
+            region?: string | null;
+            /** List Date */
+            list_date?: string | null;
+            /** Main Business */
+            main_business?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Employees */
+            employees?: number | null;
+            /** Chairman */
+            chairman?: string | null;
+            /**
+             * Concepts
+             * @default []
+             */
+            concepts?: string[];
         };
         /**
          * CurrentUserResponse
@@ -1258,6 +1388,8 @@ export interface components {
         FundHoldingItem: {
             /** Stock Code */
             stock_code: string;
+            /** Symbol */
+            symbol?: string | null;
             /** Stock Name */
             stock_name?: string | null;
             /** Weight */
@@ -1770,6 +1902,25 @@ export interface components {
             content: string;
         };
         /**
+         * MinuteExternalPoint
+         * @description One minute of the current trading session.
+         *
+         *     ``volume`` and ``amount`` are per-minute, derived from the source's running
+         *     totals; ``average_price`` is only meaningful for stocks.
+         */
+        MinuteExternalPoint: {
+            /** Time */
+            time: string;
+            /** Price */
+            price: number;
+            /** Volume */
+            volume?: number | null;
+            /** Amount */
+            amount?: number | null;
+            /** Average Price */
+            average_price?: number | null;
+        };
+        /**
          * PortfolioSummary
          * @description Asset summary across one or all accounts (spec 3.2).
          */
@@ -1993,6 +2144,145 @@ export interface components {
             name?: string;
             /** @description The authentication token for the session */
             token: components["schemas"]["Token"];
+        };
+        /**
+         * SymbolCompanyResponse
+         * @description GET /markets/{symbol}/company response.
+         *
+         *     ``company`` is None for the indexes and non-A股 listings that have no record
+         *     in the source, which the screen renders as a hidden section rather than an
+         *     error, so one flaky upstream cannot break the chart above it.
+         */
+        SymbolCompanyResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Symbol */
+            symbol: string;
+            company?: components["schemas"]["CompanyExternalProfile"] | null;
+        };
+        /**
+         * SymbolHistoryResponse
+         * @description GET /markets/{symbol}/history response.
+         */
+        SymbolHistoryResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Symbol */
+            symbol: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "day" | "week";
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1m" | "3m" | "6m" | "1y" | "3y" | "all";
+            /** Bars */
+            bars: components["schemas"]["CandleExternalBar"][];
+            /** Total */
+            total: number;
+            /** Period Return */
+            period_return?: number | null;
+        };
+        /**
+         * SymbolIntradayResponse
+         * @description GET /markets/{symbol}/intraday response.
+         */
+        SymbolIntradayResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Symbol */
+            symbol: string;
+            /** Kind */
+            kind: string;
+            /** Trade Date */
+            trade_date?: string | null;
+            /** Prev Close */
+            prev_close?: number | null;
+            /** Points */
+            points: components["schemas"]["MinuteExternalPoint"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * SymbolQuoteResponse
+         * @description GET /markets/{symbol}/quote response.
+         *
+         *     Inherits the snapshot's fields verbatim. Units follow the house rule:
+         *     ``change_pct``, ``turnover_rate`` and ``amplitude`` are percent points,
+         *     ``amount`` is in whole currency units and the two market caps are in 亿.
+         */
+        SymbolQuoteResponse: {
+            /** Symbol */
+            symbol: string;
+            /** Listing Code */
+            listing_code?: string | null;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Price */
+            price?: number | null;
+            /** Prev Close */
+            prev_close?: number | null;
+            /** Open */
+            open?: number | null;
+            /** High */
+            high?: number | null;
+            /** Low */
+            low?: number | null;
+            /** Change */
+            change?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Volume */
+            volume?: number | null;
+            /** Volume Unit */
+            volume_unit?: string | null;
+            /** Amount */
+            amount?: number | null;
+            /** Turnover Rate */
+            turnover_rate?: number | null;
+            /** Amplitude */
+            amplitude?: number | null;
+            /** Pe */
+            pe?: number | null;
+            /** Pb */
+            pb?: number | null;
+            /** Float Market Cap */
+            float_market_cap?: number | null;
+            /** Total Market Cap */
+            total_market_cap?: number | null;
+            /** Week52 High */
+            week52_high?: number | null;
+            /** Week52 Low */
+            week52_low?: number | null;
+            /** Quote Time */
+            quote_time?: string | null;
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
         };
         /**
          * Token
@@ -3036,6 +3326,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IndexHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_quote_api_v1_markets__symbol__quote_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymbolQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_history_api_v1_markets__symbol__history_get: {
+        parameters: {
+            query?: {
+                /** @description 图表区间：1m/3m/6m/1y/3y/all */
+                range?: "1m" | "3m" | "6m" | "1y" | "3y" | "all";
+                /** @description K线周期：day/week */
+                period?: "day" | "week";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymbolHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_intraday_api_v1_markets__symbol__intraday_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymbolIntradayResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_company_api_v1_markets__symbol__company_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SymbolCompanyResponse"];
                 };
             };
             /** @description Validation Error */

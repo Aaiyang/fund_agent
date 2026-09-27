@@ -1089,6 +1089,234 @@
         }
       }
     },
+    "/api/v1/markets/{symbol}/quote": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Get Symbol Quote",
+        "description": "Realtime snapshot: price, session range, turnover, valuation and caps.",
+        "operationId": "get_symbol_quote_api_v1_markets__symbol__quote_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolQuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/markets/{symbol}/history": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Get Symbol History",
+        "description": "Adjusted OHLCV bars for the requested window.",
+        "operationId": "get_symbol_history_api_v1_markets__symbol__history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "3y",
+                "all"
+              ],
+              "type": "string",
+              "description": "图表区间：1m/3m/6m/1y/3y/all",
+              "default": "1y",
+              "title": "Range"
+            },
+            "description": "图表区间：1m/3m/6m/1y/3y/all"
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "day",
+                "week"
+              ],
+              "type": "string",
+              "description": "K线周期：day/week",
+              "default": "day",
+              "title": "Period"
+            },
+            "description": "K线周期：day/week"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/markets/{symbol}/intraday": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Get Symbol Intraday",
+        "description": "The current session's minute line, with the previous close as its axis.",
+        "operationId": "get_symbol_intraday_api_v1_markets__symbol__intraday_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolIntradayResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/markets/{symbol}/company": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Get Symbol Company",
+        "description": "Company master data. Empty for indexes and non-A股 listings.",
+        "operationId": "get_symbol_company_api_v1_markets__symbol__company_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolCompanyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/watchlist/groups": {
       "get": {
         "tags": [
@@ -2733,6 +2961,52 @@
         ],
         "title": "Body_update_session_name_api_v1_auth_session__session_id__name_patch"
       },
+      "CandleExternalBar": {
+        "properties": {
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trade_date",
+          "open",
+          "close",
+          "high",
+          "low"
+        ],
+        "title": "CandleExternalBar",
+        "description": "One OHLCV bar; ``volume`` keeps the quote's own unit."
+      },
       "ChatRequest": {
         "properties": {
           "messages": {
@@ -2775,6 +3049,117 @@
         ],
         "title": "ChatResponse",
         "description": "Response model for chat endpoint.\n\nAttributes:\n    messages: List of messages in the conversation."
+      },
+      "CompanyExternalProfile": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "list_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "List Date"
+          },
+          "main_business": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Business"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "employees": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees"
+          },
+          "chairman": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chairman"
+          },
+          "concepts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Concepts",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol"
+        ],
+        "title": "CompanyExternalProfile",
+        "description": "Listed company master data (A股 only; other markets return no profile)."
       },
       "CurrentUserResponse": {
         "properties": {
@@ -3020,6 +3405,17 @@
           "stock_code": {
             "type": "string",
             "title": "Stock Code"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
           },
           "stock_name": {
             "anyOf": [
@@ -4406,6 +4802,58 @@
         "title": "Message",
         "description": "Message model for chat endpoint.\n\nAttributes:\n    role: The role of the message sender (user or assistant).\n    content: The content of the message."
       },
+      "MinuteExternalPoint": {
+        "properties": {
+          "time": {
+            "type": "string",
+            "title": "Time"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "average_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Price"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time",
+          "price"
+        ],
+        "title": "MinuteExternalPoint",
+        "description": "One minute of the current trading session.\n\n``volume`` and ``amount`` are per-minute, derived from the source's running\ntotals; ``average_price`` is only meaningful for stocks."
+      },
       "PortfolioSummary": {
         "properties": {
           "total_market_value": {
@@ -4929,6 +5377,435 @@
         ],
         "title": "SessionResponse",
         "description": "Response model for session creation.\n\nAttributes:\n    session_id: The unique identifier for the chat session\n    name: Name of the session (defaults to empty string)\n    token: The authentication token for the session"
+      },
+      "SymbolCompanyResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompanyExternalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol"
+        ],
+        "title": "SymbolCompanyResponse",
+        "description": "GET /markets/{symbol}/company response.\n\n``company`` is None for the indexes and non-A股 listings that have no record\nin the source, which the screen renders as a hidden section rather than an\nerror, so one flaky upstream cannot break the chart above it."
+      },
+      "SymbolHistoryResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week"
+            ],
+            "title": "Period"
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "1m",
+              "3m",
+              "6m",
+              "1y",
+              "3y",
+              "all"
+            ],
+            "title": "Range"
+          },
+          "bars": {
+            "items": {
+              "$ref": "#/components/schemas/CandleExternalBar"
+            },
+            "type": "array",
+            "title": "Bars"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "period_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "kind",
+          "period",
+          "range",
+          "bars",
+          "total"
+        ],
+        "title": "SymbolHistoryResponse",
+        "description": "GET /markets/{symbol}/history response."
+      },
+      "SymbolIntradayResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Date"
+          },
+          "prev_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Close"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MinuteExternalPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "kind",
+          "points",
+          "total"
+        ],
+        "title": "SymbolIntradayResponse",
+        "description": "GET /markets/{symbol}/intraday response."
+      },
+      "SymbolQuoteResponse": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "listing_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Listing Code"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "prev_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Close"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "volume_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Unit"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "turnover_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover Rate"
+          },
+          "amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amplitude"
+          },
+          "pe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "float_market_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Float Market Cap"
+          },
+          "total_market_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Market Cap"
+          },
+          "week52_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week52 High"
+          },
+          "week52_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week52 Low"
+          },
+          "quote_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Time"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "kind"
+        ],
+        "title": "SymbolQuoteResponse",
+        "description": "GET /markets/{symbol}/quote response.\n\nInherits the snapshot's fields verbatim. Units follow the house rule:\n``change_pct``, ``turnover_rate`` and ``amplitude`` are percent points,\n``amount`` is in whole currency units and the two market caps are in 亿."
       },
       "Token": {
         "properties": {

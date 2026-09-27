@@ -90,6 +90,10 @@ class FundHoldingItem(BaseModel):
     """One disclosed holding with its quote and quarter-over-quarter change."""
 
     stock_code: str
+    # Market-prefixed symbol for the analysis screen: the disclosure table has no
+    # market column, so the same shape inference the quote feed uses is published
+    # here rather than re-derived on the client.
+    symbol: str | None = None
     stock_name: str | None = None
     weight: float | None = None  # 占净值比例, percent points
     weight_change: float | None = None  # 较上期, percentage points
