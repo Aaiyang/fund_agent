@@ -2183,7 +2183,7 @@ export interface components {
              * Period
              * @enum {string}
              */
-            period: "day" | "week";
+            period: "day" | "week" | "month";
             /**
              * Range
              * @enum {string}
@@ -3376,7 +3376,7 @@ export interface operations {
                 /** @description 图表区间：1m/3m/6m/1y/3y/all */
                 range?: "1m" | "3m" | "6m" | "1y" | "3y" | "all";
                 /** @description K线周期：day/week */
-                period?: "day" | "week";
+                period?: "day" | "week" | "month";
             };
             header?: never;
             path: {

@@ -129,10 +129,11 @@ export function MarketChart({
   const low = reference ? reference - deviation : rawLow;
   const span = high - low || Math.abs(high) || 1;
 
-  // Candles keep a fixed slot width and scroll sideways instead of squeezing a
-  // year into the card; the 分时 line always fits one session into the width.
-  const slotWidth = isCandle ? CANDLE_SLOT_W : width / slots.length;
-  const plotWidth = isCandle ? slots.length * CANDLE_SLOT_W : width;
+  // Candles keep a fixed slot width and scroll sideways when the window does not
+  // fit, so a 36-bar 月K still fills the card instead of floating in it; the
+  // 分时 line always fits one session into the width.
+  const slotWidth = isCandle ? Math.max(CANDLE_SLOT_W, width / slots.length) : width / slots.length;
+  const plotWidth = slotWidth * slots.length;
   const x = (index: number) => index * slotWidth + slotWidth / 2;
   const y = (price: number) => PADDING + ((high - price) / span) * (PRICE_HEIGHT - PADDING * 2);
 
@@ -188,9 +189,6 @@ export function MarketChart({
             {reference === null ? null : (
               <Line x1={0} y1={y(reference)} x2={plotWidth} y2={y(reference)} stroke={theme.textFaint} strokeWidth={1} strokeDasharray="5,4" />
             )}
-            {reference === null ? (
-              <Line x1={0} y1={y((high + low) / 2)} x2={plotWidth} y2={y((high + low) / 2)} stroke={theme.border} strokeWidth={1} />
-            ) : null}
 
             {isCandle
               ? slots.map((slot, index) => {

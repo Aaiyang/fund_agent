@@ -17,6 +17,7 @@ import { MarketChart } from '@/components/MarketChart';
 import { theme } from '@/constants/theme';
 import type { NavRange } from '@/hooks/useFunds';
 import {
+  type MarketPeriod,
   useMarketCompany,
   useMarketHistory,
   useMarketIntraday,
@@ -34,23 +35,30 @@ import {
   trendColor,
 } from '@/utils/format';
 
-type Mode = 'intraday' | 'day' | 'week';
+type Mode = 'intraday' | 'day' | 'week' | 'month';
 
 const MODES: { key: Mode; label: string }[] = [
   { key: 'intraday', label: '分时' },
   { key: 'day', label: '日K' },
   { key: 'week', label: '周K' },
+  { key: 'month', label: '月K' },
 ];
 
 // The chart pans sideways through this window instead of offering range buttons.
-const HISTORY_RANGE: NavRange = '1y';
+// Monthly bars need a longer window to be worth looking at.
+const HISTORY: Record<'day' | 'week' | 'month', { range: NavRange; label: string }> = {
+  day: { range: '1y', label: '近1年' },
+  week: { range: '1y', label: '近1年' },
+  month: { range: '3y', label: '近3年' },
+};
 
 export default function MarketScreen() {
   const { symbol } = useLocalSearchParams<{ symbol: string }>();
   const [mode, setMode] = useState<Mode>('day');
   const target = symbol ?? null;
   const quote = useMarketQuote(target);
-  const history = useMarketHistory(target, mode === 'week' ? 'week' : 'day', HISTORY_RANGE);
+  const period: MarketPeriod = mode === 'intraday' ? 'day' : mode;
+  const history = useMarketHistory(target, period, HISTORY[period].range);
   const intraday = useMarketIntraday(target, mode === 'intraday');
   const company = useMarketCompany(target);
   const data = quote.data;
@@ -124,7 +132,7 @@ export default function MarketScreen() {
           </View>
           {mode === 'intraday' ? null : (
             <Text style={{ fontSize: 12, color: theme.textMuted }}>
-              近1年 {formatSignedRate(history.data?.period_return)}
+              {HISTORY[period].label} {formatSignedRate(history.data?.period_return)}
             </Text>
           )}
         </View>
@@ -143,7 +151,7 @@ export default function MarketScreen() {
           </Text>
         ) : (
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
-            一屏约三个月，左右拖动看更早的；数据取近 1 年
+            {`${HISTORY[period].label} ${history.data?.total ?? 0} 根，点选看单根行情，超出一屏可左右拖动`}
           </Text>
         )}
       </Card>
