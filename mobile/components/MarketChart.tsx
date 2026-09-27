@@ -12,11 +12,12 @@
  * primitives that do not run on web.
  */
 
-import { useState } from 'react';
-import { type GestureResponderEvent, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { type GestureResponderEvent, ScrollView, Text, View } from 'react-native';
 import Svg, { Line, Polyline, Rect } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
+import { useDragScroll } from '@/hooks/useDragScroll';
 import { formatDate } from '@/utils/format';
 
 export type ChartBar = {
@@ -40,6 +41,8 @@ const VOLUME_HEIGHT = 44;
 const GAP = 8;
 const PADDING = 6;
 const CHIP_WIDTH = 116;
+// One candle per trading day, ~3 months across a phone-width card.
+const CANDLE_SLOT_W = 7;
 
 type Slot = {
   label: string;
@@ -92,7 +95,13 @@ export function MarketChart({
   prevClose?: number | null;
 }) {
   const [width, setWidth] = useState(0);
-  // The pressed point remembers which series it came from, so switching range
+  const isCandle = Boolean(bars);
+  const scrollRef = useRef<ScrollView>(null);
+  const anchored = useRef<string | null>(null);
+  // The scroller only exists once the card has been measured, so `width > 0`
+  // doubles as the signal to (re)bind the mouse-drag panning.
+  useDragScroll(scrollRef, isCandle && width > 0);
+  // The pressed point remembers which series it came from, so switching period
   // or mode drops the stale crosshair instead of pointing at another day.
   const [pinned, setPinned] = useState<{ series: string; index: number } | null>(null);
 
@@ -100,7 +109,6 @@ export function MarketChart({
   const seriesKey = bars
     ? `bars:${bars.length}:${bars[0]?.trade_date ?? ''}:${bars[bars.length - 1]?.trade_date ?? ''}`
     : `minutes:${slots.length}:${slots[0]?.label ?? ''}`;
-  const isCandle = Boolean(bars);
 
   if (slots.length < 2) {
     return (
@@ -121,7 +129,10 @@ export function MarketChart({
   const low = reference ? reference - deviation : rawLow;
   const span = high - low || Math.abs(high) || 1;
 
-  const slotWidth = width / slots.length;
+  // Candles keep a fixed slot width and scroll sideways instead of squeezing a
+  // year into the card; the 分时 line always fits one session into the width.
+  const slotWidth = isCandle ? CANDLE_SLOT_W : width / slots.length;
+  const plotWidth = isCandle ? slots.length * CANDLE_SLOT_W : width;
   const x = (index: number) => index * slotWidth + slotWidth / 2;
   const y = (price: number) => PADDING + ((high - price) / span) * (PRICE_HEIGHT - PADDING * 2);
 
@@ -135,13 +146,22 @@ export function MarketChart({
 
   const locate = (event: GestureResponderEvent) => {
     const locationX = event.nativeEvent.locationX;
-    if (width <= 0 || locationX === undefined || locationX === null) return;
+    if (plotWidth <= 0 || locationX === undefined || locationX === null) return;
     const index = Math.min(Math.max(Math.floor(locationX / slotWidth), 0), slots.length - 1);
     setPinned({ series: seriesKey, index });
   };
 
+  const anchorLatest = () => {
+    // A quote chart opens on the newest bar; the older ones are a drag away.
+    if (anchored.current !== seriesKey) {
+      anchored.current = seriesKey;
+      scrollRef.current?.scrollToEnd({ animated: false });
+    }
+  };
+
   const markerX = marker === null ? 0 : x(marker);
-  const chipLeft = marker === null ? 0 : Math.min(Math.max(markerX - CHIP_WIDTH / 2, 0), Math.max(width - CHIP_WIDTH, 0));
+  const chipLeft =
+    marker === null ? 0 : Math.min(Math.max(markerX - CHIP_WIDTH / 2, 0), Math.max(plotWidth - CHIP_WIDTH, 0));
   const linePath = (value: (slot: Slot) => number | null | undefined) =>
     slots
       .map((slot, index) => {
@@ -153,23 +173,23 @@ export function MarketChart({
   const pricePath = linePath((slot) => slot.price);
   const averagePath = linePath((slot) => slot.average);
 
-  return (
-    <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-      {width > 0 ? (
-        <View
-          accessibilityLabel="点选或左右拖动查看该日行情"
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={() => true}
-          onResponderTerminationRequest={() => false}
-          onResponderGrant={locate}
-          onResponderMove={locate}
-        >
-          <Svg width={width} height={PRICE_HEIGHT + GAP + VOLUME_HEIGHT}>
+  // The readout chip lives inside the plot so it scrolls with the bar it labels.
+  const plot = (
+    <View
+      onLayout={anchorLatest}
+      accessibilityLabel="点选查看该日行情，左右拖动看更早的"
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={locate}
+      onResponderMove={locate}
+    >
+          <Svg width={plotWidth} height={PRICE_HEIGHT + GAP + VOLUME_HEIGHT}>
             {reference === null ? null : (
-              <Line x1={0} y1={y(reference)} x2={width} y2={y(reference)} stroke={theme.textFaint} strokeWidth={1} strokeDasharray="5,4" />
+              <Line x1={0} y1={y(reference)} x2={plotWidth} y2={y(reference)} stroke={theme.textFaint} strokeWidth={1} strokeDasharray="5,4" />
             )}
             {reference === null ? (
-              <Line x1={0} y1={y((high + low) / 2)} x2={width} y2={y((high + low) / 2)} stroke={theme.border} strokeWidth={1} />
+              <Line x1={0} y1={y((high + low) / 2)} x2={plotWidth} y2={y((high + low) / 2)} stroke={theme.border} strokeWidth={1} />
             ) : null}
 
             {isCandle
@@ -238,7 +258,7 @@ export function MarketChart({
               <Line
                 x1={0}
                 y1={y(shown.price)}
-                x2={width}
+                x2={plotWidth}
                 y2={y(shown.price)}
                 stroke={theme.textMuted}
                 strokeWidth={1}
@@ -283,7 +303,19 @@ export function MarketChart({
               )}
             </View>
           ) : null}
-        </View>
+    </View>
+  );
+
+  return (
+    <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+      {width > 0 ? (
+        isCandle ? (
+          <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}>
+            {plot}
+          </ScrollView>
+        ) : (
+          plot
+        )
       ) : (
         <View style={{ height: PRICE_HEIGHT + VOLUME_HEIGHT + GAP }} />
       )}

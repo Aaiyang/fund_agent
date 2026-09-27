@@ -19,15 +19,6 @@ export type MarketIntraday = components['schemas']['SymbolIntradayResponse'];
 export type MarketCompany = components['schemas']['SymbolCompanyResponse'];
 export type MarketPeriod = components['schemas']['SymbolHistoryResponse']['period'];
 
-export const MARKET_RANGES: { key: NavRange; label: string }[] = [
-  { key: '1m', label: '1月' },
-  { key: '3m', label: '3月' },
-  { key: '6m', label: '6月' },
-  { key: '1y', label: '1年' },
-  { key: '3y', label: '3年' },
-  { key: 'all', label: '全部' },
-];
-
 export function useMarketQuote(symbol: string | null) {
   return useQuery({
     queryKey: queryKeys.marketQuote(symbol ?? ''),

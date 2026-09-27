@@ -7,14 +7,18 @@
  * responder props are not reliably forwarded by ScrollView on web.
  *
  * Native keeps its own pan gesture, so this is a no-op there.
+ *
+ * `enabled` doubles as the re-attach trigger: a scroller that only mounts once
+ * its container has been measured (a chart waiting on `onLayout`) would else
+ * bind to nothing and never retry.
  */
 
 import { type RefObject, useEffect } from 'react';
 import { Platform, type ScrollView } from 'react-native';
 
-export function useDragScroll(ref: RefObject<ScrollView | null>) {
+export function useDragScroll(ref: RefObject<ScrollView | null>, enabled = true) {
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
+    if (!enabled || Platform.OS !== 'web') return;
     const node = ref.current?.getScrollableNode() as HTMLElement | null;
     if (!node) return;
 
@@ -44,5 +48,5 @@ export function useDragScroll(ref: RefObject<ScrollView | null>) {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', stop);
     };
-  }, [ref]);
+  }, [ref, enabled]);
 }

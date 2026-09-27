@@ -9,15 +9,14 @@
 
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Async } from '@/components/states';
-import { Card, Chip, NavTab, Screen, SectionTitle, Stat } from '@/components/ui';
+import { Card, NavTab, Screen, SectionTitle, Stat } from '@/components/ui';
 import { MarketChart } from '@/components/MarketChart';
 import { theme } from '@/constants/theme';
 import type { NavRange } from '@/hooks/useFunds';
 import {
-  MARKET_RANGES,
   useMarketCompany,
   useMarketHistory,
   useMarketIntraday,
@@ -43,13 +42,15 @@ const MODES: { key: Mode; label: string }[] = [
   { key: 'week', label: '周K' },
 ];
 
+// The chart pans sideways through this window instead of offering range buttons.
+const HISTORY_RANGE: NavRange = '1y';
+
 export default function MarketScreen() {
   const { symbol } = useLocalSearchParams<{ symbol: string }>();
   const [mode, setMode] = useState<Mode>('day');
-  const [range, setRange] = useState<NavRange>('1y');
   const target = symbol ?? null;
   const quote = useMarketQuote(target);
-  const history = useMarketHistory(target, mode === 'week' ? 'week' : 'day', range);
+  const history = useMarketHistory(target, mode === 'week' ? 'week' : 'day', HISTORY_RANGE);
   const intraday = useMarketIntraday(target, mode === 'intraday');
   const company = useMarketCompany(target);
   const data = quote.data;
@@ -123,7 +124,7 @@ export default function MarketScreen() {
           </View>
           {mode === 'intraday' ? null : (
             <Text style={{ fontSize: 12, color: theme.textMuted }}>
-              区间收益 {formatSignedRate(history.data?.period_return)}
+              近1年 {formatSignedRate(history.data?.period_return)}
             </Text>
           )}
         </View>
@@ -141,11 +142,9 @@ export default function MarketScreen() {
             分时为最近一个交易日的分钟线，虚线是昨收 {formatPrice(intraday.data?.prev_close)}
           </Text>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }} contentContainerStyle={{ alignItems: 'center' }}>
-            {MARKET_RANGES.map((entry) => (
-              <Chip key={entry.key} label={entry.label} active={range === entry.key} onPress={() => setRange(entry.key)} />
-            ))}
-          </ScrollView>
+          <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
+            一屏约三个月，左右拖动看更早的；数据取近 1 年
+          </Text>
         )}
       </Card>
 
