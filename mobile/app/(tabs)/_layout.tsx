@@ -37,6 +37,7 @@ export default function TabLayout() {
         options={{
           title: '持有',
           headerTitle: '我的持仓',
+          headerRight: () => <SearchButton />,
           tabBarIcon: ({ color, size }) => (
             <SymbolView
               name={{ ios: 'briefcase', android: 'account_balance', web: 'account_balance' }}
