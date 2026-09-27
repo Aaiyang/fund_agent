@@ -136,6 +136,7 @@ export function Button({
   );
 }
 
+/** Bordered pill: the switcher and tag style used inside cards and forms. */
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
   return (
     <Pressable
@@ -153,6 +154,49 @@ export function Chip({ label, active, onPress }: { label: string; active?: boole
       }}
     >
       <Text style={{ fontSize: 13, color: active ? '#FFFFFF' : theme.text }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Strip switcher item: bare text with an underline on the active one, the way a
+ * mobile nav bar reads. Used by the pinned account and group rows above a table.
+ * `accent` marks an item that navigates somewhere instead of selecting, so it
+ * does not look like an unselected sibling.
+ */
+export function NavTab({
+  label,
+  active,
+  accent,
+  onPress,
+}: {
+  label: string;
+  active?: boolean;
+  accent?: boolean;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole={onPress ? 'tab' : undefined}
+      accessibilityState={{ selected: Boolean(active) }}
+      hitSlop={{ top: 6, bottom: 6 }}
+      onPress={onPress}
+      style={{
+        marginRight: 18,
+        paddingBottom: 5,
+        borderBottomWidth: 2,
+        borderBottomColor: active ? theme.primary : 'transparent',
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 14,
+          fontWeight: active ? '600' : '400',
+          color: active || accent ? theme.primary : theme.textMuted,
+        }}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }

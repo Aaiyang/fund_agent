@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
-import { Chip, Screen, SectionTitle } from '@/components/ui';
+import { NavTab, Screen, SectionTitle } from '@/components/ui';
 import { WatchlistTable } from '@/components/WatchlistTable';
 import { theme } from '@/constants/theme';
 import { useDragScroll } from '@/hooks/useDragScroll';
@@ -34,9 +34,9 @@ export default function WatchlistScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ alignItems: 'center' }}
         >
-          <Chip label="全部" active={groupId === null} onPress={() => setGroupId(null)} />
+          <NavTab label="全部" active={groupId === null} onPress={() => setGroupId(null)} />
           {(groups.data?.items ?? []).map((group) => (
-            <Chip
+            <NavTab
               key={group.id}
               label={`${group.name}(${group.fund_count})`}
               active={groupId === group.id}

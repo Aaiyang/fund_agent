@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
-import { Card, Chip, Screen, SectionTitle } from '@/components/ui';
+import { Card, NavTab, Screen, SectionTitle } from '@/components/ui';
 import { HoldingsTable } from '@/components/HoldingsTable';
 import { theme } from '@/constants/theme';
 import { useIndexQuotes } from '@/hooks/useIndexes';
@@ -42,16 +42,16 @@ export default function HoldingsScreen() {
       pinned={
         <View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <Chip label="账户汇总" active={accountId === null} onPress={() => setAccountId(null)} />
+            <NavTab label="账户汇总" active={accountId === null} onPress={() => setAccountId(null)} />
             {(accounts.data?.items ?? []).map((account) => (
-              <Chip
+              <NavTab
                 key={account.id}
                 label={account.name}
                 active={accountId === account.id}
                 onPress={() => setAccountId(account.id)}
               />
             ))}
-            <Chip label="+ 添加账户" onPress={() => router.push('/account/add')} />
+            <NavTab accent label="+ 添加账户" onPress={() => router.push('/account/add')} />
           </ScrollView>
           <Text style={{ fontSize: 11, color: theme.textFaint }}>
             共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
