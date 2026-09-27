@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
-import { NavTab, Screen, SectionTitle } from '@/components/ui';
+import { NavTab, Screen } from '@/components/ui';
 import { WatchlistTable } from '@/components/WatchlistTable';
 import { theme } from '@/constants/theme';
 import { useDragScroll } from '@/hooks/useDragScroll';
@@ -22,8 +22,7 @@ export default function WatchlistScreen() {
   return (
     <Screen scroll={false}>
       <View style={{ backgroundColor: theme.surface, padding: theme.gap, paddingBottom: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <SectionTitle title={`自选列表（${list.data?.total ?? 0}）`} />
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
           <Pressable accessibilityRole="button" hitSlop={8} onPress={() => router.push('/watchlist-groups')}>
             <Text style={{ color: theme.primary, fontSize: 13 }}>管理分组</Text>
           </Pressable>
