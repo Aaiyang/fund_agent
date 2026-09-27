@@ -101,18 +101,6 @@ def period_profit_loss(market_value: float | None, fraction: float | None) -> fl
     return market_value * fraction
 
 
-def daily_profit_rate(total_market_value: float, daily_profit_loss: float) -> float | None:
-    """Day change of the whole book, as a fraction like the other `_rate` fields.
-
-    The denominator is yesterday's value (today's amount minus today's move):
-    dividing by today's amount would understate every gain.
-    """
-    previous_value = total_market_value - daily_profit_loss
-    if previous_value <= 0:
-        return None
-    return daily_profit_loss / previous_value
-
-
 class PortfolioService:
     """Async portfolio operations."""
 
@@ -294,7 +282,6 @@ class PortfolioService:
 
         if summary.total_cost > 0:
             summary.total_profit_loss_rate = summary.total_profit_loss / summary.total_cost
-        summary.daily_profit_loss_rate = daily_profit_rate(summary.total_market_value, summary.daily_profit_loss)
         summary.data_updated_at = latest_at
         return summary
 

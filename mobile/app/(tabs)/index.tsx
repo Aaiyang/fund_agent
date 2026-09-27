@@ -15,7 +15,6 @@ import {
   formatRate,
   formatReturnPoints,
   formatSignedMoney,
-  formatSignedRate,
   trendColor,
 } from '@/utils/format';
 
@@ -26,19 +25,13 @@ export default function HoldingsScreen() {
   const positions = usePositions(accountId);
   const accounts = useAccounts();
   const quotes = useIndexQuotes();
-  const dailyRate = summary.data?.summary.daily_profit_loss_rate ?? null;
-  // The book's own day change leads the tape: it is the number the rest of the
-  // page is about, and the indexes are the context it moves in.
-  const tape = [
-    { key: 'mine', label: '净值涨幅', value: null, change: formatSignedRate(dailyRate), tone: trendColor(dailyRate) },
-    ...(quotes.data?.items ?? []).map((index) => ({
-      key: index.index_code,
-      label: index.name,
-      value: formatNumber(index.close, 2),
-      change: formatReturnPoints(index.change_pct),
-      tone: trendColor(index.change_pct),
-    })),
-  ];
+  const tape = (quotes.data?.items ?? []).map((index) => ({
+    key: index.index_code,
+    label: index.name,
+    value: formatNumber(index.close, 2),
+    change: formatReturnPoints(index.change_pct),
+    tone: trendColor(index.change_pct),
+  }));
 
   return (
     <Screen

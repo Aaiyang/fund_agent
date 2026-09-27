@@ -1796,8 +1796,6 @@ export interface components {
              * @default 0
              */
             daily_profit_loss?: number;
-            /** Daily Profit Loss Rate */
-            daily_profit_loss_rate?: number | null;
             /**
              * Fund Count
              * @default 0
