@@ -7,7 +7,7 @@
  * `scrollEnabled={false}` replica.
  */
 
-import { Link } from 'expo-router';
+import { type Href, Link } from 'expo-router';
 import { type StyleProp, type ViewStyle, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, ScrollView, Text, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
@@ -53,7 +53,7 @@ function sortArrow(active: 'asc' | 'desc' | null) {
 export function DataTable<T>({
   items,
   keyOf,
-  fundCodeOf,
+  hrefOf,
   nameOf,
   columns,
   action,
@@ -64,8 +64,8 @@ export function DataTable<T>({
 }: {
   items: T[];
   keyOf: (item: T) => string;
-  /** Row target: when set, the name column links to that fund's detail page. */
-  fundCodeOf?: (item: T) => string;
+  /** Row target: when set, the name column becomes a link to this route. */
+  hrefOf?: (item: T) => Href;
   /** Left column: fund name plus the small line under it. */
   nameOf: (item: T) => { title: string; sub: string };
   columns: DataColumn<T>[];
@@ -149,8 +149,8 @@ export function DataTable<T>({
               </Text>
             </>
           );
-          return fundCodeOf ? (
-            <Link key={keyOf(item)} href={{ pathname: '/fund/[code]', params: { code: fundCodeOf(item) } }} asChild>
+          return hrefOf ? (
+            <Link key={keyOf(item)} href={hrefOf(item)} asChild>
               <Pressable accessibilityRole="link" accessibilityLabel={`查看 ${name.title}`} style={nameCellStyle}>
                 {content}
               </Pressable>

@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useRef } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Async, EmptyState } from '@/components/states';
 import { Card, NavTab, Screen, SectionTitle } from '@/components/ui';
@@ -63,13 +63,19 @@ export default function HoldingsScreen() {
             style={{ marginTop: 2 }}
           >
             {tape.map((entry) => (
-              <View key={entry.key} style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 16 }}>
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>{entry.label}</Text>
-                {entry.value ? (
-                  <Text style={{ fontSize: 13, color: theme.text, marginLeft: 5 }}>{entry.value}</Text>
-                ) : null}
-                <Text style={{ fontSize: 12, color: entry.tone, marginLeft: 5 }}>{entry.change}</Text>
-              </View>
+              <Link key={entry.key} href={{ pathname: '/market/[symbol]', params: { symbol: entry.key } }} asChild>
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`查看${entry.label}走势`}
+                  style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 16 }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>{entry.label}</Text>
+                  {entry.value ? (
+                    <Text style={{ fontSize: 13, color: theme.text, marginLeft: 5 }}>{entry.value}</Text>
+                  ) : null}
+                  <Text style={{ fontSize: 12, color: entry.tone, marginLeft: 5 }}>{entry.change}</Text>
+                </Pressable>
+              </Link>
             ))}
           </ScrollView>
         </View>

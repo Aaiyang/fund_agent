@@ -77,7 +77,7 @@ export function HoldingsTable({ items }: { items: PositionItem[] }) {
       padded={false}
       scrollRows={false}
       keyOf={(item) => `${item.account_id}-${item.fund_code}`}
-      fundCodeOf={(item) => item.fund_code}
+      hrefOf={(item) => ({ pathname: '/fund/[code]', params: { code: item.fund_code } })}
       nameOf={(item) => ({
         title: item.fund_name ?? item.fund_code,
         sub: `${item.fund_code} · ${formatMoney(item.market_value)}`,

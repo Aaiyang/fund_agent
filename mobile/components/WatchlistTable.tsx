@@ -57,7 +57,7 @@ export function WatchlistTable({
       items={items}
       style={{ flex: 1 }}
       keyOf={(item) => item.fund_code}
-      fundCodeOf={(item) => item.fund_code}
+      hrefOf={(item) => ({ pathname: '/fund/[code]', params: { code: item.fund_code } })}
       nameOf={(item) => ({
         title: item.fund_name,
         sub: [

@@ -52,6 +52,36 @@ export function formatNumber(value: number | null | undefined, digits = 3): stri
   return value.toFixed(digits).replace(/\.?0+$/, '') || '0';
 }
 
+/** Quoted price: grouped thousands and a fixed fraction, no currency sign. */
+export function formatPrice(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--';
+  const [whole, fraction] = Math.abs(value).toFixed(digits).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${value < 0 ? '-' : ''}${grouped}.${fraction ?? ''}`;
+}
+
+/** Raw counts (成交量/成交额) in 万/亿, the way a quote screen groups them. */
+export function formatCompact(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--';
+  const absolute = Math.abs(value);
+  if (absolute >= 1e8) return `${(value / 1e8).toFixed(digits)}亿`;
+  if (absolute >= 1e4) return `${(value / 1e4).toFixed(digits)}万`;
+  return String(Math.round(value));
+}
+
+/** For magnitudes the source already counts in 亿 (总市值/流通市值). */
+export function formatYi(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--';
+  if (Math.abs(value) >= 10000) return `${(value / 10000).toFixed(digits)}万亿`;
+  return `${value.toFixed(digits)}亿`;
+}
+
+const CURRENCY_SIGNS: Record<string, string> = { CNY: '¥', HKD: 'HK$', USD: 'US$' };
+
+export function currencySign(currency: string | null | undefined): string {
+  return (currency && CURRENCY_SIGNS[currency]) || '';
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '--';
   return value.slice(0, 10);
