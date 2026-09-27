@@ -18,7 +18,7 @@ import Svg, { Line, Polyline, Rect } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
 import { useDragScroll } from '@/hooks/useDragScroll';
-import { formatDate } from '@/utils/format';
+import { formatCompact, formatDate } from '@/utils/format';
 
 export type ChartBar = {
   trade_date: string;
@@ -87,12 +87,15 @@ export function MarketChart({
   bars,
   minutes,
   prevClose,
+  volumeUnit,
 }: {
   /** Set for the K-line modes; mutually exclusive with `minutes`. */
   bars?: ChartBar[];
   minutes?: ChartMinute[];
   /** Session reference for the 分时 axis. */
   prevClose?: number | null;
+  /** 手 or 股, from the quote: the bars are relative, the readout is not. */
+  volumeUnit?: string | null;
 }) {
   const [width, setWidth] = useState(0);
   const isCandle = Boolean(bars);
@@ -144,6 +147,9 @@ export function MarketChart({
   const bodyWidth = Math.max(Math.min(slotWidth * 0.62, 14), 1);
   const marker = pinned && pinned.series === seriesKey ? pinned.index : null;
   const shown = marker === null ? null : slots[marker];
+  // The volume pane's number tracks the crosshair, falling back to the newest
+  // bar; without it the bars show shape but no quantity.
+  const readout = shown ?? slots[slots.length - 1];
 
   const locate = (event: GestureResponderEvent) => {
     const locationX = event.nativeEvent.locationX;
@@ -307,13 +313,31 @@ export function MarketChart({
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       {width > 0 ? (
-        isCandle ? (
-          <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}>
-            {plot}
-          </ScrollView>
-        ) : (
-          plot
-        )
+        <>
+          {isCandle ? (
+            <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}>
+              {plot}
+            </ScrollView>
+          ) : (
+            plot
+          )}
+          {/* Pinned to the viewport, not the content: the candles scroll under it. */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: PRICE_HEIGHT + GAP - 2,
+              left: 0,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 3,
+              borderRadius: 3,
+            }}
+          >
+            <Text style={{ fontSize: 10, color: readout.up ? theme.up : theme.down }}>
+              {`量 ${formatCompact(readout.volume)}${volumeUnit ?? ''}`}
+            </Text>
+          </View>
+        </>
       ) : (
         <View style={{ height: PRICE_HEIGHT + VOLUME_HEIGHT + GAP }} />
       )}

@@ -139,10 +139,14 @@ export default function MarketScreen() {
 
         {mode === 'intraday' ? (
           <Async query={intraday}>
-            {(series) => <MarketChart minutes={series.points ?? []} prevClose={series.prev_close} />}
+            {(series) => (
+              <MarketChart minutes={series.points ?? []} prevClose={series.prev_close} volumeUnit={data?.volume_unit} />
+            )}
           </Async>
         ) : (
-          <Async query={history}>{(series) => <MarketChart bars={series.bars ?? []} />}</Async>
+          <Async query={history}>
+            {(series) => <MarketChart bars={series.bars ?? []} volumeUnit={data?.volume_unit} />}
+          </Async>
         )}
 
         {mode === 'intraday' ? (
