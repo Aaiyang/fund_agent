@@ -487,7 +487,21 @@ def parse_tencent_minutes(payload: dict[str, Any], symbol: str) -> MinuteExterna
     if not isinstance(inner, dict):
         return MinuteExternalSeries()
 
-    rows = inner.get("data")
+    points = _minute_points(inner.get("data"), symbol)
+    embedded = _tencent_quote_array(node.get("qt"), symbol)
+    return MinuteExternalSeries(
+        trade_date=to_date(inner.get("date")),
+        prev_close=_field(embedded, 4),
+        points=points,
+    )
+
+
+def _minute_points(rows: Any, symbol: str, trade_date: date | None = None) -> list[MinuteExternalPoint]:
+    """Turn one session's cumulative rows into per-minute points.
+
+    The running totals restart every session, so the differ is scoped to a day
+    and the five-day series is just five of these stitched oldest-first.
+    """
     is_lot = symbol.startswith(("sh", "sz", "bj"))
     has_average = market_kind(symbol) == "stock"
     points: list[MinuteExternalPoint] = []
@@ -511,16 +525,32 @@ def parse_tencent_minutes(payload: dict[str, Any], symbol: str) -> MinuteExterna
                 volume=max(cumulative_volume - previous_volume, 0.0),
                 amount=max(cumulative_amount - previous_amount, 0.0),
                 average_price=round(cumulative_amount / shares, 4) if shares > 0 and has_average else None,
+                trade_date=trade_date,
             )
         )
         previous_volume, previous_amount = cumulative_volume, cumulative_amount
+    return points
 
-    embedded = _tencent_quote_array(node.get("qt"), symbol)
-    return MinuteExternalSeries(
-        trade_date=to_date(inner.get("date")),
-        prev_close=_field(embedded, 4),
-        points=points,
-    )
+
+def parse_tencent_day_query(payload: dict[str, Any], symbol: str) -> MinuteExternalSeries:
+    """Five sessions of minute data, stitched oldest-first.
+
+    The reply orders the days newest-first and carries no previous close for the
+    whole window, so the caller fills `prev_close` from the daily bars.
+    """
+    days = _tencent_node(payload, symbol).get("data")
+    if not isinstance(days, list):
+        return MinuteExternalSeries()
+
+    sessions = sorted((day for day in days if isinstance(day, dict)), key=lambda day: str(day.get("date")))
+    points: list[MinuteExternalPoint] = []
+    for session in sessions:
+        session_date = to_date(session.get("date"))
+        points.extend(_minute_points(session.get("data"), symbol, trade_date=session_date))
+    if not points:
+        return MinuteExternalSeries()
+
+    return MinuteExternalSeries(trade_date=to_date(sessions[-1].get("date")), points=points)
 
 
 def _tencent_quote_array(qt: Any, symbol: str) -> list[str]:

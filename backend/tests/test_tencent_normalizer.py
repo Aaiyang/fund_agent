@@ -14,6 +14,7 @@ from app.integrations.fund_data.normalizer import (
     market_kind,
     normalize_company_rows,
     parse_tencent_candles,
+    parse_tencent_day_query,
     parse_tencent_minutes,
     parse_tencent_quotes,
     tencent_symbol,
@@ -212,6 +213,37 @@ class TestMinuteParsing:
         assert parse_tencent_minutes(payload, "sh600519").points == []
 
 
+class TestFiveDayParsing:
+    def test_days_are_stitched_oldest_first_with_dates(self) -> None:
+        payload = _day_payload(
+            "sh600519",
+            [
+                ("20260924", ["0930 1250.01 183 22875182.71"]),
+                ("20260923", ["0930 1255.03 63 7906688.70"]),
+            ],
+        )
+        series = parse_tencent_day_query(payload, "sh600519")
+        assert [point.trade_date for point in series.points] == [date(2026, 9, 23), date(2026, 9, 24)]
+        assert series.trade_date == date(2026, 9, 24)
+        # The reply carries no baseline for a five-session window.
+        assert series.prev_close is None
+
+    def test_running_totals_reset_every_session(self) -> None:
+        payload = _day_payload(
+            "sh600519",
+            [
+                ("20260924", ["0930 1250.01 183 22875182.71", "0931 1249.99 1393 174122899.37"]),
+                ("20260923", ["0930 1255.03 63 7906688.70", "0931 1254.00 900 60000000.00"]),
+            ],
+        )
+        volumes = [point.volume for point in parse_tencent_day_query(payload, "sh600519").points]
+        assert volumes == [63.0, 837.0, 183.0, 1210.0]
+
+    def test_markets_without_history_come_back_empty(self) -> None:
+        assert parse_tencent_day_query({"data": []}, "usNVDA").points == []
+        assert parse_tencent_day_query({"data": {"usNVDA": {"data": []}}}, "usNVDA").points == []
+
+
 class TestCompanyProfile:
     def test_board_and_concepts_are_flattened(self) -> None:
         payload = {
@@ -249,3 +281,9 @@ def _minute_payload(symbol: str, rows: list[str]) -> dict[str, Any]:
     return {
         "data": {symbol: {"data": {"data": rows, "date": "20260924"}, "qt": {f"v_ff_{symbol}": [], symbol: quote}}}
     }
+
+
+def _day_payload(symbol: str, sessions: list[tuple[str, list[str]]]) -> dict[str, Any]:
+    """Sessions arrive newest-first from the feed, same as here."""
+    days = [{"date": day, "data": rows} for day, rows in sessions]
+    return {"data": {symbol: {"data": days}}}

@@ -17,6 +17,10 @@ from app.schemas.fund import NavRange
 # Weekly and monthly bars exist so a long window stays a few dozen points, not
 # hundreds. The feed only answers for 月K when an adjustment is requested.
 MarketPeriod = Literal["day", "week", "month"]
+# Sessions the minute line can cover: today, or the last five stitched together.
+# Only the response uses this alias; a query parameter cannot be a Literal
+# because FastAPI hands it over as text and pydantic will not widen it to int.
+MarketDays = Literal[1, 5]
 
 
 class IndexCatalogItem(BaseModel):
@@ -99,6 +103,7 @@ class SymbolIntradayResponse(BaseResponse):
 
     symbol: str
     kind: str
+    days: MarketDays
     trade_date: date | None = None
     prev_close: float | None = None
     points: list[MinuteExternalPoint]

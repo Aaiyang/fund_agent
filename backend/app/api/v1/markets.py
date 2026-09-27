@@ -59,10 +59,16 @@ async def get_symbol_history(
 async def get_symbol_intraday(
     request: Request,
     symbol: str,
+    days: int = Query(default=1, description="分钟线覆盖的交易日数：1 或 5"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> SymbolIntradayResponse:
-    """The current session's minute line, with the previous close as its axis."""
-    intraday = await market_service.get_symbol_intraday(symbol)
+    """Minute line for one session, or for the last five stitched together.
+
+    The response's `prev_close` is the reference the chart measures against.
+    """
+    if days not in (1, 5):
+        raise HTTPException(status_code=422, detail="days_must_be_1_or_5")
+    intraday = await market_service.get_symbol_intraday(symbol, days == 5)
     if intraday is None:
         raise HTTPException(status_code=404, detail="intraday_unavailable")
     return intraday

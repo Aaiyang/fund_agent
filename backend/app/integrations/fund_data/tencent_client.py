@@ -23,6 +23,7 @@ from app.integrations.fund_data.models import (
 from app.integrations.fund_data.normalizer import (
     normalize_company_rows,
     parse_tencent_candles,
+    parse_tencent_day_query,
     parse_tencent_minutes,
     parse_tencent_quotes,
 )
@@ -32,6 +33,7 @@ _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 _QUOTES_URL = "https://qt.gtimg.cn/q="
 _KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 _MINUTE_URL = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
+_DAY_QUERY_URL = "https://web.ifzq.gtimg.cn/appstock/app/day/query"
 _PROFILE_URL = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
 # One request caps at this many bars; the longest range on the screen still fits.
 _MAX_BARS = 1200
@@ -125,6 +127,28 @@ async def fetch_minutes(symbol: str) -> MinuteExternalSeries:
 
     series = parse_tencent_minutes(payload, symbol)
     logger.debug("market_minutes_fetched", symbol=symbol, returned=len(series.points))
+    return series
+
+
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPError, OSError)),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    reraise=True,
+)
+async def fetch_recent_minutes(symbol: str) -> MinuteExternalSeries:
+    """Fetch the last five sessions' minute lines, stitched oldest-first.
+
+    美股 has no data here (the reply is an empty list), same as for the single
+    session. The window's reference close is not part of the reply either.
+    """
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+        response = await client.get(_DAY_QUERY_URL, params={"code": symbol}, headers=_HEADERS)
+        response.raise_for_status()
+        payload = response.json()
+
+    series = parse_tencent_day_query(payload, symbol)
+    logger.debug("market_five_day_fetched", symbol=symbol, returned=len(series.points))
     return series
 
 

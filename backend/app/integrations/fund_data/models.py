@@ -135,10 +135,12 @@ class CandleExternalBar(BaseModel):
 
 
 class MinuteExternalPoint(BaseModel):
-    """One minute of the current trading session.
+    """One minute of a trading session.
 
     ``volume`` and ``amount`` are per-minute, derived from the source's running
-    totals; ``average_price`` is only meaningful for stocks.
+    totals; ``average_price`` is only meaningful for stocks. ``trade_date`` stays
+    None for a single session and is filled for the five-day series, where the
+    points span several days.
     """
 
     time: str  # "HH:MM"
@@ -146,12 +148,13 @@ class MinuteExternalPoint(BaseModel):
     volume: float | None = None
     amount: float | None = None
     average_price: float | None = None
+    trade_date: date | None = None
 
 
 class MinuteExternalSeries(BaseModel):
-    """The session's minute line plus the two numbers its axis needs."""
+    """A minute line plus the two numbers its axis needs."""
 
-    trade_date: date | None = None
+    trade_date: date | None = None  # the newest session in the series
     prev_close: float | None = None  # the flat reference line 分时 charts draw
     points: list[MinuteExternalPoint] = []
 

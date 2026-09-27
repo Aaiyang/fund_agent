@@ -21,6 +21,7 @@ from app.integrations.fund_data.tencent_client import (
     fetch_company_profile,
     fetch_minutes,
     fetch_quotes,
+    fetch_recent_minutes,
     resolve_symbol,
 )
 from app.repositories.index_repository import index_repository
@@ -65,6 +66,9 @@ _COMPANY_TTL_SECONDS = 24 * 3600
 _TRADING_DAYS: dict[str, int] = {"1m": 22, "3m": 63, "6m": 126, "1y": 250, "3y": 750, "all": 1200}
 # How many trading days one bar of each period stands for.
 _TRADING_DAYS_PER_BAR: dict[MarketPeriod, int] = {"day": 1, "week": 5, "month": 21}
+# Daily bars to pull when looking for the close before the five-day window:
+# seven calendar days back is at most a handful of sessions, holidays included.
+_BASELINE_BARS = 15
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -183,33 +187,56 @@ class MarketService:
         await _write_cache(key, response, _SYMBOL_HISTORY_TTL_SECONDS)
         return response
 
-    async def get_symbol_intraday(self, symbol: str) -> SymbolIntradayResponse | None:
-        """The current session's minute line; empty outside trading hours."""
+    async def get_symbol_intraday(self, symbol: str, five_day: bool = False) -> SymbolIntradayResponse | None:
+        """The minute line for this session, or for the last five stitched.
+
+        Empty outside trading hours for markets the feed has no history for.
+        """
         canonical = tencent_symbol(symbol)
         if canonical is None:
             logger.info("market_symbol_rejected", symbol=symbol)
             return None
 
-        key = ("market_intraday", canonical)
+        key = ("market_intraday", canonical, "5" if five_day else "1")
         cached = await _read_cache(key, SymbolIntradayResponse)
         if cached is not None:
             return cached
 
-        series = await fetch_minutes(canonical)
+        series = await (fetch_recent_minutes(canonical) if five_day else fetch_minutes(canonical))
         if not series.points:
-            logger.info("market_intraday_empty", symbol=canonical)
+            logger.info("market_intraday_empty", symbol=canonical, five_day=five_day)
             return None
 
         response = SymbolIntradayResponse(
             symbol=canonical,
             kind=market_kind(canonical),
+            days=5 if five_day else 1,
             trade_date=series.trade_date,
-            prev_close=series.prev_close,
+            prev_close=series.prev_close
+            if not five_day
+            else await self._close_before(canonical, series.points[0].trade_date),
             points=series.points,
             total=len(series.points),
         )
         await _write_cache(key, response, _SYMBOL_INTRADAY_TTL_SECONDS)
         return response
+
+    async def _close_before(self, symbol: str, day: date | None) -> float | None:
+        """The last close ahead of `day`, which is what a 五日 chart measures from.
+
+        The five-session reply carries no baseline of its own. Missing it is not
+        an error: the chart then scales to the data instead of drawing a flat
+        reference line.
+        """
+        if day is None:
+            return None
+        try:
+            bars = await fetch_candles(await resolve_symbol(symbol), "day", _BASELINE_BARS)
+        except Exception as e:
+            logger.warning("market_baseline_fetch_failed", symbol=symbol, error=str(e))
+            return None
+        earlier = [bar.close for bar in bars if bar.trade_date < day]
+        return earlier[-1] if earlier else None
 
     async def get_symbol_company(self, symbol: str) -> SymbolCompanyResponse | None:
         """Company master data. A missing record is a hidden card, not an error.
