@@ -24,6 +24,19 @@ class TestFirstDue:
         assert first_due("monthly", 31, date(2028, 2, 1)) == date(2028, 2, 29)
 
 
+class TestDaily:
+    def test_every_day_starts_on_the_plan_start(self) -> None:
+        assert first_due("daily", 1, date(2026, 9, 23)) == date(2026, 9, 23)
+
+    def test_every_day_walks_the_calendar(self) -> None:
+        days = due_days("daily", 1, date(2026, 9, 28), None, None, date(2026, 10, 1))
+        assert days == [date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1)]
+
+    def test_a_daily_plan_caught_up_yesterday_owes_today(self) -> None:
+        days = due_days("daily", 1, date(2026, 9, 1), None, date(2026, 9, 28), date(2026, 9, 30))
+        assert days == [date(2026, 9, 29), date(2026, 9, 30)]
+
+
 class TestDueDays:
     def test_weekly_lists_every_named_weekday_in_the_window(self) -> None:
         days = due_days("weekly", 1, date(2026, 9, 28), None, None, date(2026, 10, 31))

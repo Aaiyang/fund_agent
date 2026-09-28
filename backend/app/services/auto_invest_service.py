@@ -184,9 +184,9 @@ class AutoInvestService:
 
         Raises:
             PlanInputError: a weekday outside 1-7 on a weekly plan, or an end
-                date before the plan starts.
+                date before the plan starts. 每天 has no day to name at all.
         """
-        if frequency != "monthly" and run_day > _WEEK_DAYS:
+        if frequency not in ("daily", "monthly") and run_day > _WEEK_DAYS:
             raise PlanInputError(f"{frequency} 定投的扣款日要在 1-7 之间（周一到周日）")
         if end_date is not None and end_date < start_date:
             raise PlanInputError("结束日期不能早于开始日期")

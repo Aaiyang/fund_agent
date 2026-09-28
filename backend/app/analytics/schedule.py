@@ -13,9 +13,9 @@ import calendar
 from datetime import date, timedelta
 from typing import Literal
 
-Frequency = Literal["weekly", "biweekly", "monthly"]
+Frequency = Literal["daily", "weekly", "biweekly", "monthly"]
 
-_STEP_DAYS: dict[str, int] = {"weekly": 7, "biweekly": 14}
+_STEP_DAYS: dict[str, int] = {"daily": 1, "weekly": 7, "biweekly": 14}
 
 
 def _month_start(moment: date) -> date:
@@ -30,6 +30,8 @@ def _day_in_month(run_day: int, moment: date) -> int:
 
 def first_due(frequency: Frequency, run_day: int, start: date) -> date:
     """The first scheduled day on or after the plan starts."""
+    if frequency == "daily":
+        return start
     if frequency == "monthly":
         candidate = start.replace(day=_day_in_month(run_day, start))
         return candidate if candidate >= start else _next_monthly(run_day, candidate)
