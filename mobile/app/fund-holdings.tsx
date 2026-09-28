@@ -73,7 +73,6 @@ export default function FundHoldingsScreen() {
                     hrefOf={(item) => ({ pathname: '/market/[symbol]', params: { symbol: item.symbol ?? item.stock_code } })}
                     nameOf={(item) => ({ title: item.stock_name ?? item.stock_code, sub: item.stock_code })}
                     columns={COLUMNS}
-                    hint="点表头排序（再点切换升/降） · 点股票名看实时分析"
                   />
                 )}
               </View>

@@ -57,7 +57,6 @@ export function DataTable<T>({
   nameOf,
   columns,
   action,
-  hint,
   padded = true,
   scrollRows = true,
   style,
@@ -71,7 +70,6 @@ export function DataTable<T>({
   columns: DataColumn<T>[];
   /** Trailing column; omit it when the rows have no per-row command. */
   action?: { title: string; label: (item: T) => string; busy: (item: T) => boolean; onPress: (item: T) => void } | null;
-  hint: string;
   /** Horizontal inset for grids that are not already inside a padded Card. */
   padded?: boolean;
   /** Grids living inside a page scroller size to their rows instead. */
@@ -251,7 +249,6 @@ export function DataTable<T>({
     <View style={[{ backgroundColor: theme.surface }, padded ? { paddingHorizontal: theme.gap } : null, style]}>
       {header}
       {scrollRows ? <ScrollView>{rows}</ScrollView> : rows}
-      <Text style={{ fontSize: 11, color: theme.textFaint, paddingVertical: 8 }}>{hint}</Text>
     </View>
   );
 }
