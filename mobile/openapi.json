@@ -5156,6 +5156,35 @@
             "title": "Is Updated",
             "default": false
           },
+          "purchase_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Date"
+          },
+          "purchase_after_cutoff": {
+            "type": "boolean",
+            "title": "Purchase After Cutoff",
+            "default": false
+          },
+          "settlement_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settlement Date"
+          },
           "holding_days": {
             "anyOf": [
               {
@@ -5166,6 +5195,18 @@
               }
             ],
             "title": "Holding Days"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           },
           "version": {
             "type": "integer",
@@ -5257,6 +5298,29 @@
               }
             ],
             "title": "Profit Loss"
+          },
+          "purchase_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Date"
+          },
+          "purchase_after_cutoff": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase After Cutoff"
           },
           "expected_version": {
             "anyOf": [

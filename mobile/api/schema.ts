@@ -2028,8 +2028,19 @@ export interface components {
              * @default false
              */
             is_updated?: boolean;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /**
+             * Purchase After Cutoff
+             * @default false
+             */
+            purchase_after_cutoff?: boolean;
+            /** Settlement Date */
+            settlement_date?: string | null;
             /** Holding Days */
             holding_days?: number | null;
+            /** Created At */
+            created_at?: string | null;
             /**
              * Version
              * @default 1
@@ -2055,6 +2066,10 @@ export interface components {
             market_value?: number | null;
             /** Profit Loss */
             profit_loss?: number | null;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /** Purchase After Cutoff */
+            purchase_after_cutoff?: boolean | null;
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409

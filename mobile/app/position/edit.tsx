@@ -7,7 +7,7 @@ import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useAccounts, usePosition, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
-import { formatMoney, toInputNumber } from '@/utils/format';
+import { formatDateTime, formatMoney, toInputNumber } from '@/utils/format';
 import { useUiStore } from '@/stores/ui';
 
 /** Create or edit one holding snapshot (spec 3.7.1, optimistic lock 7.11). */
@@ -69,6 +69,9 @@ function PositionForm({
   // 净值 is published to four decimals; rounding further would change the number.
   const [averageCostNav, setAverageCostNav] = useState(toInputNumber(existing?.average_cost_nav, 4));
   const [profitLoss, setProfitLoss] = useState(toInputNumber(existing?.profit_loss));
+  const [purchaseDate, setPurchaseDate] = useState(initialPurchaseDate(existing));
+  // A row that never recorded a purchase keeps the import default: before the cutoff.
+  const [afterCutoff, setAfterCutoff] = useState(Boolean(existing?.purchase_date && existing.purchase_after_cutoff));
   const [problem, setProblem] = useState<string | null>(null);
 
   function submit() {
@@ -94,6 +97,10 @@ function PositionForm({
         return;
       }
     }
+    if (!isBlankDate(purchaseDate) && !isRealDate(purchaseDate)) {
+      setProblem('买入确认日期格式应为 YYYY-MM-DD');
+      return;
+    }
     upsert.mutate(
       {
         fundCode: fundCode.trim(),
@@ -103,6 +110,8 @@ function PositionForm({
         cost_amount: number(costAmount),
         average_cost_nav: number(averageCostNav),
         profit_loss: number(profitLoss),
+        purchase_date: purchaseDate.trim() || null,
+        purchase_after_cutoff: afterCutoff,
         // The lock token only matters for a row that already exists (spec 7.11).
         expected_version: existing?.version ?? null,
       },
@@ -143,6 +152,11 @@ function PositionForm({
             ? `已存在持仓：市值 ${formatMoney(existing.market_value)}`
             : '该账户下还没有这只基金的持仓'}
         </Text>
+        <Field label="买入确认日期" value={purchaseDate} onChangeText={setPurchaseDate} placeholder="请输入买入确认日期（YYYY-MM-DD）" />
+        <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+          <Chip label="15:00前，按当日净值" active={!afterCutoff} onPress={() => setAfterCutoff(false)} />
+          <Chip label="15:00后，按次日净值" active={afterCutoff} onPress={() => setAfterCutoff(true)} />
+        </View>
         <Field label="持有金额" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" placeholder="请输入当前持有金额" />
         <Field label="持有份额" value={shares} onChangeText={setShares} keyboardType="numeric" placeholder="请输入持有份额" />
         <Field label="持仓成本" value={costAmount} onChangeText={setCostAmount} keyboardType="numeric" placeholder="请输入持仓成本" />
@@ -166,4 +180,31 @@ function PositionForm({
 
 function number(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
+}
+
+/** The stored date, else the day the snapshot was taken — an imported holding
+ * has no trade date of its own — else today on the device. */
+function initialPurchaseDate(existing: PositionItem | null): string {
+  if (existing?.purchase_date) return existing.purchase_date;
+  const stamp = existing?.created_at ?? existing?.updated_at;
+  return stamp ? formatDateTime(stamp).slice(0, 10) : localToday();
+}
+
+function localToday(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isBlankDate(value: string): boolean {
+  return value.trim() === '';
+}
+
+function isRealDate(value: string): boolean {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!parts) return false;
+  const [year, month, day] = parts.slice(1).map(Number);
+  // UTC math keeps a device west of Greenwich from rejecting its own dates.
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() + 1 === month && parsed.getUTCDate() === day;
 }
