@@ -52,6 +52,33 @@ export function usePosition(accountId: number | null, fundCode: string | null) {
   });
 }
 
+/**
+ * What a purchase date implies, priced before anything is saved. The entry
+ * form shows these as estimates, so the arithmetic stays on the server where
+ * the NAV history is.
+ */
+export function usePositionPreview(input: {
+  fundCode: string;
+  purchaseDate: string;
+  afterCutoff: boolean;
+  marketValue: string;
+}) {
+  const { fundCode, purchaseDate, afterCutoff, marketValue } = input;
+  const ready = /^\d{6}$/.test(fundCode) && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate.trim());
+  return useQuery({
+    queryKey: queryKeys.positionPreview(fundCode, purchaseDate, afterCutoff, marketValue),
+    queryFn: () =>
+      api.get<components['schemas']['PositionPreviewResponse']>('/portfolio/positions/preview', {
+        fund_code: fundCode,
+        purchase_date: purchaseDate,
+        after_cutoff: afterCutoff,
+        market_value: marketValue === '' ? null : Number(marketValue),
+      }),
+    enabled: ready,
+    staleTime: 60_000,
+  });
+}
+
 export function useAccounts() {
   return useQuery({
     queryKey: queryKeys.accounts,

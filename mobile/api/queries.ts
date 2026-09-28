@@ -29,6 +29,8 @@ export const queryKeys = {
   portfolioSummary: (accountId: number | null) => ['portfolio', 'summary', accountId] as const,
   positions: (accountId: number | null) => ['portfolio', 'positions', accountId] as const,
   position: (accountId: number, code: string) => ['portfolio', 'position', accountId, code] as const,
+  positionPreview: (code: string, day: string, afterCutoff: boolean, amount: string) =>
+    ['portfolio', 'preview', code, day, afterCutoff, amount] as const,
 
   accounts: ['accounts'] as const,
   transactionsAll: ['transactions'] as const,

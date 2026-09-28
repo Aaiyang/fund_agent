@@ -794,6 +794,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/portfolio/positions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Position
+         * @description Estimate 份额/成本/收益 for a purchase date, without writing anything.
+         *
+         *     Declared before `/positions/{fund_code}` so the literal path wins.
+         */
+        get: operations["preview_position_api_v1_portfolio_positions_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/portfolio/positions/{fund_code}": {
         parameters: {
             query?: never;
@@ -1717,6 +1739,13 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /**
+             * Purchase After Cutoff
+             * @default false
+             */
+            purchase_after_cutoff?: boolean;
             /** Confidence */
             confidence?: number | null;
             /** Validation Status */
@@ -1754,6 +1783,10 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
+            /** Purchase Date */
+            purchase_date?: string | null;
+            /** Purchase After Cutoff */
+            purchase_after_cutoff?: boolean | null;
         };
         /**
          * IndexCatalogItem
@@ -2009,6 +2042,16 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
+            /**
+             * Cost Derived
+             * @default false
+             */
+            cost_derived?: boolean;
+            /**
+             * Profit Derived
+             * @default false
+             */
+            profit_derived?: boolean;
             /** Daily Profit Loss */
             daily_profit_loss?: number | null;
             /** Daily Return */
@@ -2050,18 +2093,64 @@ export interface components {
             updated_at?: string | null;
         };
         /**
-         * PositionUpsertRequest
-         * @description Manual create/update of a position snapshot (partial allowed).
+         * PositionPreviewResponse
+         * @description GET /portfolio/positions/preview: what a purchase date implies.
          */
-        PositionUpsertRequest: {
-            /** Account Id */
-            account_id: number;
+        PositionPreviewResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Fund Code */
+            fund_code: string;
+            /**
+             * Purchase Date
+             * Format: date
+             */
+            purchase_date: string;
+            /** Purchase After Cutoff */
+            purchase_after_cutoff: boolean;
+            /**
+             * Settlement Date
+             * Format: date
+             */
+            settlement_date: string;
+            /** Holding Days */
+            holding_days: number;
+            /** Settled Nav */
+            settled_nav?: number | null;
+            /** Settled Nav Date */
+            settled_nav_date?: string | null;
+            /** Unit Nav */
+            unit_nav?: number | null;
+            /** Nav Date */
+            nav_date?: string | null;
             /** Shares */
             shares?: number | null;
             /** Cost Amount */
             cost_amount?: number | null;
             /** Average Cost Nav */
             average_cost_nav?: number | null;
+            /** Profit Loss */
+            profit_loss?: number | null;
+            /** Profit Loss Rate */
+            profit_loss_rate?: number | null;
+        };
+        /**
+         * PositionUpsertRequest
+         * @description Manual create/update of a position snapshot (partial allowed).
+         *
+         *     份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus
+         *     the NAV the purchase settled on, so accepting them by hand would let a
+         *     stale guess override the arithmetic.
+         */
+        PositionUpsertRequest: {
+            /** Account Id */
+            account_id: number;
+            /** Cost Amount */
+            cost_amount?: number | null;
             /** Market Value */
             market_value?: number | null;
             /** Profit Loss */
@@ -2070,6 +2159,11 @@ export interface components {
             purchase_date?: string | null;
             /** Purchase After Cutoff */
             purchase_after_cutoff?: boolean | null;
+            /**
+             * Reset
+             * @description 把这些字段改回系统推算：清空已存值，之后由确认日净值推出
+             */
+            reset?: ("cost_amount" | "profit_loss")[];
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409
@@ -3801,6 +3895,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PositionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_position_api_v1_portfolio_positions_preview_get: {
+        parameters: {
+            query: {
+                fund_code: string;
+                /** @description 买入确认日期（提交当日的自然日） */
+                purchase_date: string;
+                /** @description 是否 15:00 后提交，决定用哪一场净值 */
+                after_cutoff?: boolean;
+                market_value?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PositionPreviewResponse"];
                 };
             };
             /** @description Validation Error */

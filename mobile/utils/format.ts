@@ -9,12 +9,22 @@
 
 const CNY = '¥';
 
+/** `toFixed` keeps the sign of a value too small to display; a derived figure
+ * can land on such a remainder, and "-0.00%" reads as a real loss. */
+function rounded(value: number, digits: number): string {
+  const fixed = value.toFixed(digits);
+  return Number(fixed) === 0 ? (0).toFixed(digits) : fixed;
+}
+
 export function formatMoney(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
   const fixed = Math.abs(value).toFixed(digits);
   const [whole, fraction] = fixed.split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${value < 0 ? '-' : ''}${CNY}${grouped}${fraction ? `.${fraction}` : ''}`;
+  // A derived figure can carry a sub-cent remainder; rounding it to zero must
+  // not leave a lone minus sign in front of ¥0.00.
+  const sign = value < 0 && Number(fixed) !== 0 ? '-' : '';
+  return `${sign}${CNY}${grouped}${fraction ? `.${fraction}` : ''}`;
 }
 
 /** For signed amounts (当日收益/持有收益): always show the sign when non-zero. */
@@ -27,18 +37,18 @@ export function formatSignedMoney(value: number | null | undefined, digits = 2):
 /** For fractions: profit_loss_rate, return_1m, position_ratio. */
 export function formatRate(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
-  return `${(value * 100).toFixed(digits)}%`;
+  return `${rounded(value * 100, digits)}%`;
 }
 
 export function formatSignedRate(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
-  return `${value > 0 ? '+' : ''}${(value * 100).toFixed(digits)}%`;
+  return `${value > 0 ? '+' : ''}${rounded(value * 100, digits)}%`;
 }
 
 /** For percent points: the fund `daily_return` column. */
 export function formatReturnPoints(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
-  return `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
+  return `${value > 0 ? '+' : ''}${rounded(value, digits)}%`;
 }
 
 /** For a magnitude already in percent points, without a sign: 占净值比例. */
@@ -92,6 +102,21 @@ export function currencySign(currency: string | null | undefined): string {
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '--';
   return value.slice(0, 10);
+}
+
+/** Today on the device, as the YYYY-MM-DD the API expects. */
+export function localToday(): string {
+  return formatDateTime(new Date().toISOString()).slice(0, 10);
+}
+
+/** Whether a typed string is a real calendar day, not just a shaped number. */
+export function isCalendarDate(value: string): boolean {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!parts) return false;
+  const [year, month, day] = parts.slice(1).map(Number);
+  // UTC math keeps a device west of Greenwich from rejecting its own dates.
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() + 1 === month && parsed.getUTCDate() === day;
 }
 
 export function formatDateTime(value: string | null | undefined): string {

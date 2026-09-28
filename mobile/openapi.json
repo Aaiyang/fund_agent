@@ -1832,6 +1832,97 @@
         }
       }
     },
+    "/api/v1/portfolio/positions/preview": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Preview Position",
+        "description": "Estimate 份额/成本/收益 for a purchase date, without writing anything.\n\nDeclared before `/positions/{fund_code}` so the literal path wins.",
+        "operationId": "preview_position_api_v1_portfolio_positions_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fund_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 6,
+              "maxLength": 6,
+              "title": "Fund Code"
+            }
+          },
+          {
+            "name": "purchase_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "买入确认日期（提交当日的自然日）",
+              "title": "Purchase Date"
+            },
+            "description": "买入确认日期（提交当日的自然日）"
+          },
+          {
+            "name": "after_cutoff",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "是否 15:00 后提交，决定用哪一场净值",
+              "default": false,
+              "title": "After Cutoff"
+            },
+            "description": "是否 15:00 后提交，决定用哪一场净值"
+          },
+          {
+            "name": "market_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Market Value"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/portfolio/positions/{fund_code}": {
       "get": {
         "tags": [
@@ -4275,6 +4366,23 @@
             ],
             "title": "Profit Loss Rate"
           },
+          "purchase_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Date"
+          },
+          "purchase_after_cutoff": {
+            "type": "boolean",
+            "title": "Purchase After Cutoff",
+            "default": false
+          },
           "confidence": {
             "anyOf": [
               {
@@ -4435,6 +4543,29 @@
               }
             ],
             "title": "Profit Loss Rate"
+          },
+          "purchase_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Date"
+          },
+          "purchase_after_cutoff": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase After Cutoff"
           }
         },
         "type": "object",
@@ -5073,6 +5204,16 @@
             ],
             "title": "Profit Loss Rate"
           },
+          "cost_derived": {
+            "type": "boolean",
+            "title": "Cost Derived",
+            "default": false
+          },
+          "profit_derived": {
+            "type": "boolean",
+            "title": "Profit Derived",
+            "default": false
+          },
           "daily_profit_loss": {
             "anyOf": [
               {
@@ -5234,23 +5375,154 @@
         "title": "PositionItem",
         "description": "One holding with query-time derived metrics (never stored)."
       },
-      "PositionUpsertRequest": {
+      "PositionPreviewResponse": {
         "properties": {
-          "account_id": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "fund_code": {
+            "type": "string",
+            "title": "Fund Code"
+          },
+          "purchase_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Purchase Date"
+          },
+          "purchase_after_cutoff": {
+            "type": "boolean",
+            "title": "Purchase After Cutoff"
+          },
+          "settlement_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Settlement Date"
+          },
+          "holding_days": {
             "type": "integer",
-            "title": "Account Id"
+            "title": "Holding Days"
+          },
+          "settled_nav": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled Nav"
+          },
+          "settled_nav_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled Nav Date"
+          },
+          "unit_nav": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Nav"
+          },
+          "nav_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nav Date"
           },
           "shares": {
             "anyOf": [
               {
-                "type": "number",
-                "minimum": 0
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Shares"
+          },
+          "cost_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Amount"
+          },
+          "average_cost_nav": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Cost Nav"
+          },
+          "profit_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Loss"
+          },
+          "profit_loss_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Loss Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fund_code",
+          "purchase_date",
+          "purchase_after_cutoff",
+          "settlement_date",
+          "holding_days"
+        ],
+        "title": "PositionPreviewResponse",
+        "description": "GET /portfolio/positions/preview: what a purchase date implies."
+      },
+      "PositionUpsertRequest": {
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
           },
           "cost_amount": {
             "anyOf": [
@@ -5263,18 +5535,6 @@
               }
             ],
             "title": "Cost Amount"
-          },
-          "average_cost_nav": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Average Cost Nav"
           },
           "market_value": {
             "anyOf": [
@@ -5322,6 +5582,18 @@
             ],
             "title": "Purchase After Cutoff"
           },
+          "reset": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "cost_amount",
+                "profit_loss"
+              ]
+            },
+            "type": "array",
+            "title": "Reset",
+            "description": "把这些字段改回系统推算：清空已存值，之后由确认日净值推出"
+          },
           "expected_version": {
             "anyOf": [
               {
@@ -5340,7 +5612,7 @@
           "account_id"
         ],
         "title": "PositionUpsertRequest",
-        "description": "Manual create/update of a position snapshot (partial allowed)."
+        "description": "Manual create/update of a position snapshot (partial allowed).\n\n份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus\nthe NAV the purchase settled on, so accepting them by hand would let a\nstale guess override the arithmetic."
       },
       "PositionsResponse": {
         "properties": {

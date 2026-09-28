@@ -24,7 +24,7 @@ export class ApiError extends Error {
   }
 }
 
-type QueryValue = string | number | undefined | null;
+type QueryValue = string | number | boolean | undefined | null;
 
 export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
