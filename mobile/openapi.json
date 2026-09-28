@@ -5836,6 +5836,11 @@
             "title": "Cost Derived",
             "default": false
           },
+          "average_cost_nav_derived": {
+            "type": "boolean",
+            "title": "Average Cost Nav Derived",
+            "default": false
+          },
           "profit_derived": {
             "type": "boolean",
             "title": "Profit Derived",
@@ -6020,16 +6025,18 @@
             ],
             "title": "Market Value"
           },
-          "profit_loss": {
+          "average_cost_nav": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "minimum": 0
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Profit Loss"
+            "title": "Average Cost Nav",
+            "description": "持仓成本价"
           },
           "purchase_date": {
             "anyOf": [
@@ -6049,7 +6056,7 @@
               "type": "string",
               "enum": [
                 "shares",
-                "profit_loss"
+                "average_cost_nav"
               ]
             },
             "type": "array",
@@ -6074,7 +6081,7 @@
           "account_id"
         ],
         "title": "PositionUpsertRequest",
-        "description": "同步持仓: restate what a holdings screen shows (partial allowed).\n\n持仓成本 and 平均成本净值 are not inputs — both follow from 持有金额 minus\n持有收益, and a stored cost would otherwise outrank a profit he restates.\nOn a fund with a BUY/SELL ledger the service also drops 份额/收益 here,\nbecause those belong to the trade records."
+        "description": "同步持仓: restate what a holdings screen shows (partial allowed).\n\nThe two figures he reads off that screen are 持有金额 (or 份额) and 持仓成本价.\n持仓成本 and 持有收益 are not inputs — both follow from those two — and a\nsnapshot that restates them retires whatever an earlier import stored, so\nthe numbers cannot disagree with each other. On a fund with a BUY/SELL\nledger the service drops the money fields entirely."
       },
       "PositionsResponse": {
         "properties": {

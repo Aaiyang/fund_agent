@@ -2223,6 +2223,11 @@ export interface components {
              */
             cost_derived?: boolean;
             /**
+             * Average Cost Nav Derived
+             * @default false
+             */
+            average_cost_nav_derived?: boolean;
+            /**
              * Profit Derived
              * @default false
              */
@@ -2269,10 +2274,11 @@ export interface components {
          * PositionUpsertRequest
          * @description 同步持仓: restate what a holdings screen shows (partial allowed).
          *
-         *     持仓成本 and 平均成本净值 are not inputs — both follow from 持有金额 minus
-         *     持有收益, and a stored cost would otherwise outrank a profit he restates.
-         *     On a fund with a BUY/SELL ledger the service also drops 份额/收益 here,
-         *     because those belong to the trade records.
+         *     The two figures he reads off that screen are 持有金额 (or 份额) and 持仓成本价.
+         *     持仓成本 and 持有收益 are not inputs — both follow from those two — and a
+         *     snapshot that restates them retires whatever an earlier import stored, so
+         *     the numbers cannot disagree with each other. On a fund with a BUY/SELL
+         *     ledger the service drops the money fields entirely.
          */
         PositionUpsertRequest: {
             /** Account Id */
@@ -2281,8 +2287,11 @@ export interface components {
             shares?: number | null;
             /** Market Value */
             market_value?: number | null;
-            /** Profit Loss */
-            profit_loss?: number | null;
+            /**
+             * Average Cost Nav
+             * @description 持仓成本价
+             */
+            average_cost_nav?: number | null;
             /**
              * Purchase Date
              * @description 首次购买确认日，持有天数从这天算
@@ -2292,7 +2301,7 @@ export interface components {
              * Reset
              * @description 把这些字段清空，回到由其余字段推算
              */
-            reset?: ("shares" | "profit_loss")[];
+            reset?: ("shares" | "average_cost_nav")[];
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409

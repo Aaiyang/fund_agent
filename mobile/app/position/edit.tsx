@@ -82,8 +82,8 @@ function PositionForm({
   const traded = tradedPosition(existing);
   const [mode, setMode] = useState<'amount' | 'shares'>('amount');
   const [marketValue, setMarketValue] = useState(snapshotText(existing, 'market_value'));
-  const [shares, setShares] = useState(traded || existing?.shares_derived ? '' : toInputNumber(existing?.shares));
-  const [profitLoss, setProfitLoss] = useState(snapshotText(existing, 'profit_loss'));
+  const [shares, setShares] = useState(snapshotText(existing, 'shares'));
+  const [costNav, setCostNav] = useState(snapshotText(existing, 'average_cost_nav'));
   const [problem, setProblem] = useState<string | null>(null);
 
   const nav = detail.data?.latest_nav ?? existing?.unit_nav ?? null;
@@ -91,7 +91,7 @@ function PositionForm({
   const typed = resolve({
     marketValue,
     shares,
-    profitLoss,
+    costNav,
     storedCost: existing?.cost_amount ?? null,
     nav,
     mode,
@@ -131,11 +131,11 @@ function PositionForm({
       : mode === 'amount'
         ? [
             ['market_value', marketValue],
-            ['profit_loss', profitLoss],
+            ['average_cost_nav', costNav],
           ]
         : [
             ['shares', shares],
-            ['profit_loss', profitLoss],
+            ['average_cost_nav', costNav],
           ];
     for (const [column, value] of boxes) {
       if (value.trim() !== '' && Number.isNaN(Number(value))) {
@@ -146,7 +146,7 @@ function PositionForm({
     const sent = {
       market_value: traded ? number(marketValue) : result.market_value,
       shares: traded || mode === 'amount' ? null : number(shares),
-      profit_loss: traded ? null : number(profitLoss),
+      average_cost_nav: traded ? null : number(costNav),
     };
     upsert.mutate(
       {
@@ -158,7 +158,7 @@ function PositionForm({
         // to being derived, so switching 口径 never leaves a stale figure behind.
         reset: traded
           ? []
-          : (['shares', 'profit_loss'] as const).filter(
+          : (['shares', 'average_cost_nav'] as const).filter(
               (column) => stored(existing, column) !== null && sent[column] === null,
             ),
         expected_version: existing?.version ?? null,
@@ -237,16 +237,16 @@ function PositionForm({
               />
             )}
             <Field
-              label="持有收益"
-              value={profitLoss}
-              onChangeText={setProfitLoss}
+              label="持有成本"
+              value={costNav}
+              onChangeText={setCostNav}
               keyboardType="numeric"
-              placeholder="请输入持有收益"
+              placeholder="请输入持仓成本净值"
             />
             <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
               {mode === 'shares'
-                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额，成本 = 金额 − 收益。`
-                : '持仓成本由金额减收益得出，不用填。'}
+                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额，成本 = 成本净值 × 份额。`
+                : '份额按最新净值折算，成本 = 成本净值 × 份额，收益 = 金额 − 成本。'}
             </Text>
           </>
         )}
@@ -302,12 +302,12 @@ function tradedPosition(existing: PositionItem | null): boolean {
   return (existing?.trade_count ?? 0) > 0;
 }
 
-const LABELS = { market_value: '持有金额', shares: '持有份额', profit_loss: '持有收益' };
+const LABELS = { market_value: '持有金额', shares: '持有份额', average_cost_nav: '持有成本' };
 
 type ResolveInput = {
   marketValue: string;
   shares: string;
-  profitLoss: string;
+  costNav: string;
   /** What the row already carries, so the card is not blank until he types. */
   storedCost: number | null;
   nav: number | null;
@@ -319,21 +319,21 @@ type ResolveInput = {
 function resolve(input: ResolveInput) {
   const marketValue = number(input.marketValue);
   const shares = number(input.shares);
-  const profit = number(input.profitLoss);
+  const costNav = number(input.costNav);
 
   const amount = marketValue ?? (input.traded ? null : shares !== null && input.nav ? shares * input.nav : null);
   const held = shares ?? (amount !== null && input.nav ? amount / input.nav : null);
-  // 持仓成本 has no box of its own: restating the profit moves it, and until he
-  // does the row's own figure is the only honest answer.
-  const basis = amount !== null && profit !== null ? amount - profit : input.storedCost;
-  const gained = profit ?? (amount !== null && basis !== null ? amount - basis : null);
+  // 持仓成本价 is the input; the money still in the fund is that price times the
+  // units, and until he states one the row's own figure is the honest answer.
+  const basis = costNav !== null && held ? costNav * held : input.storedCost;
+  const gained = amount !== null && basis !== null ? amount - basis : null;
 
   return {
     market_value: amount,
     shares: held,
     cost_amount: basis,
+    average_cost_nav: costNav ?? (basis !== null && held ? basis / held : null),
     profit_loss: gained,
-    average_cost_nav: basis !== null && held ? basis / held : null,
     profit_loss_rate: gained !== null && basis ? gained / basis : null,
   };
 }
@@ -352,20 +352,26 @@ function number(value: string): number | null {
   return value.trim() === '' || Number.isNaN(Number(value)) ? null : Number(value);
 }
 
-/** Only what the row really stores: a derived figure must not prefill a box. */
-function snapshotText(existing: PositionItem | null, column: 'market_value' | 'profit_loss'): string {
-  if (!existing || (column !== 'market_value' && tradedPosition(existing))) return '';
-  return column === 'profit_loss' && existing.profit_derived ? '' : toInputNumber(existing[column]);
+/** The three columns a snapshot box can read from. */
+type BoxColumn = 'market_value' | 'shares' | 'average_cost_nav';
+
+/** 持有金额 is the anchor and never derived; the other two may be. */
+function isDerived(existing: PositionItem, column: BoxColumn): boolean {
+  if (column === 'shares') return Boolean(existing.shares_derived);
+  if (column === 'average_cost_nav') return Boolean(existing.average_cost_nav_derived);
+  return false;
 }
 
-function stored(
-  existing: PositionItem | null,
-  column: 'shares' | 'cost_amount' | 'profit_loss',
-): number | null {
-  if (!existing || tradedPosition(existing)) return null;
-  const derived =
-    column === 'shares' ? existing.shares_derived : column === 'cost_amount' ? existing.cost_derived : existing.profit_derived;
-  return derived ? null : (existing[column] ?? null);
+/** Only what the row really stores: a derived figure must not prefill a box. */
+function snapshotText(existing: PositionItem | null, column: BoxColumn): string {
+  if (!existing || isDerived(existing, column)) return '';
+  if (tradedPosition(existing) && column !== 'market_value') return '';
+  return toInputNumber(existing[column], column === 'average_cost_nav' ? 4 : 2);
+}
+
+function stored(existing: PositionItem | null, column: Exclude<BoxColumn, 'market_value'>): number | null {
+  if (!existing || tradedPosition(existing) || isDerived(existing, column)) return null;
+  return existing[column] ?? null;
 }
 
 function signTone(value: number | null): 'up' | 'down' | 'muted' {
