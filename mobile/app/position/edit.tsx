@@ -110,6 +110,16 @@ function PositionForm({
       }
     : typed;
   const figures = { ...result, holding_days: days };
+  // An all-blank result card is noise: it only earns its space once a figure
+  // actually resolves, from what he typed or from the row he is editing.
+  const hasMoney = [
+    figures.market_value,
+    figures.shares,
+    figures.cost_amount,
+    figures.average_cost_nav,
+    figures.profit_loss,
+    figures.profit_loss_rate,
+  ].some((value) => value !== null);
 
   function submit() {
     setProblem(null);
@@ -253,18 +263,20 @@ function PositionForm({
         {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
       </Card>
 
-      <Card>
-        <SectionTitle title="持仓结果" />
-        <Row>
-          <Stat label="持有金额" value={formatMoney(figures.market_value)} />
-          <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />
-          <Stat label="持仓成本" value={formatMoney(figures.cost_amount)} tone="muted" />
-          <Stat label="平均成本净值" value={formatNumber(figures.average_cost_nav, 4)} tone="muted" />
-          <Stat label="持有收益" value={formatSignedMoney(figures.profit_loss)} tone={signTone(figures.profit_loss)} />
-          <Stat label="收益率" value={formatSignedRate(figures.profit_loss_rate)} tone={signTone(figures.profit_loss)} />
-          <Stat label="持有天数" value={figures.holding_days === null ? '--' : `${figures.holding_days}`} tone="muted" />
-        </Row>
-      </Card>
+      {hasMoney ? (
+        <Card>
+          <SectionTitle title="持仓结果" />
+          <Row>
+            <Stat label="持有金额" value={formatMoney(figures.market_value)} />
+            <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />
+            <Stat label="持仓成本" value={formatMoney(figures.cost_amount)} tone="muted" />
+            <Stat label="平均成本净值" value={formatNumber(figures.average_cost_nav, 4)} tone="muted" />
+            <Stat label="持有收益" value={formatSignedMoney(figures.profit_loss)} tone={signTone(figures.profit_loss)} />
+            <Stat label="收益率" value={formatSignedRate(figures.profit_loss_rate)} tone={signTone(figures.profit_loss)} />
+            <Stat label="持有天数" value={figures.holding_days === null ? '--' : `${figures.holding_days}`} tone="muted" />
+          </Row>
+        </Card>
+      ) : null}
 
       <Card>
         <Button label="保存持仓" onPress={submit} loading={upsert.isPending} />
