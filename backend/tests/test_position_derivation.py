@@ -105,6 +105,34 @@ class TestOrderPricing:
         assert price_buy(nav=2.5, amount=1000.0).shares == 400.0
 
 
+class TestCostFromTheCostPrice:
+    def test_cost_is_the_stated_price_times_the_units(self) -> None:
+        figures = position_figures(market_value=900.5, average_cost_nav=3.4537, shares=295.1)
+        assert figures.cost_amount is not None
+        assert round(figures.cost_amount, 2) == 1019.19
+        assert figures.cost_derived
+        assert round(figures.profit_loss, 2) == -118.69
+
+    def test_a_cost_the_row_stores_still_wins(self) -> None:
+        figures = position_figures(market_value=900.5, cost_amount=1019.19, average_cost_nav=4, shares=295.1)
+        assert figures.cost_amount == 1019.19
+        assert not figures.cost_derived
+
+    def test_the_price_needs_units_to_multiply(self) -> None:
+        assert position_figures(market_value=900.5, average_cost_nav=3.4537).cost_amount is None
+
+    def test_units_come_from_the_amount_over_the_latest_nav(self) -> None:
+        figures = position_figures(market_value=900.5, average_cost_nav=3.4537, unit_nav=3.0519)
+        assert figures.shares is not None
+        assert round(figures.shares, 2) == 295.06
+        assert figures.cost_amount is not None
+        assert round(figures.cost_amount, 2) == 1019.06
+
+    def test_a_price_the_row_does_not_store_is_flagged_as_derived(self) -> None:
+        assert position_figures(market_value=900.5, cost_amount=1019.19, shares=295.1).average_cost_nav_derived
+        assert not position_figures(market_value=900.5, average_cost_nav=3.4537, shares=295.1).average_cost_nav_derived
+
+
 class TestSharesAndCostPerShare:
     def test_stored_shares_win(self) -> None:
         assert position_figures(market_value=23121.0, shares=7000.0, unit_nav=3.4218).shares == 7000.0

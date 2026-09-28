@@ -215,9 +215,10 @@ class PortfolioService:
         here: 份额 and 持仓成本 belong to the ledger, and letting a snapshot
         overwrite them would silently undo recorded trades.
 
-        Without a ledger, 持仓成本 is not an input either — it is 持有金额 minus
-        持有收益 — so restating the profit retires whatever cost an earlier
-        import stored, rather than leaving the two arguing with each other.
+        Without a ledger the two money figures he states are 持有金额 (or 份额)
+        and 持仓成本价, so restating those retires whatever 持仓成本 and 持有收益
+        an earlier import stored — otherwise the old pair keeps outranking the
+        new one and the screen shows numbers that no longer follow.
 
         Raises:
             AccountNotFoundError: unknown or foreign account → HTTP 404.
@@ -229,8 +230,8 @@ class PortfolioService:
             for owned in ("cost_amount", "profit_loss"):
                 fields.pop(owned, None)
                 reset = [name for name in reset if name != owned]
-        elif fields.get("profit_loss") is not None:
-            reset = [*reset, "cost_amount"]
+        elif fields.get("average_cost_nav") is not None:
+            reset = [*reset, "cost_amount", "profit_loss"]
         updated = await portfolio_repository.upsert_position(
             user_id,
             account_id,
@@ -718,6 +719,7 @@ class PortfolioService:
             # row does not actually store must not look like a fact.
             shares_derived=figures.shares_derived,
             cost_derived=figures.cost_derived,
+            average_cost_nav_derived=figures.average_cost_nav_derived,
             profit_derived=figures.profit_derived,
             daily_profit_loss=daily_profit_loss,
             daily_return=daily_return,

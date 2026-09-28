@@ -40,6 +40,7 @@ class PositionFigures:
     # becomes a stored fact the next time he saves.
     shares_derived: bool = False
     cost_derived: bool = False
+    average_cost_nav_derived: bool = False
     profit_derived: bool = False
 
 
@@ -142,6 +143,10 @@ def position_figures(
         resolved_shares = market_value / unit_nav
 
     cost = cost_amount
+    if cost is None and average_cost_nav is not None and resolved_shares:
+        # 持仓成本价 is what a holdings screen shows, so it is an input here:
+        # the money still in the fund is that price times the units held.
+        cost = average_cost_nav * resolved_shares
     if cost is None and market_value is not None and profit_loss is not None:
         cost = market_value - profit_loss
 
@@ -161,5 +166,6 @@ def position_figures(
         profit_loss_rate=profit / cost if profit is not None and cost else None,
         shares_derived=shares is None and resolved_shares is not None,
         cost_derived=cost_amount is None and cost is not None,
+        average_cost_nav_derived=average_cost_nav is None and cost_nav is not None,
         profit_derived=profit_loss is None and profit is not None,
     )
