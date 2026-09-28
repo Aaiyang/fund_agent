@@ -216,6 +216,7 @@ export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warn
 
 export function Field({
   label,
+  labelExtra,
   value,
   onChangeText,
   keyboardType = 'default',
@@ -223,6 +224,7 @@ export function Field({
   secureTextEntry,
 }: {
   label: string;
+  labelExtra?: ReactNode;
   value: string;
   onChangeText: (text: string) => void;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
@@ -231,7 +233,10 @@ export function Field({
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
-      <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6 }}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <Text style={{ fontSize: 13, color: theme.textMuted }}>{label}</Text>
+        {labelExtra}
+      </View>
       <TextInput
         value={value}
         onChangeText={onChangeText}
