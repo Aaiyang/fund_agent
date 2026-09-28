@@ -2274,11 +2274,10 @@ export interface components {
          * PositionUpsertRequest
          * @description 同步持仓: restate what a holdings screen shows (partial allowed).
          *
-         *     The two figures he reads off that screen are 持有金额 (or 份额) and 持仓成本价.
-         *     持仓成本 and 持有收益 are not inputs — both follow from those two — and a
-         *     snapshot that restates them retires whatever an earlier import stored, so
-         *     the numbers cannot disagree with each other. On a fund with a BUY/SELL
-         *     ledger the service drops the money fields entirely.
+         *     The screen pairs its numbers differently depending on which side he reads
+         *     from, so the form offers two 口径: 持有金额 goes with 持有收益, 持有份额 goes
+         *     with 持仓成本价. Either pair fixes all four money figures; the one that is
+         *     not an input is derived and any stale stored value for it is retired.
          */
         PositionUpsertRequest: {
             /** Account Id */
@@ -2289,9 +2288,14 @@ export interface components {
             market_value?: number | null;
             /**
              * Average Cost Nav
-             * @description 持仓成本价
+             * @description 持仓成本价，与份额配对
              */
             average_cost_nav?: number | null;
+            /**
+             * Profit Loss
+             * @description 持有收益，与金额配对
+             */
+            profit_loss?: number | null;
             /**
              * Purchase Date
              * @description 首次购买确认日，持有天数从这天算
@@ -2301,7 +2305,7 @@ export interface components {
              * Reset
              * @description 把这些字段清空，回到由其余字段推算
              */
-            reset?: ("shares" | "average_cost_nav")[];
+            reset?: ("shares" | "average_cost_nav" | "profit_loss")[];
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409

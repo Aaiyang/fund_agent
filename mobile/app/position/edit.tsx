@@ -84,6 +84,7 @@ function PositionForm({
   const [marketValue, setMarketValue] = useState(snapshotText(existing, 'market_value'));
   const [shares, setShares] = useState(snapshotText(existing, 'shares'));
   const [costNav, setCostNav] = useState(snapshotText(existing, 'average_cost_nav'));
+  const [profitLoss, setProfitLoss] = useState(snapshotText(existing, 'profit_loss'));
   const [problem, setProblem] = useState<string | null>(null);
 
   const nav = detail.data?.latest_nav ?? existing?.unit_nav ?? null;
@@ -92,6 +93,7 @@ function PositionForm({
     marketValue,
     shares,
     costNav,
+    profitLoss,
     storedCost: existing?.cost_amount ?? null,
     nav,
     mode,
@@ -136,27 +138,23 @@ function PositionForm({
       setProblem(dateProblem);
       return;
     }
-    const boxes: [keyof typeof LABELS, string][] = traded
-      ? [['market_value', marketValue]]
-      : mode === 'amount'
-        ? [
-            ['market_value', marketValue],
-            ['average_cost_nav', costNav],
-          ]
-        : [
-            ['shares', shares],
-            ['average_cost_nav', costNav],
-          ];
-    for (const [column, value] of boxes) {
-      if (value.trim() !== '' && Number.isNaN(Number(value))) {
+    const values: Record<SendColumn, string> = {
+      market_value: marketValue,
+      shares,
+      average_cost_nav: costNav,
+      profit_loss: profitLoss,
+    };
+    for (const column of shownColumns(mode, traded)) {
+      if (values[column].trim() !== '' && Number.isNaN(Number(values[column]))) {
         setProblem(`${LABELS[column]} 不是有效数字`);
         return;
       }
     }
-    const sent = {
+    const sent: Record<SendColumn, number | null> = {
       market_value: traded ? number(marketValue) : result.market_value,
-      shares: traded || mode === 'amount' ? null : number(shares),
-      average_cost_nav: traded ? null : number(costNav),
+      shares: !traded && mode === 'shares' ? number(shares) : null,
+      average_cost_nav: !traded && mode === 'shares' ? number(costNav) : null,
+      profit_loss: !traded && mode === 'amount' ? number(profitLoss) : null,
     };
     upsert.mutate(
       {
@@ -168,7 +166,7 @@ function PositionForm({
         // to being derived, so switching 口径 never leaves a stale figure behind.
         reset: traded
           ? []
-          : (['shares', 'average_cost_nav'] as const).filter(
+          : (['shares', 'average_cost_nav', 'profit_loss'] as const).filter(
               (column) => stored(existing, column) !== null && sent[column] === null,
             ),
         expected_version: existing?.version ?? null,
@@ -229,34 +227,25 @@ function PositionForm({
               <Chip label="按金额填" active={mode === 'amount'} onPress={() => setMode('amount')} />
               <Chip label="按份额填" active={mode === 'shares'} onPress={() => setMode('shares')} />
             </View>
-            {mode === 'amount' ? (
+            {shownColumns(mode, traded).map((column) => (
               <Field
-                label="持有金额"
-                value={marketValue}
-                onChangeText={setMarketValue}
+                key={column}
+                label={LABELS[column]}
+                value={{ market_value: marketValue, shares, average_cost_nav: costNav, profit_loss: profitLoss }[column]}
+                onChangeText={{
+                  market_value: setMarketValue,
+                  shares: setShares,
+                  average_cost_nav: setCostNav,
+                  profit_loss: setProfitLoss,
+                }[column]}
                 keyboardType="numeric"
-                placeholder="请输入当前持有金额"
+                placeholder={`请输入${LABELS[column]}`}
               />
-            ) : (
-              <Field
-                label="持有份额"
-                value={shares}
-                onChangeText={setShares}
-                keyboardType="numeric"
-                placeholder="请输入持有份额"
-              />
-            )}
-            <Field
-              label="持有成本"
-              value={costNav}
-              onChangeText={setCostNav}
-              keyboardType="numeric"
-              placeholder="请输入持仓成本净值"
-            />
+            ))}
             <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
               {mode === 'shares'
-                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额，成本 = 成本净值 × 份额。`
-                : '份额按最新净值折算，成本 = 成本净值 × 份额，收益 = 金额 − 成本。'}
+                ? `金额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 成本净值 × 份额。`
+                : `份额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 金额 − 收益。`}
             </Text>
           </>
         )}
@@ -314,37 +303,73 @@ function tradedPosition(existing: PositionItem | null): boolean {
   return (existing?.trade_count ?? 0) > 0;
 }
 
-const LABELS = { market_value: '持有金额', shares: '持有份额', average_cost_nav: '持有成本' };
+type Mode = 'amount' | 'shares';
+
+/** The four money columns, and the label each box shows. */
+type SendColumn = 'market_value' | 'shares' | 'average_cost_nav' | 'profit_loss';
+
+const LABELS: Record<SendColumn, string> = {
+  market_value: '持有金额',
+  shares: '持有份额',
+  average_cost_nav: '持有成本',
+  profit_loss: '持有收益',
+};
+
+/**
+ * Which pair a 口径 shows. A holdings screen lists 金额 next to 收益 and 份额
+ * next to 成本价, so each side reads off the pair it already has; the other
+ * figures follow from it and stay read-only.
+ */
+function shownColumns(mode: Mode, traded: boolean): SendColumn[] {
+  if (traded) return ['market_value'];
+  return mode === 'amount' ? ['market_value', 'profit_loss'] : ['shares', 'average_cost_nav'];
+}
 
 type ResolveInput = {
   marketValue: string;
   shares: string;
   costNav: string;
+  profitLoss: string;
   /** What the row already carries, so the card is not blank until he types. */
   storedCost: number | null;
   nav: number | null;
-  mode: 'amount' | 'shares';
+  mode: Mode;
   traded: boolean;
 };
 
 /** The same precedence the API uses, so the form shows what saving will store. */
 function resolve(input: ResolveInput) {
-  const marketValue = number(input.marketValue);
-  const shares = number(input.shares);
-  const costNav = number(input.costNav);
+  // Only the visible boxes count: a figure typed in the other 口径 and then
+  // switched away from must not keep steering the result from off screen.
+  const byAmount = input.mode === 'amount' || input.traded;
+  const typedAmount = number(input.marketValue);
+  const typedShares = number(input.shares);
+  const typedCostNav = number(input.costNav);
+  const typedProfit = number(input.profitLoss);
 
-  const amount = marketValue ?? (input.traded ? null : shares !== null && input.nav ? shares * input.nav : null);
-  const held = shares ?? (amount !== null && input.nav ? amount / input.nav : null);
-  // 持仓成本价 is the input; the money still in the fund is that price times the
-  // units, and until he states one the row's own figure is the honest answer.
-  const basis = costNav !== null && held ? costNav * held : input.storedCost;
-  const gained = amount !== null && basis !== null ? amount - basis : null;
+  const amount = byAmount ? typedAmount : (typedShares !== null && input.nav ? typedShares * input.nav : null);
+  const held = byAmount
+    ? amount !== null && input.nav
+      ? amount / input.nav
+      : null
+    : typedShares ?? (amount !== null && input.nav ? amount / input.nav : null);
+  const profit = byAmount ? typedProfit : null;
+  const costNav = byAmount ? null : typedCostNav;
+
+  const basis =
+    profit !== null && amount !== null
+      ? amount - profit
+      : costNav !== null && held
+        ? costNav * held
+        : input.storedCost;
+  const gained = profit ?? (amount !== null && basis !== null ? amount - basis : null);
+  const price = costNav ?? (basis !== null && held ? basis / held : null);
 
   return {
     market_value: amount,
     shares: held,
     cost_amount: basis,
-    average_cost_nav: costNav ?? (basis !== null && held ? basis / held : null),
+    average_cost_nav: price,
     profit_loss: gained,
     profit_loss_rate: gained !== null && basis ? gained / basis : null,
   };
@@ -364,24 +389,22 @@ function number(value: string): number | null {
   return value.trim() === '' || Number.isNaN(Number(value)) ? null : Number(value);
 }
 
-/** The three columns a snapshot box can read from. */
-type BoxColumn = 'market_value' | 'shares' | 'average_cost_nav';
-
-/** 持有金额 is the anchor and never derived; the other two may be. */
-function isDerived(existing: PositionItem, column: BoxColumn): boolean {
+/** 持有金额 is the anchor; the other three can each be implied by the rest. */
+function isDerived(existing: PositionItem, column: SendColumn): boolean {
   if (column === 'shares') return Boolean(existing.shares_derived);
   if (column === 'average_cost_nav') return Boolean(existing.average_cost_nav_derived);
+  if (column === 'profit_loss') return Boolean(existing.profit_derived);
   return false;
 }
 
 /** Only what the row really stores: a derived figure must not prefill a box. */
-function snapshotText(existing: PositionItem | null, column: BoxColumn): string {
+function snapshotText(existing: PositionItem | null, column: SendColumn): string {
   if (!existing || isDerived(existing, column)) return '';
   if (tradedPosition(existing) && column !== 'market_value') return '';
   return toInputNumber(existing[column], column === 'average_cost_nav' ? 4 : 2);
 }
 
-function stored(existing: PositionItem | null, column: Exclude<BoxColumn, 'market_value'>): number | null {
+function stored(existing: PositionItem | null, column: Exclude<SendColumn, 'market_value'>): number | null {
   if (!existing || tradedPosition(existing) || isDerived(existing, column)) return null;
   return existing[column] ?? null;
 }

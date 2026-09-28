@@ -6036,7 +6036,19 @@
               }
             ],
             "title": "Average Cost Nav",
-            "description": "持仓成本价"
+            "description": "持仓成本价，与份额配对"
+          },
+          "profit_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Loss",
+            "description": "持有收益，与金额配对"
           },
           "purchase_date": {
             "anyOf": [
@@ -6056,7 +6068,8 @@
               "type": "string",
               "enum": [
                 "shares",
-                "average_cost_nav"
+                "average_cost_nav",
+                "profit_loss"
               ]
             },
             "type": "array",
@@ -6081,7 +6094,7 @@
           "account_id"
         ],
         "title": "PositionUpsertRequest",
-        "description": "同步持仓: restate what a holdings screen shows (partial allowed).\n\nThe two figures he reads off that screen are 持有金额 (or 份额) and 持仓成本价.\n持仓成本 and 持有收益 are not inputs — both follow from those two — and a\nsnapshot that restates them retires whatever an earlier import stored, so\nthe numbers cannot disagree with each other. On a fund with a BUY/SELL\nledger the service drops the money fields entirely."
+        "description": "同步持仓: restate what a holdings screen shows (partial allowed).\n\nThe screen pairs its numbers differently depending on which side he reads\nfrom, so the form offers two 口径: 持有金额 goes with 持有收益, 持有份额 goes\nwith 持仓成本价. Either pair fixes all four money figures; the one that is\nnot an input is derived and any stale stored value for it is retired."
       },
       "PositionsResponse": {
         "properties": {
