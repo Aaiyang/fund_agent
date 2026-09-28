@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import { FundReference } from '@/components/FundReference';
 import { PurchaseDateField, initialPurchaseDate, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Row, Screen, SectionTitle, Stat } from '@/components/ui';
@@ -73,7 +74,6 @@ function PositionForm({
   const upsert = useUpsertPosition();
   const code = initialCode.trim();
   const detail = useFundDetail(code.length === 6 ? code : null);
-  const [fundCode, setFundCode] = useState(initialCode);
   const [purchaseDate, setPurchaseDate] = useState(
     initialPurchaseDate(existing?.purchase_date, existing?.created_at ?? existing?.updated_at),
   );
@@ -129,10 +129,6 @@ function PositionForm({
       setProblem('请先选择持仓账户');
       return;
     }
-    if (!/^\d{6}$/.test(fundCode.trim())) {
-      setProblem('基金代码需要是 6 位数字');
-      return;
-    }
     const dateProblem = purchaseDateProblem(purchaseDate);
     if (dateProblem) {
       setProblem(dateProblem);
@@ -158,7 +154,7 @@ function PositionForm({
     };
     upsert.mutate(
       {
-        fundCode: fundCode.trim(),
+        fundCode: code,
         account_id: accountId,
         ...sent,
         purchase_date: purchaseDate.trim() || null,
@@ -202,16 +198,18 @@ function PositionForm({
 
       <Card>
         <SectionTitle title="同步持仓" />
-        <Field
-          label="基金代码"
-          value={fundCode}
-          onChangeText={setFundCode}
-          keyboardType="numeric"
-          placeholder="请输入基金代码"
+        <FundReference
+          code={code}
+          name={detail.data?.fund_name ?? existing?.fund_name}
+          nav={detail.data?.latest_nav ?? existing?.unit_nav}
+          navDate={detail.data?.nav_date ?? existing?.nav_date}
+          dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
+          note={
+            existing
+              ? `已持有：市值 ${formatMoney(existing.market_value)}`
+              : '该账户下还没有这只基金的持仓'
+          }
         />
-        <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
-          {existing ? `已存在持仓：市值 ${formatMoney(existing.market_value)}` : '该账户下还没有这只基金的持仓'}
-        </Text>
         <PurchaseDateField
           label="首次购买日期"
           value={purchaseDate}

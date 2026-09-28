@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import { FundReference } from '@/components/FundReference';
 import { PurchaseDateFields, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Row, Screen, SectionTitle, Stat } from '@/components/ui';
 import { theme } from '@/constants/theme';
+import { useFundDetail } from '@/hooks/useFunds';
 import { useAccounts, usePosition, useRecordTrade, useTradePreview, type PositionItem, type TradeOperation } from '@/hooks/usePortfolio';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUiStore } from '@/stores/ui';
@@ -77,6 +79,7 @@ function TradeForm({
   onOperation: (operation: TradeOperation) => void;
 }) {
   const record = useRecordTrade();
+  const detail = useFundDetail(fundCode.length === 6 ? fundCode : null);
   const entry = OPERATIONS.find((item) => item.key === operation) ?? OPERATIONS[0];
   const [amount, setAmount] = useState('');
   const [shares, setShares] = useState('');
@@ -162,7 +165,15 @@ function TradeForm({
       </Card>
 
       <Card>
-        <SectionTitle title={`加减仓 · ${fundCode}`} />
+        <SectionTitle title="加减仓" />
+        <FundReference
+          code={fundCode}
+          name={detail.data?.fund_name ?? existing?.fund_name}
+          nav={detail.data?.latest_nav ?? existing?.unit_nav}
+          navDate={detail.data?.nav_date ?? existing?.nav_date}
+          dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
+          note={`当前持有 ${formatNumber(held, 2)} 份 · 市值 ${formatMoney(existing?.market_value)}`}
+        />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
           {OPERATIONS.map((item) => (
             <Chip key={item.key} label={item.label} active={operation === item.key} onPress={() => onOperation(item.key)} />
