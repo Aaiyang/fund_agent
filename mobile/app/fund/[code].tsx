@@ -246,8 +246,7 @@ export default function FundDetailScreen() {
               />
             </View>
             <Text style={{ fontSize: 11, color: theme.textFaint }}>
-              成本 {formatMoney(position.data.cost_amount)} · 更新于 {formatDateTime(position.data.updated_at)} · 版本 v
-              {position.data.version}
+              成本 {formatMoney(position.data.cost_amount)} · 更新于 {formatDateTime(position.data.updated_at)}
             </Text>
           </View>
         ) : (
