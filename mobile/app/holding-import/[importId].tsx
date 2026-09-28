@@ -6,7 +6,7 @@ import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useConfirmImport, useDeleteImport, useImportDetail, useUpdateImportItem, type ImportItem } from '@/hooks/useImports';
-import { formatMoney } from '@/utils/format';
+import { formatMoney, toInputNumber } from '@/utils/format';
 
 const ISSUE_LABEL: Record<string, string> = {
   fund_unresolved: '未匹配到基金',
@@ -124,7 +124,7 @@ function ItemCard({
   importId: string;
   updateItem: ReturnType<typeof useUpdateImportItem>;
 }) {
-  const [marketValue, setMarketValue] = useState(item.market_value === null || item.market_value === undefined ? '' : String(item.market_value));
+  const [marketValue, setMarketValue] = useState(toInputNumber(item.market_value));
   const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
 

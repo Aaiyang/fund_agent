@@ -7,6 +7,7 @@ import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useAccounts, usePosition, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
+import { formatMoney, toInputNumber } from '@/utils/format';
 import { useUiStore } from '@/stores/ui';
 
 /** Create or edit one holding snapshot (spec 3.7.1, optimistic lock 7.11). */
@@ -62,11 +63,12 @@ function PositionForm({
 }) {
   const upsert = useUpsertPosition();
   const [fundCode, setFundCode] = useState(initialCode);
-  const [marketValue, setMarketValue] = useState(text(existing?.market_value));
-  const [shares, setShares] = useState(text(existing?.shares));
-  const [costAmount, setCostAmount] = useState(text(existing?.cost_amount));
-  const [averageCostNav, setAverageCostNav] = useState(text(existing?.average_cost_nav));
-  const [profitLoss, setProfitLoss] = useState(text(existing?.profit_loss));
+  const [marketValue, setMarketValue] = useState(toInputNumber(existing?.market_value));
+  const [shares, setShares] = useState(toInputNumber(existing?.shares));
+  const [costAmount, setCostAmount] = useState(toInputNumber(existing?.cost_amount));
+  // 净值 is published to four decimals; rounding further would change the number.
+  const [averageCostNav, setAverageCostNav] = useState(toInputNumber(existing?.average_cost_nav, 4));
+  const [profitLoss, setProfitLoss] = useState(toInputNumber(existing?.profit_loss));
   const [problem, setProblem] = useState<string | null>(null);
 
   function submit() {
@@ -138,7 +140,7 @@ function PositionForm({
         <Field label="基金代码" value={fundCode} onChangeText={setFundCode} keyboardType="numeric" placeholder="请输入基金代码" />
         <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
           {existing
-            ? `已存在持仓：市值 ${text(existing.market_value)}`
+            ? `已存在持仓：市值 ${formatMoney(existing.market_value)}`
             : '该账户下还没有这只基金的持仓'}
         </Text>
         <Field label="持有金额" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" placeholder="请输入当前持有金额" />
@@ -164,8 +166,4 @@ function PositionForm({
 
 function number(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
-}
-
-function text(value: number | null | undefined): string {
-  return value === null || value === undefined ? '' : String(value);
 }

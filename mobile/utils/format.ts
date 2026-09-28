@@ -52,6 +52,13 @@ export function formatNumber(value: number | null | undefined, digits = 3): stri
   return value.toFixed(digits).replace(/\.?0+$/, '') || '0';
 }
 
+/** For an editable numeric field: trim the float noise a derived value carries
+ * (市值 ÷ 净值 gives 1421.726208527931) without padding out trailing zeros. */
+export function toInputNumber(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '';
+  return String(Number(value.toFixed(digits)));
+}
+
 /** Quoted price: grouped thousands and a fixed fraction, no currency sign. */
 export function formatPrice(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--';
