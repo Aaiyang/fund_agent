@@ -2269,17 +2269,16 @@ export interface components {
          * PositionUpsertRequest
          * @description 同步持仓: restate what a holdings screen shows (partial allowed).
          *
-         *     平均成本净值 is not accepted — it is always 持仓成本 ÷ 份额. On a fund with a
-         *     BUY/SELL ledger the service also drops 份额/成本/收益 here, because those
-         *     belong to the trade records and a snapshot must not undo them.
+         *     持仓成本 and 平均成本净值 are not inputs — both follow from 持有金额 minus
+         *     持有收益, and a stored cost would otherwise outrank a profit he restates.
+         *     On a fund with a BUY/SELL ledger the service also drops 份额/收益 here,
+         *     because those belong to the trade records.
          */
         PositionUpsertRequest: {
             /** Account Id */
             account_id: number;
             /** Shares */
             shares?: number | null;
-            /** Cost Amount */
-            cost_amount?: number | null;
             /** Market Value */
             market_value?: number | null;
             /** Profit Loss */
@@ -2291,9 +2290,9 @@ export interface components {
             purchase_date?: string | null;
             /**
              * Reset
-             * @description 把这些字段清空，回到由其余两格推算
+             * @description 把这些字段清空，回到由其余字段推算
              */
-            reset?: ("shares" | "cost_amount" | "profit_loss")[];
+            reset?: ("shares" | "profit_loss")[];
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409

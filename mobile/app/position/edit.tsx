@@ -83,13 +83,20 @@ function PositionForm({
   const [mode, setMode] = useState<'amount' | 'shares'>('amount');
   const [marketValue, setMarketValue] = useState(snapshotText(existing, 'market_value'));
   const [shares, setShares] = useState(traded || existing?.shares_derived ? '' : toInputNumber(existing?.shares));
-  const [costAmount, setCostAmount] = useState(snapshotText(existing, 'cost_amount'));
   const [profitLoss, setProfitLoss] = useState(snapshotText(existing, 'profit_loss'));
   const [problem, setProblem] = useState<string | null>(null);
 
   const nav = detail.data?.latest_nav ?? existing?.unit_nav ?? null;
   const days = daysSince(purchaseDate);
-  const typed = resolve({ marketValue, shares, costAmount, profitLoss, nav, mode, traded });
+  const typed = resolve({
+    marketValue,
+    shares,
+    profitLoss,
+    storedCost: existing?.cost_amount ?? null,
+    nav,
+    mode,
+    traded,
+  });
   // With a ledger the figures he cannot edit are still the ones the trades add
   // up to, so the card reports those rather than blanks next to his one input.
   const result = traded
@@ -124,12 +131,10 @@ function PositionForm({
       : mode === 'amount'
         ? [
             ['market_value', marketValue],
-            ['cost_amount', costAmount],
             ['profit_loss', profitLoss],
           ]
         : [
             ['shares', shares],
-            ['cost_amount', costAmount],
             ['profit_loss', profitLoss],
           ];
     for (const [column, value] of boxes) {
@@ -141,7 +146,6 @@ function PositionForm({
     const sent = {
       market_value: traded ? number(marketValue) : result.market_value,
       shares: traded || mode === 'amount' ? null : number(shares),
-      cost_amount: traded ? null : number(costAmount),
       profit_loss: traded ? null : number(profitLoss),
     };
     upsert.mutate(
@@ -154,7 +158,7 @@ function PositionForm({
         // to being derived, so switching 口径 never leaves a stale figure behind.
         reset: traded
           ? []
-          : (['shares', 'cost_amount', 'profit_loss'] as const).filter(
+          : (['shares', 'profit_loss'] as const).filter(
               (column) => stored(existing, column) !== null && sent[column] === null,
             ),
         expected_version: existing?.version ?? null,
@@ -233,23 +237,16 @@ function PositionForm({
               />
             )}
             <Field
-              label="持仓成本"
-              value={costAmount}
-              onChangeText={setCostAmount}
-              keyboardType="numeric"
-              placeholder="留空则由金额与收益推算"
-            />
-            <Field
               label="持有收益"
               value={profitLoss}
               onChangeText={setProfitLoss}
               keyboardType="numeric"
-              placeholder="留空则由金额与成本推算"
+              placeholder="请输入持有收益"
             />
             <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
               {mode === 'shares'
-                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额。`
-                : '填你确定的两个，第三个留空由系统算；清空已填的会改回推算。'}
+                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额，成本 = 金额 − 收益。`
+                : '持仓成本由金额减收益得出，不用填。'}
             </Text>
           </>
         )}
@@ -305,13 +302,14 @@ function tradedPosition(existing: PositionItem | null): boolean {
   return (existing?.trade_count ?? 0) > 0;
 }
 
-const LABELS = { market_value: '持有金额', shares: '持有份额', cost_amount: '持仓成本', profit_loss: '持有收益' };
+const LABELS = { market_value: '持有金额', shares: '持有份额', profit_loss: '持有收益' };
 
 type ResolveInput = {
   marketValue: string;
   shares: string;
-  costAmount: string;
   profitLoss: string;
+  /** What the row already carries, so the card is not blank until he types. */
+  storedCost: number | null;
   nav: number | null;
   mode: 'amount' | 'shares';
   traded: boolean;
@@ -321,14 +319,14 @@ type ResolveInput = {
 function resolve(input: ResolveInput) {
   const marketValue = number(input.marketValue);
   const shares = number(input.shares);
-  const cost = number(input.costAmount);
   const profit = number(input.profitLoss);
 
-  const amount =
-    marketValue ?? (input.traded ? null : shares !== null && input.nav ? shares * input.nav : null);
+  const amount = marketValue ?? (input.traded ? null : shares !== null && input.nav ? shares * input.nav : null);
   const held = shares ?? (amount !== null && input.nav ? amount / input.nav : null);
-  const basis = input.traded ? cost : (cost ?? (amount !== null && profit !== null ? amount - profit : null));
-  const gained = input.traded ? profit : (profit ?? (amount !== null && basis !== null ? amount - basis : null));
+  // 持仓成本 has no box of its own: restating the profit moves it, and until he
+  // does the row's own figure is the only honest answer.
+  const basis = amount !== null && profit !== null ? amount - profit : input.storedCost;
+  const gained = profit ?? (amount !== null && basis !== null ? amount - basis : null);
 
   return {
     market_value: amount,
@@ -355,15 +353,9 @@ function number(value: string): number | null {
 }
 
 /** Only what the row really stores: a derived figure must not prefill a box. */
-function snapshotText(
-  existing: PositionItem | null,
-  column: 'market_value' | 'cost_amount' | 'profit_loss',
-): string {
-  if (!existing) return '';
-  if (column !== 'market_value' && tradedPosition(existing)) return '';
-  const derived =
-    column === 'cost_amount' ? existing.cost_derived : column === 'profit_loss' ? existing.profit_derived : false;
-  return derived ? '' : toInputNumber(existing[column]);
+function snapshotText(existing: PositionItem | null, column: 'market_value' | 'profit_loss'): string {
+  if (!existing || (column !== 'market_value' && tradedPosition(existing))) return '';
+  return column === 'profit_loss' && existing.profit_derived ? '' : toInputNumber(existing[column]);
 }
 
 function stored(
