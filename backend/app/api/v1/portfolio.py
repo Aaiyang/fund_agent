@@ -100,6 +100,8 @@ async def upsert_position(
             average_cost_nav=payload.average_cost_nav,
             market_value=payload.market_value,
             profit_loss=payload.profit_loss,
+            purchase_date=payload.purchase_date,
+            purchase_after_cutoff=payload.purchase_after_cutoff,
         )
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e

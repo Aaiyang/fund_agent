@@ -283,10 +283,21 @@ class HoldingImportService:
                 for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss")
                 if getattr(item, key) is not None
             }
+            # A holdings snapshot carries no trade date, so the confirmation day
+            # before the 15:00 cutoff is the best available answer — but only when
+            # the row has none: re-importing must not reset a date the user set.
+            current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
+            keep = current is not None and current.purchase_date is not None
             # Import overwrite is explicit user intent — bypass version check
             # (expected_version=None) but still bump the stored version.
             position = await portfolio_repository.upsert_position(
-                user_id, record.account_id, item.matched_fund_code, expected_version=None, **fields
+                user_id,
+                record.account_id,
+                item.matched_fund_code,
+                expected_version=None,
+                purchase_date=None if keep else business_today(),
+                purchase_after_cutoff=None if keep else False,
+                **fields,
             )
             if position is None:
                 skipped += 1

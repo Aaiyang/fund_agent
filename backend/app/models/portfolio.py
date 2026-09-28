@@ -56,6 +56,12 @@ class PortfolioPosition(BaseModel, table=True):
     market_value: float | None = Field(default=None)
     profit_loss: float | None = Field(default=None)
 
+    # When the purchase was confirmed. Funds price an order at that day's NAV
+    # before 15:00 and the next session's after, so the cutoff side is stored
+    # rather than a clock time the user would have to guess at.
+    purchase_date: date | None = Field(default=None)
+    purchase_after_cutoff: bool = Field(default=False)
+
     # Optimistic lock — concurrent import vs manual edit returns 409, never silent overwrite
     version: int = Field(default=1)
     updated_at: datetime | None = Field(

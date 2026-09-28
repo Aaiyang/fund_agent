@@ -83,7 +83,13 @@ class PositionItem(BaseModel):
     position_ratio: float | None = None
     nav_date: date | None = None
     is_updated: bool = False
+    purchase_date: date | None = None
+    purchase_after_cutoff: bool = False
+    # The session whose NAV the purchase was priced against, derived from the
+    # cutoff; 持有天数 counts from it.
+    settlement_date: date | None = None
     holding_days: int | None = None
+    created_at: datetime | None = None
     version: int = 1
     updated_at: datetime | None = None
 
@@ -123,6 +129,8 @@ class PositionUpsertRequest(BaseModel):
     average_cost_nav: float | None = Field(default=None, ge=0)
     market_value: float | None = Field(default=None, ge=0)
     profit_loss: float | None = None
+    purchase_date: date | None = None
+    purchase_after_cutoff: bool | None = None
     expected_version: int | None = Field(
         default=None,
         description="乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409",

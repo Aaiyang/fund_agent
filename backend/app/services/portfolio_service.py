@@ -5,12 +5,13 @@ from stored snapshots + latest NAVs — never persisted, so they can't drift
 (MVP spec 12.8). All future agents/tools must go through this service.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
 from app.analytics import period_return, window_return
 from app.analytics.returns import NavPoint
+from app.analytics.settlement import settlement_date
 from app.core.logging import logger
 from app.models.fund import FundNav
 from app.models.portfolio import PortfolioAccount, PortfolioPosition
@@ -191,11 +192,7 @@ class PortfolioService:
         siblings = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in siblings)
         histories = await self._recent_history([fund_code])
-        item = await self._position_item(position, total_value, histories.get(fund_code))
-        first_activity = await portfolio_repository.first_activity_date(user_id, account_id, fund_code)
-        if first_activity is not None:
-            item.holding_days = (business_today() - first_activity).days
-        return item
+        return await self._position_item(position, total_value, histories.get(fund_code))
 
     async def upsert_position(
         self,
@@ -203,6 +200,8 @@ class PortfolioService:
         account_id: int,
         fund_code: str,
         expected_version: int | None = None,
+        purchase_date: date | None = None,
+        purchase_after_cutoff: bool | None = None,
         **fields: float | None,
     ) -> PositionItem:
         """Create or update a position snapshot with optimistic locking.
@@ -213,7 +212,13 @@ class PortfolioService:
         """
         await self.ensure_account(user_id, account_id)
         updated = await portfolio_repository.upsert_position(
-            user_id, account_id, fund_code, expected_version, **fields
+            user_id,
+            account_id,
+            fund_code,
+            expected_version,
+            purchase_date=purchase_date,
+            purchase_after_cutoff=purchase_after_cutoff,
+            **fields,
         )
         if updated is None:
             raise PositionConflictError(f"position version conflict for fund {fund_code}; reload and retry")
@@ -366,6 +371,12 @@ class PortfolioService:
         if total_value > 0 and position.market_value is not None:
             position_ratio = position.market_value / total_value
 
+        settled = None
+        holding_days = None
+        if position.purchase_date is not None:
+            settled = settlement_date(position.purchase_date, position.purchase_after_cutoff)
+            holding_days = max((business_today() - settled).days, 0)
+
         # Snapshot imports leave the stored column empty; cost per unit NAV is
         # derivable from amount and shares (spec 5.2: derived, never persisted).
         average_cost_nav = position.average_cost_nav
@@ -391,6 +402,11 @@ class PortfolioService:
             position_ratio=position_ratio,
             nav_date=latest.nav_date if latest else None,
             is_updated=latest is not None,
+            purchase_date=position.purchase_date,
+            purchase_after_cutoff=position.purchase_after_cutoff,
+            settlement_date=settled,
+            holding_days=holding_days,
+            created_at=position.created_at,
             version=position.version or 1,
             updated_at=position.updated_at,
         )

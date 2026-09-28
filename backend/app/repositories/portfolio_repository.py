@@ -199,6 +199,8 @@ class PortfolioRepository:
         average_cost_nav: float | None = None,
         market_value: float | None = None,
         profit_loss: float | None = None,
+        purchase_date: date | None = None,
+        purchase_after_cutoff: bool | None = None,
     ) -> PortfolioPosition | None:
         """Insert or update a position with optimistic locking.
 
@@ -213,6 +215,9 @@ class PortfolioRepository:
             average_cost_nav: Cost per unit NAV.
             market_value: Current market value.
             profit_loss: Accumulated profit/loss.
+            purchase_date: When the purchase was confirmed.
+            purchase_after_cutoff: Whether it was confirmed after 15:00, which
+                moves the applicable NAV to the next session.
 
         Returns:
             The updated position, or None on version conflict / missing row.
@@ -235,6 +240,8 @@ class PortfolioRepository:
                     average_cost_nav=average_cost_nav,
                     market_value=market_value,
                     profit_loss=profit_loss,
+                    purchase_date=purchase_date,
+                    purchase_after_cutoff=purchase_after_cutoff or False,
                     version=1,
                     updated_at=utc_now(),
                     created_at=utc_now(),
@@ -259,6 +266,8 @@ class PortfolioRepository:
                 "average_cost_nav": average_cost_nav,
                 "market_value": market_value,
                 "profit_loss": profit_loss,
+                "purchase_date": purchase_date,
+                "purchase_after_cutoff": purchase_after_cutoff,
             }
             for key, value in supplied.items():
                 if value is not None:
@@ -268,21 +277,6 @@ class PortfolioRepository:
             session.add(existing)
             await session.flush()
             return existing
-
-    async def first_activity_date(self, user_id: int, account_id: int, fund_code: str) -> date | None:
-        """Earliest recorded activity for a holding, used for holding days."""
-        async with get_async_session() as session:
-            result = await session.execute(
-                select(col(Transaction.trade_date))
-                .where(
-                    col(Transaction.user_id) == user_id,
-                    col(Transaction.account_id) == account_id,
-                    col(Transaction.fund_code) == fund_code,
-                )
-                .order_by(col(Transaction.trade_date))
-                .limit(1)
-            )
-            return result.scalar_one_or_none()
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """Remove one position row."""
