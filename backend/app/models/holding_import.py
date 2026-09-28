@@ -5,7 +5,7 @@ audit surface — the authoritative holdings fact table is portfolio_position.
 Raw screenshot images are never stored here (or anywhere in PostgreSQL).
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
 from sqlmodel import Field, JSON
@@ -70,6 +70,12 @@ class HoldingImportItem(BaseModel, table=True):
     average_cost_nav: float | None = Field(default=None)
     profit_loss: float | None = Field(default=None)
     profit_loss_rate: float | None = Field(default=None)
+    # When the holding was bought, corrected by the user on the review page.
+    # Defaults to the import day before the 15:00 cutoff: a holdings screenshot
+    # shows no trade date, and confirming without a date would leave 持有天数
+    # and the cost estimate blank forever.
+    purchase_date: date | None = Field(default=None)
+    purchase_after_cutoff: bool = Field(default=False)
 
     confidence: float | None = Field(default=None)
     validation_status: str = Field(default="pending", max_length=30)

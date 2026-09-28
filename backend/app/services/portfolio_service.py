@@ -5,11 +5,14 @@ from stored snapshots + latest NAVs — never persisted, so they can't drift
 (MVP spec 12.8). All future agents/tools must go through this service.
 """
 
+import asyncio
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
 from app.analytics import period_return, window_return
+from app.analytics.positions import position_figures
 from app.analytics.returns import NavPoint
 from app.analytics.settlement import settlement_date
 from app.core.logging import logger
@@ -21,6 +24,7 @@ from app.schemas.portfolio import (
     AccountItem,
     PortfolioSummary,
     PositionItem,
+    PositionPreviewResponse,
     TransactionItem,
 )
 from app.utils.clock import business_today
@@ -43,51 +47,8 @@ class AccountNameConflictError(Exception):
         self.name = name
 
 
-def position_profit(position: PortfolioPosition) -> float:
-    """Held profit for a snapshot, derived when the source reported none.
-
-    A manual or screenshot import can carry amount, shares and cost without a
-    profit figure. Reading that NULL as 0 understates the account total, and
-    the value is derivable from the snapshot itself (spec 5.2).
-    """
-    if position.profit_loss is not None:
-        return position.profit_loss
-    if position.market_value is not None and position.cost_amount is not None:
-        return position.market_value - position.cost_amount
-    return 0.0
-
-
 _WEEKLY_DAYS = 7
 _WINDOW_LOOKBACK_DAYS = 45
-
-
-def position_shares(position: PortfolioPosition, unit_nav: float | None) -> float | None:
-    """Shares held for a snapshot, derived from the amount when absent.
-
-    A third-party holdings screen often shows only 当前持有金额, so the imported
-    row has no share count. Amount over the NAV it was priced on is the same
-    figure the amount came from (spec 5.2: derived at query time, never stored).
-    """
-    if position.shares is not None:
-        return position.shares
-    if position.market_value is not None and unit_nav:
-        return position.market_value / unit_nav
-    return None
-
-
-def position_cost(position: PortfolioPosition) -> float | None:
-    """Cost basis for a snapshot, derived when only amount and profit are known.
-
-    The mirror of `position_profit`: a holdings screen that shows 当前持有金额
-    and 持有收益 implies the cost between them, and without it 收益率 and
-    成本净值 have no denominator at all. NULL stays NULL when neither pair is
-    complete, so nothing is invented from a single figure.
-    """
-    if position.cost_amount is not None:
-        return position.cost_amount
-    if position.market_value is not None and position.profit_loss is not None:
-        return position.market_value - position.profit_loss
-    return None
 
 
 def period_profit_loss(market_value: float | None, fraction: float | None) -> float | None:
@@ -178,9 +139,12 @@ class PortfolioService:
         positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in positions) or 0.0
         histories = await self._recent_history([position.fund_code for position in positions])
+        settled_navs = await self._settled_navs(positions)
         items = []
         for position in positions:
-            items.append(await self._position_item(position, total_value, histories.get(position.fund_code)))
+            items.append(
+                await self._position_item(position, total_value, histories.get(position.fund_code), settled_navs)
+            )
         return items
 
     async def get_position(self, user_id: int, account_id: int, fund_code: str) -> PositionItem | None:
@@ -192,7 +156,8 @@ class PortfolioService:
         siblings = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in siblings)
         histories = await self._recent_history([fund_code])
-        return await self._position_item(position, total_value, histories.get(fund_code))
+        settled_navs = await self._settled_navs([position])
+        return await self._position_item(position, total_value, histories.get(fund_code), settled_navs)
 
     async def upsert_position(
         self,
@@ -202,6 +167,7 @@ class PortfolioService:
         expected_version: int | None = None,
         purchase_date: date | None = None,
         purchase_after_cutoff: bool | None = None,
+        reset: Sequence[str] = (),
         **fields: float | None,
     ) -> PositionItem:
         """Create or update a position snapshot with optimistic locking.
@@ -218,6 +184,7 @@ class PortfolioService:
             expected_version,
             purchase_date=purchase_date,
             purchase_after_cutoff=purchase_after_cutoff,
+            reset=reset,
             **fields,
         )
         if updated is None:
@@ -243,7 +210,41 @@ class PortfolioService:
         account_positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in account_positions)
         histories = await self._recent_history([fund_code])
-        return await self._position_item(updated, total_value, histories.get(fund_code))
+        settled_navs = await self._settled_navs([updated])
+        return await self._position_item(updated, total_value, histories.get(fund_code), settled_navs)
+
+    async def preview_position(
+        self, fund_code: str, purchase_date: date, after_cutoff: bool, market_value: float | None = None
+    ) -> PositionPreviewResponse:
+        """What a purchase date implies, before anything is written.
+
+        The entry form prices a holding from the confirmation-day NAV, so the
+        arithmetic has to run server-side where the NAV history lives; the
+        figures here are the estimate alone and never include overrides the
+        user typed into 手动修正.
+        """
+        settled = settlement_date(purchase_date, after_cutoff)
+        latest = await fund_repository.get_latest_nav(fund_code)
+        settled_row = await fund_repository.get_nav_on_or_before(fund_code, settled)
+        unit_nav = latest.unit_nav if latest else None
+        settled_nav = settled_row.unit_nav if settled_row else None
+        figures = position_figures(market_value=market_value, unit_nav=unit_nav, settled_nav=settled_nav)
+        return PositionPreviewResponse(
+            fund_code=fund_code,
+            purchase_date=purchase_date,
+            purchase_after_cutoff=after_cutoff,
+            settlement_date=settled,
+            holding_days=max((business_today() - settled).days, 0),
+            settled_nav=settled_nav,
+            settled_nav_date=settled_row.nav_date if settled_row else None,
+            unit_nav=unit_nav,
+            nav_date=latest.nav_date if latest else None,
+            shares=figures.shares,
+            cost_amount=figures.cost_amount,
+            average_cost_nav=figures.average_cost_nav,
+            profit_loss=figures.profit_loss,
+            profit_loss_rate=figures.profit_loss_rate,
+        )
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """Remove a position and write an audit adjustment."""
@@ -273,11 +274,20 @@ class PortfolioService:
         latest_at: datetime | None = None
         # One batched read instead of a per-position NAV query.
         latest_navs = await fund_repository.get_latest_navs([position.fund_code for position in positions])
+        settled_navs = await self._settled_navs(positions)
 
         for position in positions:
             summary.total_market_value += position.market_value or 0.0
-            summary.total_cost += position_cost(position) or 0.0
-            summary.total_profit_loss += position_profit(position)
+            key = self._settlement_key(position)
+            figures = position_figures(
+                market_value=position.market_value,
+                cost_amount=position.cost_amount,
+                profit_loss=position.profit_loss,
+                unit_nav=latest_navs[position.fund_code].unit_nav if position.fund_code in latest_navs else None,
+                settled_nav=settled_navs.get(key) if key else None,
+            )
+            summary.total_cost += figures.cost_amount or 0.0
+            summary.total_profit_loss += figures.profit_loss or 0.0
             latest = latest_navs.get(position.fund_code)
             if latest is not None:
                 daily = (latest.daily_return or 0.0) * (position.market_value or 0.0) / 100.0
@@ -341,18 +351,59 @@ class PortfolioService:
             fund_codes, start_date=business_today() - timedelta(days=_WINDOW_LOOKBACK_DAYS)
         )
 
+    @staticmethod
+    def _settlement_key(position: PortfolioPosition) -> tuple[str, date] | None:
+        """(基金代码, 适用净值日) when the row says when it was bought."""
+        if position.purchase_date is None:
+            return None
+        return position.fund_code, settlement_date(position.purchase_date, position.purchase_after_cutoff)
+
+    async def _settled_navs(self, positions: list[PortfolioPosition]) -> dict[tuple[str, date], float]:
+        """Confirmation-day NAVs for the rows that need a cost estimate.
+
+        A snapshot that already carries 持仓成本 or 持有收益 can be answered
+        without a price, so those are skipped. The remaining lookups run
+        concurrently: each is an indexed single-row read, so the fan-out costs
+        less than lining them up.
+        """
+        wanted: dict[tuple[str, date], None] = {}
+        for position in positions:
+            key = self._settlement_key(position)
+            if (
+                key is not None
+                and key not in wanted
+                and position.cost_amount is None
+                and position.profit_loss is None
+                and position.market_value is not None
+            ):
+                wanted[key] = None
+        rows = await asyncio.gather(
+            *(fund_repository.get_nav_on_or_before(fund_code, settled) for fund_code, settled in wanted)
+        )
+        return {key: row.unit_nav for key, row in zip(wanted, rows, strict=True) if row is not None and row.unit_nav}
+
     async def _position_item(
-        self, position: PortfolioPosition, total_value: float, history: list[FundNav] | None = None
+        self,
+        position: PortfolioPosition,
+        total_value: float,
+        history: list[FundNav] | None = None,
+        settled_navs: dict[tuple[str, date], float] | None = None,
     ) -> PositionItem:
         """Enrich a stored position with query-time derived metrics."""
         fund = await fund_repository.get_fund(position.fund_code)
         latest = await fund_repository.get_latest_nav(position.fund_code)
 
-        profit_loss = position_profit(position)
-        cost_amount = position_cost(position)
-        profit_loss_rate = profit_loss / cost_amount if cost_amount else None
         unit_nav = latest.unit_nav if latest else None
-        shares = position_shares(position, unit_nav)
+        key = self._settlement_key(position)
+        figures = position_figures(
+            market_value=position.market_value,
+            shares=position.shares,
+            cost_amount=position.cost_amount,
+            average_cost_nav=position.average_cost_nav,
+            profit_loss=position.profit_loss,
+            unit_nav=unit_nav,
+            settled_nav=(settled_navs or {}).get(key) if key else None,
+        )
 
         daily_profit_loss = None
         daily_return = latest.daily_return if latest else None
@@ -371,29 +422,26 @@ class PortfolioService:
         if total_value > 0 and position.market_value is not None:
             position_ratio = position.market_value / total_value
 
-        settled = None
-        holding_days = None
+        settled = holding_days = None
         if position.purchase_date is not None:
             settled = settlement_date(position.purchase_date, position.purchase_after_cutoff)
             holding_days = max((business_today() - settled).days, 0)
-
-        # Snapshot imports leave the stored column empty; cost per unit NAV is
-        # derivable from amount and shares (spec 5.2: derived, never persisted).
-        average_cost_nav = position.average_cost_nav
-        if average_cost_nav is None and shares and cost_amount:
-            average_cost_nav = cost_amount / shares
 
         return PositionItem(
             id=position.id,
             account_id=position.account_id,
             fund_code=position.fund_code,
             fund_name=fund.fund_name if fund else None,
-            shares=shares,
-            cost_amount=cost_amount,
-            average_cost_nav=average_cost_nav,
+            shares=figures.shares,
+            cost_amount=figures.cost_amount,
+            average_cost_nav=figures.average_cost_nav,
             market_value=position.market_value,
-            profit_loss=profit_loss,
-            profit_loss_rate=profit_loss_rate,
+            profit_loss=figures.profit_loss,
+            profit_loss_rate=figures.profit_loss_rate,
+            # The entry form folds these back into 手动修正 only when the row
+            # actually stores them; a derived figure must not look like a fact.
+            cost_derived=figures.cost_derived,
+            profit_derived=position.profit_loss is None and figures.profit_loss is not None,
             daily_profit_loss=daily_profit_loss,
             daily_return=daily_return,
             unit_nav=unit_nav,

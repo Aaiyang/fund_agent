@@ -1,6 +1,7 @@
 """Portfolio API schemas (accounts, positions, transactions)."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -75,6 +76,10 @@ class PositionItem(BaseModel):
     market_value: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
+    # Which of the two above the row actually stores: a derived figure must not
+    # be echoed back into the entry form as if the user had asserted it.
+    cost_derived: bool = False
+    profit_derived: bool = False
     daily_profit_loss: float | None = None
     daily_return: float | None = None
     unit_nav: float | None = None
@@ -121,20 +126,48 @@ class PortfolioSummaryResponse(BaseResponse):
 
 
 class PositionUpsertRequest(BaseModel):
-    """Manual create/update of a position snapshot (partial allowed)."""
+    """Manual create/update of a position snapshot (partial allowed).
+
+    份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus
+    the NAV the purchase settled on, so accepting them by hand would let a
+    stale guess override the arithmetic.
+    """
 
     account_id: int
-    shares: float | None = Field(default=None, ge=0)
     cost_amount: float | None = Field(default=None, ge=0)
-    average_cost_nav: float | None = Field(default=None, ge=0)
     market_value: float | None = Field(default=None, ge=0)
     profit_loss: float | None = None
     purchase_date: date | None = None
     purchase_after_cutoff: bool | None = None
+    reset: list[Literal["cost_amount", "profit_loss"]] = Field(
+        default_factory=list,
+        description="把这些字段改回系统推算：清空已存值，之后由确认日净值推出",
+    )
     expected_version: int | None = Field(
         default=None,
         description="乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409",
     )
+
+
+class PositionPreviewResponse(BaseResponse):
+    """GET /portfolio/positions/preview: what a purchase date implies."""
+
+    fund_code: str
+    purchase_date: date
+    purchase_after_cutoff: bool
+    settlement_date: date
+    holding_days: int
+    # The two NAVs the estimate is made of, with the day each was published on
+    # so a missing row reads as "还没有那天的净值" instead of a silent blank.
+    settled_nav: float | None = None
+    settled_nav_date: date | None = None
+    unit_nav: float | None = None
+    nav_date: date | None = None
+    shares: float | None = None
+    cost_amount: float | None = None
+    average_cost_nav: float | None = None
+    profit_loss: float | None = None
+    profit_loss_rate: float | None = None
 
 
 class PositionDeleteResponse(BaseModel):

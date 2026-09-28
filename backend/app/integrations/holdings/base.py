@@ -5,6 +5,8 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from app.utils.clock import business_today
+
 
 class ManualPositionInput(BaseModel):
     """One manually entered holding row."""
@@ -61,6 +63,11 @@ class DraftPositionItem(BaseModel):
     average_cost_nav: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
+    # A holdings screen never shows when the fund was bought, so the draft
+    # starts on the import day before the cutoff and the review page lets the
+    # user move it; the position row only ever stores what he confirmed.
+    purchase_date: date | None = Field(default_factory=business_today)
+    purchase_after_cutoff: bool = False
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     validation_status: str = "valid"
     validation_issues: list[str] = Field(default_factory=list)

@@ -1,9 +1,12 @@
 """Portfolio API endpoints: summary, positions (optimistic lock), delete."""
 
+from datetime import date
+
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     Request,
 )
 
@@ -15,6 +18,7 @@ from app.schemas.portfolio import (
     PortfolioSummaryResponse,
     PositionDeleteResponse,
     PositionItem,
+    PositionPreviewResponse,
     PositionUpsertRequest,
     PositionsResponse,
 )
@@ -52,6 +56,23 @@ async def list_positions(
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e
     return PositionsResponse(items=items, total=len(items))
+
+
+@router.get("/positions/preview", response_model=PositionPreviewResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["portfolio"][0])
+async def preview_position(
+    request: Request,
+    fund_code: str = Query(min_length=6, max_length=6),
+    purchase_date: date = Query(description="买入确认日期（提交当日的自然日）"),
+    after_cutoff: bool = Query(default=False, description="是否 15:00 后提交，决定用哪一场净值"),
+    market_value: float | None = Query(default=None, ge=0),
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> PositionPreviewResponse:
+    """Estimate 份额/成本/收益 for a purchase date, without writing anything.
+
+    Declared before `/positions/{fund_code}` so the literal path wins.
+    """
+    return await portfolio_service.preview_position(fund_code, purchase_date, after_cutoff, market_value)
 
 
 @router.get("/positions/{fund_code}", response_model=PositionItem)
@@ -95,13 +116,12 @@ async def upsert_position(
             payload.account_id,
             fund_code,
             expected_version=payload.expected_version,
-            shares=payload.shares,
             cost_amount=payload.cost_amount,
-            average_cost_nav=payload.average_cost_nav,
             market_value=payload.market_value,
             profit_loss=payload.profit_loss,
             purchase_date=payload.purchase_date,
             purchase_after_cutoff=payload.purchase_after_cutoff,
+            reset=payload.reset,
         )
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e

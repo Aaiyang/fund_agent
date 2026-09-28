@@ -1,57 +1,92 @@
-"""Snapshot fields a holdings import may leave empty are derived, not read as zero."""
+"""What a holdings row leaves open is derived here, never read as zero."""
 
-from app.models.portfolio import PortfolioPosition
-from app.services.portfolio_service import (
-    period_profit_loss,
-    position_cost,
-    position_profit,
-    position_shares,
-)
+from app.analytics.positions import position_figures
+from app.services.portfolio_service import period_profit_loss
 
 
-def _position(**values: object) -> PortfolioPosition:
-    return PortfolioPosition(user_id=1, account_id=1, fund_code="011452", **values)  # pyright: ignore[reportCallIssue]
+class TestStoredFiguresWin:
+    def test_a_cost_the_import_carried_is_not_recomputed(self) -> None:
+        figures = position_figures(market_value=23121.0, cost_amount=22232.0, profit_loss=889.0)
+        assert figures.cost_amount == 22232.0
+        assert figures.profit_loss == 889.0
+        assert not figures.cost_derived
+
+    def test_stored_cost_beats_the_nav_estimate(self) -> None:
+        figures = position_figures(market_value=900.5, cost_amount=1019.19, unit_nav=3.0372, settled_nav=3.3905)
+        assert figures.cost_amount == 1019.19
+
+    def test_stored_profit_beats_the_nav_estimate(self) -> None:
+        figures = position_figures(market_value=900.5, profit_loss=-50.0, unit_nav=3.0372, settled_nav=3.3905)
+        assert figures.cost_amount == 950.5
+        assert figures.profit_loss == -50.0
 
 
-class TestPositionCost:
-    def test_uses_the_stored_cost(self) -> None:
-        assert position_cost(_position(cost_amount=22232.0, market_value=23121.0, profit_loss=889.0)) == 22232.0
-
+class TestCostFromTwoStoredFigures:
     def test_derives_from_amount_minus_profit(self) -> None:
-        assert position_cost(_position(market_value=23121.0, profit_loss=889.0)) == 22232.0
+        assert position_figures(market_value=23121.0, profit_loss=889.0).cost_amount == 22232.0
 
-    def test_keeps_a_negative_cost_of_a_lost_position(self) -> None:
-        assert position_cost(_position(market_value=800.0, profit_loss=-200.0)) == 1000.0
+    def test_derives_from_amount_minus_cost(self) -> None:
+        assert position_figures(market_value=23121.0, cost_amount=22232.0).profit_loss == 889.0
 
-    def test_none_when_profit_is_the_missing_figure(self) -> None:
-        assert position_cost(_position(market_value=23121.0)) is None
-        assert position_cost(_position()) is None
+    def test_a_gain_over_the_recorded_cost_stays_positive(self) -> None:
+        assert position_figures(market_value=800.0, cost_amount=1000.0).profit_loss == -200.0
 
-
-class TestPositionProfit:
-    def test_uses_the_stored_figure(self) -> None:
-        assert position_profit(_position(profit_loss=889.0, market_value=23121.0, cost_amount=22232.0)) == 889.0
-
-    def test_derives_from_amount_and_cost(self) -> None:
-        assert position_profit(_position(market_value=23121.0, cost_amount=22232.0)) == 889.0
-
-    def test_zero_without_either_figure(self) -> None:
-        assert position_profit(_position(market_value=23121.0)) == 0.0
+    def test_amount_alone_invents_nothing(self) -> None:
+        figures = position_figures(market_value=23121.0)
+        assert figures.cost_amount is None
+        assert figures.profit_loss is None
+        assert figures.profit_loss_rate is None
 
 
-class TestPositionShares:
-    def test_uses_the_stored_share_count(self) -> None:
-        assert position_shares(_position(shares=7000.0, market_value=23121.0), 3.4218) == 7000.0
+class TestCostFromTheSettledNav:
+    def test_amount_is_discounted_back_to_the_confirmation_day(self) -> None:
+        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.3905)
+        assert figures.cost_amount is not None
+        assert round(figures.cost_amount, 2) == 1005.25
+        assert figures.cost_derived
 
-    def test_derives_from_amount_over_nav(self) -> None:
-        shares = position_shares(_position(market_value=23121.0), 3.42)
+    def test_profit_is_the_gap_between_the_two_prices(self) -> None:
+        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.3905)
+        assert figures.profit_loss is not None
+        assert round(figures.profit_loss, 2) == -104.75
+
+    def test_a_purchase_after_the_last_published_nav_prices_at_cost(self) -> None:
+        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.0372)
+        assert figures.cost_amount == 900.5
+        assert figures.profit_loss == 0.0
+
+    def test_nothing_without_the_day_it_settled_on(self) -> None:
+        assert position_figures(market_value=900.5, unit_nav=3.0372).cost_amount is None
+
+    def test_nothing_without_a_current_price(self) -> None:
+        assert position_figures(market_value=900.5, settled_nav=3.3905).cost_amount is None
+
+    def test_a_zero_nav_is_not_divided_by(self) -> None:
+        assert position_figures(market_value=900.5, unit_nav=0.0, settled_nav=3.3905).cost_amount is None
+
+
+class TestSharesAndCostPerShare:
+    def test_stored_shares_win(self) -> None:
+        assert position_figures(market_value=23121.0, shares=7000.0, unit_nav=3.4218).shares == 7000.0
+
+    def test_amount_over_the_price_it_is_marked_at(self) -> None:
+        shares = position_figures(market_value=23121.0, unit_nav=3.42).shares
         assert shares is not None
         assert round(shares, 2) == 6760.53
 
-    def test_none_without_a_price_to_divide_by(self) -> None:
-        assert position_shares(_position(market_value=23121.0), None) is None
-        assert position_shares(_position(market_value=23121.0), 0.0) is None
-        assert position_shares(_position(), 3.42) is None
+    def test_average_cost_nav_follows_cost_over_shares(self) -> None:
+        figures = position_figures(market_value=23121.0, cost_amount=22232.0, shares=7000.0)
+        assert figures.average_cost_nav is not None
+        assert round(figures.average_cost_nav, 4) == 3.176
+
+    def test_a_stored_average_cost_nav_is_left_alone(self) -> None:
+        figures = position_figures(market_value=23121.0, cost_amount=22232.0, shares=7000.0, average_cost_nav=3.4)
+        assert figures.average_cost_nav == 3.4
+
+    def test_rate_is_profit_over_cost(self) -> None:
+        figures = position_figures(market_value=23121.0, cost_amount=22232.0)
+        assert figures.profit_loss_rate is not None
+        assert round(figures.profit_loss_rate, 4) == 0.04
 
 
 class TestPeriodProfitLoss:

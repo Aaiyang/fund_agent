@@ -1,5 +1,6 @@
 """Portfolio repository: accounts, positions (optimistic lock), transactions."""
 
+from collections.abc import Sequence
 from datetime import date
 
 from sqlalchemy import delete as sa_delete
@@ -201,6 +202,7 @@ class PortfolioRepository:
         profit_loss: float | None = None,
         purchase_date: date | None = None,
         purchase_after_cutoff: bool | None = None,
+        reset: Sequence[str] = (),
     ) -> PortfolioPosition | None:
         """Insert or update a position with optimistic locking.
 
@@ -218,6 +220,8 @@ class PortfolioRepository:
             purchase_date: When the purchase was confirmed.
             purchase_after_cutoff: Whether it was confirmed after 15:00, which
                 moves the applicable NAV to the next session.
+            reset: Column names to blank out after applying the values above,
+                returning each figure to its derived path.
 
         Returns:
             The updated position, or None on version conflict / missing row.
@@ -272,6 +276,12 @@ class PortfolioRepository:
             for key, value in supplied.items():
                 if value is not None:
                     setattr(existing, key, value)
+            # `reset` is how a caller says "put this figure back on the derived
+            # path"; the keys are checked against the same set so no column can
+            # be blanked by name alone.
+            for key in reset:
+                if key in supplied:
+                    setattr(existing, key, None)
             existing.version = (existing.version or 1) + 1
             existing.updated_at = utc_now()
             session.add(existing)

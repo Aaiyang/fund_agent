@@ -81,6 +81,23 @@ class FundRepository:
             result = await session.execute(statement)
             return result.scalar_one_or_none()
 
+    async def get_nav_on_or_before(self, fund_code: str, on_or_before: date) -> FundNav | None:
+        """Load the session a purchase was priced against.
+
+        The confirmation day is not necessarily a publishing day (a purchase
+        confirmed on a holiday rolls forward), so the answer is the newest row
+        at or before it rather than an exact-date lookup.
+        """
+        async with get_async_session() as session:
+            statement = (
+                select(FundNav)
+                .where(col(FundNav.fund_code) == fund_code, col(FundNav.nav_date) <= on_or_before)
+                .order_by(col(FundNav.nav_date).desc())
+                .limit(1)
+            )
+            result = await session.execute(statement)
+            return result.scalar_one_or_none()
+
     async def get_funds(self, fund_codes: list[str]) -> dict[str, Fund]:
         """Load many fund master rows by code, keyed by code."""
         if not fund_codes:

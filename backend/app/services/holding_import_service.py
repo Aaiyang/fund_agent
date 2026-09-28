@@ -9,6 +9,7 @@ only as temporary files and are deleted after confirm/fail/cancel.
 import asyncio
 import io
 import time
+from datetime import date
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -202,7 +203,7 @@ class HoldingImportService:
         import_id: str,
         item_id: int,
         user_action: str | None = None,
-        **fields: float | str | None,
+        **fields: float | str | date | bool | None,
     ) -> ImportItemOut:
         """User edit/decision on one item; corrections are re-validated."""
         record = await import_repository.get_import(user_id, import_id)
@@ -224,6 +225,13 @@ class HoldingImportService:
         for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss", "profit_loss_rate"):
             if key in fields:
                 setattr(item, key, fields[key])
+        # The purchase date is what the confirmation will write, so it is
+        # corrected here rather than invented later.
+        if "purchase_date" in fields:
+            value = fields["purchase_date"]
+            item.purchase_date = value if isinstance(value, date) else None
+        if "purchase_after_cutoff" in fields:
+            item.purchase_after_cutoff = bool(fields["purchase_after_cutoff"])
         if user_action is not None:
             item.user_action = user_action
 
@@ -237,6 +245,8 @@ class HoldingImportService:
             average_cost_nav=item.average_cost_nav,
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
+            purchase_date=item.purchase_date,
+            purchase_after_cutoff=item.purchase_after_cutoff,
             confidence=item.confidence or 0.5,
         )
         validated = validate_draft_item(draft_item)
@@ -283,9 +293,10 @@ class HoldingImportService:
                 for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss")
                 if getattr(item, key) is not None
             }
-            # A holdings snapshot carries no trade date, so the confirmation day
-            # before the 15:00 cutoff is the best available answer — but only when
-            # the row has none: re-importing must not reset a date the user set.
+            # The review page owns the purchase date: it arrives prefilled with
+            # the import day before the cutoff and the user moves it when he
+            # knows better. An existing row keeps the date it was set to —
+            # re-importing a snapshot must not reset someone's holding age.
             current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
             keep = current is not None and current.purchase_date is not None
             # Import overwrite is explicit user intent — bypass version check
@@ -295,8 +306,8 @@ class HoldingImportService:
                 record.account_id,
                 item.matched_fund_code,
                 expected_version=None,
-                purchase_date=None if keep else business_today(),
-                purchase_after_cutoff=None if keep else False,
+                purchase_date=None if keep else item.purchase_date,
+                purchase_after_cutoff=None if keep else item.purchase_after_cutoff,
                 **fields,
             )
             if position is None:
@@ -423,6 +434,8 @@ class HoldingImportService:
             average_cost_nav=item.average_cost_nav,
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
+            purchase_date=item.purchase_date,
+            purchase_after_cutoff=item.purchase_after_cutoff,
             confidence=item.confidence,
             validation_status=item.validation_status,
             validation_issues=issues,
