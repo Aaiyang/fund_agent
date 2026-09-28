@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from app.api.v1.accounts import router as accounts_router
 from app.api.v1.agent import router as agent_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.auto_invest import router as auto_invest_router
 from app.api.v1.chatbot import router as chatbot_router
 from app.api.v1.funds import router as funds_router
 from app.api.v1.imports import router as holding_imports_router
@@ -33,6 +34,7 @@ api_router.include_router(portfolio_router, prefix="/portfolio", tags=["Portfoli
 api_router.include_router(accounts_router, prefix="/accounts", tags=["Accounts"])
 api_router.include_router(transactions_router, prefix="/transactions", tags=["Transactions"])
 api_router.include_router(holding_imports_router, prefix="/holding-imports", tags=["Holding Imports"])
+api_router.include_router(auto_invest_router, prefix="/auto-invest", tags=["Auto Invest"])
 api_router.include_router(agent_router, prefix="/agent", tags=["Agent"])
 
 

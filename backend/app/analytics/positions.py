@@ -17,9 +17,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-# The two directions a fund order can go. A holdings snapshot is not one of
-# them: it reports a state, while these describe the events that add up to it.
+# The two directions a ledger row can move.
 Direction = Literal["BUY", "SELL"]
+
+# What the user is recording. 定投 prices exactly like a purchase and 转换 is
+# two legs at once; the ledger itself only ever adds or removes, which is why
+# ``LEDGER_IN`` / ``LEDGER_OUT`` in the repository map these onto Direction.
+Operation = Literal["BUY", "SELL", "AUTO_INVEST", "CONVERT"]
 
 
 @dataclass(frozen=True)

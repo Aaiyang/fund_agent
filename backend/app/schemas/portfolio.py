@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.analytics.positions import Direction
+from app.analytics.positions import Direction, Operation
 from app.schemas.base import BaseResponse, clean_required_text
 
 
@@ -153,47 +153,59 @@ class PositionUpsertRequest(BaseModel):
 
 
 class TradeCreateRequest(BaseModel):
-    """加减仓: record one purchase or redemption."""
+    """加减仓: record one purchase, redemption, installment or conversion."""
 
     account_id: int
-    direction: Direction
+    operation: Operation
     trade_date: date = Field(description="提交订单的那天")
     after_cutoff: bool = Field(default=False, description="是否 15:00 后提交，决定用哪一场净值")
-    amount: float | None = Field(default=None, gt=0, description="买入金额（含申购费）")
-    shares: float | None = Field(default=None, gt=0, description="卖出份额")
-    fee: float | None = Field(default=None, ge=0, description="申购费/赎回费")
+    amount: float | None = Field(default=None, gt=0, description="买入/定投金额（含申购费）")
+    shares: float | None = Field(default=None, gt=0, description="卖出/转换份额")
+    fee: float | None = Field(default=None, ge=0, description="申购费/赎回费/转换费")
+    target_code: str | None = Field(default=None, min_length=6, max_length=6, description="转换目标基金")
 
     @model_validator(mode="after")
     def _order_carries_its_own_unit(self) -> "TradeCreateRequest":
-        """A buy is sized in money and a sell in shares; neither is inferable."""
-        if self.direction == "BUY" and self.amount is None:
-            raise ValueError("买入需要填写金额")
-        if self.direction == "SELL" and self.shares is None:
-            raise ValueError("卖出需要填写份额")
+        """Money sizes the buys, shares size the exits.
+
+        A conversion also names the fund to arrive in. None of it is inferable,
+        so all of it is required.
+        """
+        if self.operation in ("BUY", "AUTO_INVEST") and self.amount is None:
+            raise ValueError("买入与定投需要填写金额")
+        if self.operation in ("SELL", "CONVERT") and self.shares is None:
+            raise ValueError("卖出与转换需要填写份额")
+        if self.operation == "CONVERT" and not self.target_code:
+            raise ValueError("转换需要选择目标基金")
         return self
+
+
+class TradeLeg(BaseModel):
+    """One fund's side of an order, priced on the confirm day."""
+
+    fund_code: str
+    direction: Direction
+    confirm_nav: float
+    confirm_nav_date: date
+    shares_delta: float
+    amount: float
+    shares_before: float
+    cost_before: float
+    shares_after: float
+    cost_after: float
 
 
 class TradePreviewResponse(BaseResponse):
     """GET .../trades/preview: what this order would do to the holding."""
 
-    fund_code: str
-    direction: Direction
+    operation: Operation
     trade_date: date
     after_cutoff: bool
-    # The session the order is priced against and its NAV. The two dates differ
-    # whenever the cutoff or a weekend moved the order along.
+    # The session the order is priced against. It differs from trade_date
+    # whenever the cutoff or a non-trading day moved the order along.
     confirm_date: date
-    confirm_nav: float
-    confirm_nav_date: date
-    unit_nav: float | None = None
-    nav_date: date | None = None
-    order_shares: float
-    order_amount: float
     fee: float
-    shares_before: float
-    cost_before: float
-    shares_after: float
-    cost_after: float
+    legs: list[TradeLeg]
 
 
 class PositionDeleteResponse(BaseModel):

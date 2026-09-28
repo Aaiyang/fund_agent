@@ -281,6 +281,7 @@ class Settings:
             "portfolio": ["120 per minute"],
             "accounts": ["60 per minute"],
             "transactions": ["60 per minute"],
+            "auto_invest": ["60 per minute"],
             "holding_imports": ["30 per minute"],
             "agent": ["10 per minute"],
         }

@@ -15,6 +15,12 @@ from app.models.holding_import import HoldingImport, HoldingImportItem
 from app.models.portfolio import PortfolioAccount, PortfolioPosition, Transaction
 from app.utils.clock import utc_now
 
+# Which ledger rows add to a holding and which take away. A conversion is two
+# rows — one out of the source fund, one into the target — priced on the same
+# day, so it reads as a sell and a buy rather than a third kind of money.
+LEDGER_IN = ("OPENING", "BUY", "AUTO_INVEST", "CONVERT_IN")
+LEDGER_OUT = ("SELL", "CONVERT_OUT")
+
 
 class PortfolioRepository:
     """Async data access for accounts, positions and transactions."""
@@ -337,7 +343,7 @@ class PortfolioRepository:
                 select(Transaction)
                 .where(
                     col(Transaction.user_id) == user_id,
-                    col(Transaction.transaction_type).in_(("OPENING", "BUY", "SELL")),
+                    col(Transaction.transaction_type).in_(LEDGER_IN + LEDGER_OUT),
                 )
                 .order_by(col(Transaction.trade_date), col(Transaction.id))
             )
@@ -348,7 +354,7 @@ class PortfolioRepository:
             for row in result.scalars().all():
                 grouped.setdefault((row.account_id, row.fund_code), []).append(
                     LedgerRow(
-                        kind="SELL" if row.transaction_type == "SELL" else "BUY",
+                        kind="SELL" if row.transaction_type in LEDGER_OUT else "BUY",
                         shares=row.shares or 0.0,
                         amount=row.amount or 0.0,
                     )
@@ -364,13 +370,34 @@ class PortfolioRepository:
                     col(Transaction.user_id) == user_id,
                     col(Transaction.account_id) == account_id,
                     col(Transaction.fund_code) == fund_code,
-                    col(Transaction.transaction_type).in_(("OPENING", "BUY")),
+                    col(Transaction.transaction_type).in_(LEDGER_IN),
                     col(Transaction.confirm_date).is_not(None),
                 )
                 .order_by(col(Transaction.confirm_date))
                 .limit(1)
             )
             return (await session.execute(statement)).scalar_one_or_none()
+
+    async def has_transaction_ref(self, user_id: int, external_transaction_id: str) -> bool:
+        """Whether an idempotent write already landed, e.g. one plan installment."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                select(col(Transaction.id))
+                .where(
+                    col(Transaction.user_id) == user_id,
+                    col(Transaction.external_transaction_id) == external_transaction_id,
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
+    async def delete_transactions_by_source(self, user_id: int, source: str) -> int:
+        """Drop every row one feature generated, so removing it leaves nothing behind."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                sa_delete(Transaction).where(col(Transaction.user_id) == user_id, col(Transaction.source) == source)
+            )
+            return result.rowcount
 
     async def add_transaction(
         self,

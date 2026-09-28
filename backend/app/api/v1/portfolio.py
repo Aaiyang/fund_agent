@@ -23,7 +23,7 @@ from app.schemas.portfolio import (
     TradeCreateRequest,
     TradePreviewResponse,
 )
-from app.analytics.positions import Direction
+from app.analytics.positions import Operation
 from app.services.portfolio_service import (
     AccountNotFoundError,
     NavNotPublishedError,
@@ -73,12 +73,13 @@ async def preview_trade(
     request: Request,
     fund_code: str,
     account_id: int = Query(gt=0),
-    direction: Direction = Query(description="BUY 或 SELL"),
+    operation: Operation = Query(description="BUY / SELL / AUTO_INVEST / CONVERT"),
     trade_date: date = Query(description="提交订单的那天"),
     after_cutoff: bool = Query(default=False, description="是否 15:00 后提交"),
     amount: float | None = Query(default=None, gt=0),
     shares: float | None = Query(default=None, gt=0),
     fee: float | None = Query(default=None, ge=0),
+    target_code: str | None = Query(default=None, min_length=6, max_length=6, description="转换目标基金"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> TradePreviewResponse:
     """Price an order on its confirm day and show the resulting holding.
@@ -88,7 +89,16 @@ async def preview_trade(
     """
     try:
         return await portfolio_service.preview_trade(
-            identity.user_id, account_id, fund_code, direction, trade_date, after_cutoff, amount, shares, fee
+            identity.user_id,
+            account_id,
+            fund_code,
+            operation,
+            trade_date,
+            after_cutoff,
+            amount,
+            shares,
+            fee,
+            target_code,
         )
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e
@@ -112,12 +122,13 @@ async def record_trade(
             identity.user_id,
             payload.account_id,
             fund_code,
-            payload.direction,
+            payload.operation,
             payload.trade_date,
             payload.after_cutoff,
             amount=payload.amount,
             shares=payload.shares,
             fee=payload.fee,
+            target_code=payload.target_code,
         )
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e

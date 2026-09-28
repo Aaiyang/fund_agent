@@ -75,6 +75,39 @@ class PortfolioPosition(BaseModel, table=True):
     __table_args__ = (UniqueConstraint("account_id", "fund_code", name="uq_position_account_fund"),)
 
 
+class AutoInvestPlan(BaseModel, table=True):
+    """A standing instruction to buy a fixed amount on a repeating day.
+
+    The platform debits the money, not this app; the plan is what the user says
+    he set up, and settling it writes ordinary purchase rows so the holding's
+    ledger stays the single source for 份额 and 成本.
+    """
+
+    __tablename__ = "auto_invest_plan"  # pyright: ignore[reportAssignmentType]
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    account_id: int = Field(foreign_key="portfolio_account.id", index=True)
+    fund_code: str = Field(max_length=12, index=True)
+
+    amount: float = Field()
+    frequency: str = Field(default="weekly", max_length=20)
+    # weekly/biweekly: ISO weekday 1-7. monthly: day of month, clamped to the
+    # last day in short months the way the platforms do it.
+    run_day: int = Field(default=1)
+    start_date: date
+    end_date: date | None = Field(default=None)
+    active: bool = Field(default=True)
+    # The latest scheduled day already written as a purchase. Keeping it makes
+    # catching up after a long gap idempotent.
+    last_run_date: date | None = Field(default=None)
+
+    updated_at: datetime | None = Field(
+        default=None,
+        sa_column_kwargs={"onupdate": utc_now},
+    )
+
+
 class Transaction(BaseModel, table=True):
     """Transaction or adjustment record.
 

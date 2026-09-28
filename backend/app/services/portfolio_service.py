@@ -15,6 +15,7 @@ from app.analytics import period_return, window_return
 from app.analytics.positions import (
     Direction,
     LedgerRow,
+    Operation,
     OrderDelta,
     price_buy,
     price_sell,
@@ -32,6 +33,7 @@ from app.schemas.portfolio import (
     AccountItem,
     PortfolioSummary,
     PositionItem,
+    TradeLeg,
     TradePreviewResponse,
     TransactionItem,
 )
@@ -296,94 +298,59 @@ class PortfolioService:
         opening = self._opening_row(position)
         return [opening] if opening else []
 
-    async def preview_trade(
-        self,
-        user_id: int,
-        account_id: int,
-        fund_code: str,
-        direction: Direction,
-        trade_date: date,
-        after_cutoff: bool,
-        amount: float | None = None,
-        shares: float | None = None,
-        fee: float | None = None,
-    ) -> TradePreviewResponse:
-        """What this order would do to the holding, before writing anything."""
-        await self.ensure_account(user_id, account_id)
-        priced = await self._price_order(fund_code, trade_date, after_cutoff)
+    @staticmethod
+    async def _rows_of(user_id: int, account_id: int, fund_code: str) -> list[LedgerRow]:
+        """The ledger one fund's holding is projected from."""
+        return (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
+
+    async def _planned_rows(
+        self, user_id: int, account_id: int, fund_code: str
+    ) -> tuple[PortfolioPosition | None, list[LedgerRow]]:
+        """A fund's stored snapshot and its ledger, read together for pricing."""
         position = await portfolio_repository.get_position(user_id, account_id, fund_code)
-        rows = (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
-        delta = self._order_delta(direction, priced.nav, amount, shares, fee)
-        latest = await fund_repository.get_latest_nav(fund_code)
-        return self._trade_preview(
-            fund_code,
-            direction,
-            trade_date,
-            after_cutoff,
-            priced,
-            self._projection_rows(position, rows),
-            delta,
-            latest,
-        )
+        return position, self._projection_rows(position, await self._rows_of(user_id, account_id, fund_code))
 
-    async def record_trade(
-        self,
-        user_id: int,
-        account_id: int,
-        fund_code: str,
-        direction: Direction,
-        trade_date: date,
-        after_cutoff: bool,
-        amount: float | None = None,
-        shares: float | None = None,
-        fee: float | None = None,
-    ) -> PositionItem:
-        """Write one BUY/SELL row and re-project the holding from the ledger.
+    async def _ensure_opening(self, user_id: int, account_id: int, fund_code: str, confirm: date) -> None:
+        """Carry a snapshot holding into the ledger before the first row lands on it.
 
-        The position's 份额/成本 are overwritten from the whole ledger rather
-        than nudged by a delta, so a fund always reads back the same way no
-        matter what order its rows arrived in.
+        Recording a purchase on a fund that arrived as a holdings screenshot
+        used to reset its basis to that single order: the snapshot said 1019.19
+        and the ledger said 1000. The opening row makes the new order an
+        addition to what he already held — and it is what the preview priced
+        against, so both views of the fund agree.
         """
-        await self.ensure_account(user_id, account_id)
-        priced = await self._price_order(fund_code, trade_date, after_cutoff)
-        delta = self._order_delta(direction, priced.nav, amount, shares, fee)
+        if await self._rows_of(user_id, account_id, fund_code):
+            return
         position = await portfolio_repository.get_position(user_id, account_id, fund_code)
-        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
-        rows = self._projection_rows(position, ledger.get((account_id, fund_code), []))
-        held = project_ledger(rows).shares
-        if direction == "SELL" and delta.shares > held:
-            raise TradeTooLargeError(held)
-
-        if not ledger.get((account_id, fund_code)) and len(rows) == 1:
-            # Persist the opening balance the preview priced against, so the
-            # next trade projects from the same baseline rather than losing it.
-            await portfolio_repository.add_transaction(
-                user_id=user_id,
-                account_id=account_id,
-                fund_code=fund_code,
-                transaction_type="OPENING",
-                trade_date=position.purchase_date if position and position.purchase_date else priced.confirm_date,
-                confirm_date=position.purchase_date if position else None,
-                shares=rows[0].shares,
-                amount=rows[0].amount,
-                source="position_snapshot",
-            )
+        opening = self._opening_row(position)
+        if opening is None or position is None:
+            return
         await portfolio_repository.add_transaction(
             user_id=user_id,
             account_id=account_id,
             fund_code=fund_code,
-            transaction_type=direction,
-            trade_date=trade_date,
-            confirm_date=priced.confirm_date,
-            shares=delta.shares,
-            nav=priced.nav,
-            amount=delta.amount,
-            fee=delta.fee,
-            source="manual",
+            transaction_type="OPENING",
+            trade_date=position.purchase_date or confirm,
+            confirm_date=position.purchase_date,
+            shares=opening.shares,
+            amount=opening.amount,
+            source="position_snapshot",
         )
-        totals = project_ledger(
-            (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
-        )
+
+    async def reproject(self, user_id: int, account_id: int, fund_code: str) -> None:
+        """Rebuild a holding from its ledger. Public for the plan undo path."""
+        await self._reproject(user_id, account_id, fund_code)
+
+    async def _reproject(self, user_id: int, account_id: int, fund_code: str) -> None:
+        """Re-materialise a position's shares, cost and value from its ledger.
+
+        Recomputed from every row rather than nudged by a delta, so a fund
+        always reads back the same way no matter what order rows arrived in.
+        """
+        rows = await self._rows_of(user_id, account_id, fund_code)
+        if not rows:
+            return
+        totals = project_ledger(rows)
         latest = await fund_repository.get_latest_nav(fund_code)
         await portfolio_repository.upsert_position(
             user_id,
@@ -398,14 +365,161 @@ class PortfolioService:
             # holding, not the one this ledger now adds up to.
             reset=["average_cost_nav", "profit_loss"],
         )
+
+    @staticmethod
+    def _leg(
+        fund_code: str, priced: _PricedOrder, rows: list[LedgerRow], delta: OrderDelta, direction: Direction
+    ) -> TradeLeg:
+        """One fund's before/after, with the new row folded in."""
+        before = project_ledger(rows)
+        after = project_ledger([*rows, LedgerRow(kind=direction, shares=delta.shares, amount=delta.amount)])
+        return TradeLeg(
+            fund_code=fund_code,
+            direction=direction,
+            confirm_nav=priced.nav,
+            confirm_nav_date=priced.nav_date,
+            shares_delta=delta.shares if direction == "BUY" else -delta.shares,
+            amount=delta.amount,
+            shares_before=before.shares,
+            cost_before=before.cost_amount,
+            shares_after=after.shares,
+            cost_after=after.cost_amount,
+        )
+
+    async def _plan_order(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        operation: Operation,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None,
+        shares: float | None,
+        fee: float | None,
+        target_code: str | None,
+    ) -> tuple[date, list[TradeLeg], list[tuple[str, str, OrderDelta, float]]]:
+        """Price an order into the ledger rows it would write.
+
+        The preview and the write both run through here, so the numbers shown
+        before saving are exactly the numbers saving produces.
+
+        Raises:
+            NavNotPublishedError: either fund has no NAV for the confirm day.
+            TradeTooLargeError: the exit sells more than the holding carries.
+        """
+        charge = fee or 0.0
+        priced = await self._price_order(fund_code, trade_date, after_cutoff)
+        _, source_rows = await self._planned_rows(user_id, account_id, fund_code)
+        held = project_ledger(source_rows).shares
+
+        if operation == "CONVERT":
+            target = str(target_code)
+            if target == fund_code:
+                raise TradeInputError("转换目标不能是同一只基金")
+            target_priced = await self._price_order(target, trade_date, after_cutoff)
+            out = price_sell(priced.nav, float(shares or 0.0), charge)
+            if out.shares > held:
+                raise TradeTooLargeError(held)
+            into = price_buy(target_priced.nav, out.amount)
+            _, target_rows = await self._planned_rows(user_id, account_id, target)
+            legs = [
+                self._leg(fund_code, priced, source_rows, out, "SELL"),
+                self._leg(target, target_priced, target_rows, into, "BUY"),
+            ]
+            rows = [
+                (fund_code, "CONVERT_OUT", out, priced.nav),
+                (target, "CONVERT_IN", into, target_priced.nav),
+            ]
+            return priced.confirm_date, legs, rows
+
+        direction: Direction = "SELL" if operation == "SELL" else "BUY"
+        delta = self._order_delta(direction, priced.nav, amount, shares, charge)
+        if direction == "SELL" and delta.shares > held:
+            raise TradeTooLargeError(held)
+        row_type = {"BUY": "BUY", "SELL": "SELL", "AUTO_INVEST": "AUTO_INVEST"}[operation]
+        legs = [self._leg(fund_code, priced, source_rows, delta, direction)]
+        return priced.confirm_date, legs, [(fund_code, row_type, delta, priced.nav)]
+
+    async def preview_trade(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        operation: Operation,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None = None,
+        shares: float | None = None,
+        fee: float | None = None,
+        target_code: str | None = None,
+    ) -> TradePreviewResponse:
+        """What this order would do to the holding, before writing anything."""
+        await self.ensure_account(user_id, account_id)
+        confirm, legs, _ = await self._plan_order(
+            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, fee, target_code
+        )
+        return TradePreviewResponse(
+            operation=operation,
+            trade_date=trade_date,
+            after_cutoff=after_cutoff,
+            confirm_date=confirm,
+            fee=fee or 0.0,
+            legs=legs,
+        )
+
+    async def record_trade(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        operation: Operation,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None = None,
+        shares: float | None = None,
+        fee: float | None = None,
+        target_code: str | None = None,
+        source: str = "manual",
+        external_ref: str | None = None,
+    ) -> PositionItem:
+        """Write an order's ledger rows and re-project every fund it touched."""
+        await self.ensure_account(user_id, account_id)
+        confirm, _, rows = await self._plan_order(
+            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, fee, target_code
+        )
+        touched: list[str] = []
+        for index, (fund, row_type, delta, nav) in enumerate(rows):
+            await self._ensure_opening(user_id, account_id, fund, confirm)
+            await portfolio_repository.add_transaction(
+                user_id=user_id,
+                account_id=account_id,
+                fund_code=fund,
+                transaction_type=row_type,
+                trade_date=trade_date,
+                confirm_date=confirm,
+                shares=delta.shares,
+                nav=nav,
+                amount=delta.amount,
+                fee=delta.fee,
+                source=source,
+                # Only the buying leg carries the idempotency key: one key per
+                # order, and a retry must not add the pair twice.
+                external_transaction_id=external_ref if index == 0 else None,
+            )
+            if fund not in touched:
+                touched.append(fund)
+        for fund in touched:
+            await self._reproject(user_id, account_id, fund)
         logger.info(
             "trade_recorded",
             user_id=user_id,
             account_id=account_id,
             fund_code=fund_code,
-            direction=direction,
-            confirm_date=priced.confirm_date.isoformat(),
-            shares=delta.shares,
+            operation=operation,
+            confirm_date=confirm.isoformat(),
+            rows=len(rows),
+            source=source,
         )
         position = await self.get_position(user_id, account_id, fund_code)
         if position is None:  # the account and position both exist by now
@@ -537,44 +651,6 @@ class PortfolioService:
         if not shares:
             raise TradeInputError("卖出需要填写份额")
         return price_sell(nav, shares, charge)
-
-    @staticmethod
-    def _trade_preview(
-        fund_code: str,
-        direction: Direction,
-        trade_date: date,
-        after_cutoff: bool,
-        priced: _PricedOrder,
-        rows: list[LedgerRow],
-        delta: OrderDelta,
-        latest: FundNav | None,
-    ) -> TradePreviewResponse:
-        """Assemble the before/after the trade form shows next to its inputs.
-
-        The "after" state re-runs the projection with the new row appended, so
-        the preview and the write can never disagree about what a partial sell
-        does to the cost basis.
-        """
-        before = project_ledger(rows)
-        after = project_ledger([*rows, LedgerRow(kind=direction, shares=delta.shares, amount=delta.amount)])
-        return TradePreviewResponse(
-            fund_code=fund_code,
-            direction=direction,
-            trade_date=trade_date,
-            after_cutoff=after_cutoff,
-            confirm_date=priced.confirm_date,
-            confirm_nav=priced.nav,
-            confirm_nav_date=priced.nav_date,
-            unit_nav=latest.unit_nav if latest else None,
-            nav_date=latest.nav_date if latest else None,
-            order_shares=delta.shares,
-            order_amount=delta.amount,
-            fee=delta.fee,
-            shares_before=before.shares,
-            cost_before=before.cost_amount,
-            shares_after=after.shares,
-            cost_after=after.cost_amount,
-        )
 
     async def _position_item(
         self,
