@@ -32,13 +32,14 @@ export const queryKeys = {
   tradePreview: (
     accountId: number,
     code: string,
-    direction: string,
+    operation: string,
     day: string,
     afterCutoff: boolean,
     amount: string,
     shares: string,
     fee: string,
-  ) => ['portfolio', 'trade-preview', accountId, code, direction, day, afterCutoff, amount, shares, fee] as const,
+    target: string,
+  ) => ['portfolio', 'trade-preview', accountId, code, operation, day, afterCutoff, amount, shares, fee, target] as const,
 
   accounts: ['accounts'] as const,
   transactionsAll: ['transactions'] as const,
@@ -47,6 +48,8 @@ export const queryKeys = {
 
   imports: ['imports'] as const,
   importDetail: (importId: string) => ['imports', importId] as const,
+
+  autoInvest: ['auto-invest'] as const,
 
   me: ['me'] as const,
 };

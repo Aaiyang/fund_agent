@@ -271,26 +271,34 @@ function PositionForm({
 
       <Card>
         <Button label="保存持仓" onPress={submit} loading={upsert.isPending} />
-        <View style={{ flexDirection: 'row', marginTop: 10 }}>
-          <View style={{ flex: 1, marginRight: 5 }}>
-            <Button
-              label="记录买入"
-              variant="secondary"
-              onPress={() => router.push({ pathname: '/position/trade', params: { code: code, direction: 'BUY' } })}
-            />
-          </View>
-          <View style={{ flex: 1, marginLeft: 5 }}>
-            <Button
-              label="记录卖出"
-              variant="secondary"
-              onPress={() => router.push({ pathname: '/position/trade', params: { code: code, direction: 'SELL' } })}
-            />
-          </View>
+      </Card>
+
+      <Card>
+        <SectionTitle title="加减仓" action="定投计划" onAction={() => router.push('/auto-invest')} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {TRADE_ACTIONS.map((action) => (
+            <View key={action.operation} style={{ flexBasis: '50%', paddingHorizontal: 5, marginBottom: 10 }}>
+              <Button
+                label={action.label}
+                variant="secondary"
+                onPress={() =>
+                  router.push({ pathname: '/position/trade', params: { code: code, operation: action.operation } })
+                }
+              />
+            </View>
+          ))}
         </View>
       </Card>
     </Screen>
   );
 }
+
+const TRADE_ACTIONS: { operation: 'BUY' | 'SELL' | 'AUTO_INVEST' | 'CONVERT'; label: string }[] = [
+  { operation: 'BUY', label: '同步加仓' },
+  { operation: 'SELL', label: '同步减仓' },
+  { operation: 'AUTO_INVEST', label: '同步定投' },
+  { operation: 'CONVERT', label: '同步转换' },
+];
 
 /** A fund with a BUY/SELL ledger has its money figures owned by the trade records. */
 function tradedPosition(existing: PositionItem | null): boolean {

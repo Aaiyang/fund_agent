@@ -1866,19 +1866,21 @@
             }
           },
           {
-            "name": "direction",
+            "name": "operation",
             "in": "query",
             "required": true,
             "schema": {
               "enum": [
                 "BUY",
-                "SELL"
+                "SELL",
+                "AUTO_INVEST",
+                "CONVERT"
               ],
               "type": "string",
-              "description": "BUY 或 SELL",
-              "title": "Direction"
+              "description": "BUY / SELL / AUTO_INVEST / CONVERT",
+              "title": "Operation"
             },
-            "description": "BUY 或 SELL"
+            "description": "BUY / SELL / AUTO_INVEST / CONVERT"
           },
           {
             "name": "trade_date",
@@ -1954,6 +1956,26 @@
               ],
               "title": "Fee"
             }
+          },
+          {
+            "name": "target_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 6,
+                  "maxLength": 6
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "转换目标基金",
+              "title": "Target Code"
+            },
+            "description": "转换目标基金"
           }
         ],
         "responses": {
@@ -2871,6 +2893,226 @@
         }
       }
     },
+    "/api/v1/auto-invest/plans": {
+      "get": {
+        "tags": [
+          "Auto Invest"
+        ],
+        "summary": "List Plans",
+        "description": "List plans, settling every installment that has come due first.",
+        "operationId": "list_plans_api_v1_auto_invest_plans_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoInvestPlansResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Auto Invest"
+        ],
+        "summary": "Create Plan",
+        "description": "Add a standing purchase schedule.",
+        "operationId": "create_plan_api_v1_auto_invest_plans_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoInvestPlanCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoInvestPlanItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auto-invest/plans/{plan_id}": {
+      "patch": {
+        "tags": [
+          "Auto Invest"
+        ],
+        "summary": "Update Plan",
+        "description": "Change the schedule. Installments already written are not restated.",
+        "operationId": "update_plan_api_v1_auto_invest_plans__plan_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoInvestPlanUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoInvestPlanItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Auto Invest"
+        ],
+        "summary": "Delete Plan",
+        "description": "Remove a plan; `with_orders` also drops the installments it wrote.",
+        "operationId": "delete_plan_api_v1_auto_invest_plans__plan_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "with_orders",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "同时删掉这个计划生成的定投流水",
+              "default": false,
+              "title": "With Orders"
+            },
+            "description": "同时删掉这个计划生成的定投流水"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Delete Plan Api V1 Auto Invest Plans  Plan Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent/chat": {
       "post": {
         "tags": [
@@ -3113,6 +3355,287 @@
         ],
         "title": "AccountsResponse",
         "description": "GET /accounts response."
+      },
+      "AutoInvestPlanCreateRequest": {
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "fund_code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Fund Code"
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "title": "Amount"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "biweekly",
+              "monthly"
+            ],
+            "title": "Frequency",
+            "default": "weekly"
+          },
+          "run_day": {
+            "type": "integer",
+            "maximum": 31,
+            "minimum": 1,
+            "title": "Run Day",
+            "description": "每周几（1-7）或每月几号（1-31）",
+            "default": 1
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "fund_code",
+          "amount",
+          "start_date"
+        ],
+        "title": "AutoInvestPlanCreateRequest",
+        "description": "POST /auto-invest/plans request."
+      },
+      "AutoInvestPlanItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "fund_code": {
+            "type": "string",
+            "title": "Fund Code"
+          },
+          "fund_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fund Name"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "biweekly",
+              "monthly"
+            ],
+            "title": "Frequency"
+          },
+          "run_day": {
+            "type": "integer",
+            "title": "Run Day"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "last_run_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run Date"
+          },
+          "next_due": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Due"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "fund_code",
+          "amount",
+          "frequency",
+          "run_day",
+          "start_date",
+          "active"
+        ],
+        "title": "AutoInvestPlanItem",
+        "description": "One standing plan, with the day it is next due."
+      },
+      "AutoInvestPlanUpdateRequest": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weekly",
+                  "biweekly",
+                  "monthly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "run_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 31,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Day"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          }
+        },
+        "type": "object",
+        "title": "AutoInvestPlanUpdateRequest",
+        "description": "PATCH /auto-invest/plans/{id} request. A null field leaves it intact."
+      },
+      "AutoInvestPlansResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutoInvestPlanItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "settled": {
+            "type": "integer",
+            "title": "Settled",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AutoInvestPlansResponse",
+        "description": "GET /auto-invest/plans response."
       },
       "Body_create_screenshot_import_api_v1_holding_imports_screenshots_post": {
         "properties": {
@@ -6210,13 +6733,15 @@
             "type": "integer",
             "title": "Account Id"
           },
-          "direction": {
+          "operation": {
             "type": "string",
             "enum": [
               "BUY",
-              "SELL"
+              "SELL",
+              "AUTO_INVEST",
+              "CONVERT"
             ],
-            "title": "Direction"
+            "title": "Operation"
           },
           "trade_date": {
             "type": "string",
@@ -6241,7 +6766,7 @@
               }
             ],
             "title": "Amount",
-            "description": "买入金额（含申购费）"
+            "description": "买入/定投金额（含申购费）"
           },
           "shares": {
             "anyOf": [
@@ -6254,7 +6779,7 @@
               }
             ],
             "title": "Shares",
-            "description": "卖出份额"
+            "description": "卖出/转换份额"
           },
           "fee": {
             "anyOf": [
@@ -6267,26 +6792,34 @@
               }
             ],
             "title": "Fee",
-            "description": "申购费/赎回费"
+            "description": "申购费/赎回费/转换费"
+          },
+          "target_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Code",
+            "description": "转换目标基金"
           }
         },
         "type": "object",
         "required": [
           "account_id",
-          "direction",
+          "operation",
           "trade_date"
         ],
         "title": "TradeCreateRequest",
-        "description": "加减仓: record one purchase or redemption."
+        "description": "加减仓: record one purchase, redemption, installment or conversion."
       },
-      "TradePreviewResponse": {
+      "TradeLeg": {
         "properties": {
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Request Id",
-            "description": "Unique identifier for this request"
-          },
           "fund_code": {
             "type": "string",
             "title": "Fund Code"
@@ -6299,20 +6832,6 @@
             ],
             "title": "Direction"
           },
-          "trade_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Trade Date"
-          },
-          "after_cutoff": {
-            "type": "boolean",
-            "title": "After Cutoff"
-          },
-          "confirm_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Confirm Date"
-          },
           "confirm_nav": {
             "type": "number",
             "title": "Confirm Nav"
@@ -6322,40 +6841,13 @@
             "format": "date",
             "title": "Confirm Nav Date"
           },
-          "unit_nav": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Nav"
-          },
-          "nav_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nav Date"
-          },
-          "order_shares": {
+          "shares_delta": {
             "type": "number",
-            "title": "Order Shares"
+            "title": "Shares Delta"
           },
-          "order_amount": {
+          "amount": {
             "type": "number",
-            "title": "Order Amount"
-          },
-          "fee": {
-            "type": "number",
-            "title": "Fee"
+            "title": "Amount"
           },
           "shares_before": {
             "type": "number",
@@ -6378,18 +6870,70 @@
         "required": [
           "fund_code",
           "direction",
-          "trade_date",
-          "after_cutoff",
-          "confirm_date",
           "confirm_nav",
           "confirm_nav_date",
-          "order_shares",
-          "order_amount",
-          "fee",
+          "shares_delta",
+          "amount",
           "shares_before",
           "cost_before",
           "shares_after",
           "cost_after"
+        ],
+        "title": "TradeLeg",
+        "description": "One fund's side of an order, priced on the confirm day."
+      },
+      "TradePreviewResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL",
+              "AUTO_INVEST",
+              "CONVERT"
+            ],
+            "title": "Operation"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date"
+          },
+          "after_cutoff": {
+            "type": "boolean",
+            "title": "After Cutoff"
+          },
+          "confirm_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Confirm Date"
+          },
+          "fee": {
+            "type": "number",
+            "title": "Fee"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/TradeLeg"
+            },
+            "type": "array",
+            "title": "Legs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation",
+          "trade_date",
+          "after_cutoff",
+          "confirm_date",
+          "fee",
+          "legs"
         ],
         "title": "TradePreviewResponse",
         "description": "GET .../trades/preview: what this order would do to the holding."

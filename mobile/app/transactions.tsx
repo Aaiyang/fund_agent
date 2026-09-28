@@ -11,6 +11,9 @@ import { formatDate, formatMoney, formatNumber } from '@/utils/format';
 const TYPE_LABEL: Record<string, string> = {
   BUY: '买入',
   SELL: '卖出',
+  AUTO_INVEST: '定投',
+  CONVERT_IN: '转入',
+  CONVERT_OUT: '转出',
   OPENING: '期初持仓',
   DIVIDEND: '分红',
   IMPORT_ADJUSTMENT: '导入修正',
@@ -18,7 +21,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 // Rows that add up to a holding, as opposed to the audit trail of a snapshot.
-const TRADES = ['BUY', 'SELL', 'OPENING'];
+const TRADES = ['BUY', 'SELL', 'AUTO_INVEST', 'CONVERT_IN', 'CONVERT_OUT', 'OPENING'];
 
 /** Transaction and adjustment history (spec 3.8). */
 export default function TransactionsScreen() {
@@ -37,7 +40,7 @@ export default function TransactionsScreen() {
           {accountId ? `账户 ${accounts.data?.items.find((item) => item.id === accountId)?.name ?? accountId}` : '全部账户'}
         </Text>
         <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 6 }}>
-          买入、卖出与期初持仓是流水，持仓份额与成本由它们累计得出；导入修正与手工修正只是快照覆盖的审计记录。
+          买入、定投、转换与期初持仓是流水，持仓份额与成本由它们累计得出；导入修正与手工修正只是快照覆盖的审计记录。
         </Text>
       </Card>
 

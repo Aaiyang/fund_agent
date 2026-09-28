@@ -52,6 +52,8 @@ export function usePosition(accountId: number | null, fundCode: string | null) {
   });
 }
 
+export type TradeOperation = components['schemas']['TradeCreateRequest']['operation'];
+
 /**
  * What an order would do to the holding, priced on its confirm day before
  * anything is written. The arithmetic needs the NAV history, so it stays on the
@@ -60,37 +62,45 @@ export function usePosition(accountId: number | null, fundCode: string | null) {
 export function useTradePreview(input: {
   accountId: number | null;
   fundCode: string;
-  direction: 'BUY' | 'SELL';
+  operation: TradeOperation;
   tradeDate: string;
   afterCutoff: boolean;
   amount: string;
   shares: string;
   fee: string;
+  targetCode: string;
 }) {
-  const { accountId, fundCode, direction, tradeDate, afterCutoff, amount, shares, fee } = input;
-  const sized = direction === 'BUY' ? amount !== '' : shares !== '';
+  const { accountId, fundCode, operation, tradeDate, afterCutoff, amount, shares, fee, targetCode } = input;
+  const sized = operation === 'BUY' || operation === 'AUTO_INVEST' ? amount !== '' : shares !== '';
+  const converted = operation !== 'CONVERT' || /^\d{6}$/.test(targetCode.trim());
   const ready =
-    accountId !== null && /^\d{6}$/.test(fundCode) && /^\d{4}-\d{2}-\d{2}$/.test(tradeDate.trim()) && sized;
+    accountId !== null &&
+    /^\d{6}$/.test(fundCode) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(tradeDate.trim()) &&
+    sized &&
+    converted;
   return useQuery({
     queryKey: queryKeys.tradePreview(
       accountId ?? -1,
       fundCode,
-      direction,
+      operation,
       tradeDate,
       afterCutoff,
       amount,
       shares,
       fee,
+      targetCode,
     ),
     queryFn: () =>
       api.get<components['schemas']['TradePreviewResponse']>(`/portfolio/positions/${fundCode}/trades/preview`, {
         account_id: accountId,
-        direction,
+        operation,
         trade_date: tradeDate,
         after_cutoff: afterCutoff,
         amount: amount === '' ? null : Number(amount),
         shares: shares === '' ? null : Number(shares),
         fee: fee === '' ? null : Number(fee),
+        target_code: operation === 'CONVERT' ? targetCode.trim() : null,
       }),
     enabled: ready,
     staleTime: 60_000,

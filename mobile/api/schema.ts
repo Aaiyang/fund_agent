@@ -1068,6 +1068,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auto-invest/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plans
+         * @description List plans, settling every installment that has come due first.
+         */
+        get: operations["list_plans_api_v1_auto_invest_plans_get"];
+        put?: never;
+        /**
+         * Create Plan
+         * @description Add a standing purchase schedule.
+         */
+        post: operations["create_plan_api_v1_auto_invest_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auto-invest/plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Plan
+         * @description Remove a plan; `with_orders` also drops the installments it wrote.
+         */
+        delete: operations["delete_plan_api_v1_auto_invest_plans__plan_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Plan
+         * @description Change the schedule. Installments already written are not restated.
+         */
+        patch: operations["update_plan_api_v1_auto_invest_plans__plan_id__patch"];
+        trace?: never;
+    };
     "/api/v1/agent/chat": {
         parameters: {
             query?: never;
@@ -1224,6 +1272,112 @@ export interface components {
             items: components["schemas"]["AccountItem"][];
             /** Total */
             total: number;
+        };
+        /**
+         * AutoInvestPlanCreateRequest
+         * @description POST /auto-invest/plans request.
+         */
+        AutoInvestPlanCreateRequest: {
+            /** Account Id */
+            account_id: number;
+            /** Fund Code */
+            fund_code: string;
+            /** Amount */
+            amount: number;
+            /**
+             * Frequency
+             * @default weekly
+             * @enum {string}
+             */
+            frequency?: "weekly" | "biweekly" | "monthly";
+            /**
+             * Run Day
+             * @description 每周几（1-7）或每月几号（1-31）
+             * @default 1
+             */
+            run_day?: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+        };
+        /**
+         * AutoInvestPlanItem
+         * @description One standing plan, with the day it is next due.
+         */
+        AutoInvestPlanItem: {
+            /** Id */
+            id: number;
+            /** Account Id */
+            account_id: number;
+            /** Fund Code */
+            fund_code: string;
+            /** Fund Name */
+            fund_name?: string | null;
+            /** Amount */
+            amount: number;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "weekly" | "biweekly" | "monthly";
+            /** Run Day */
+            run_day: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Active */
+            active: boolean;
+            /** Last Run Date */
+            last_run_date?: string | null;
+            /** Next Due */
+            next_due?: string | null;
+        };
+        /**
+         * AutoInvestPlanUpdateRequest
+         * @description PATCH /auto-invest/plans/{id} request. A null field leaves it intact.
+         */
+        AutoInvestPlanUpdateRequest: {
+            /** Amount */
+            amount?: number | null;
+            /** Frequency */
+            frequency?: ("weekly" | "biweekly" | "monthly") | null;
+            /** Run Day */
+            run_day?: number | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Active */
+            active?: boolean | null;
+        };
+        /**
+         * AutoInvestPlansResponse
+         * @description GET /auto-invest/plans response.
+         */
+        AutoInvestPlansResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Items */
+            items: components["schemas"]["AutoInvestPlanItem"][];
+            /** Total */
+            total: number;
+            /**
+             * Settled
+             * @default 0
+             */
+            settled?: number;
         };
         /** Body_create_screenshot_import_api_v1_holding_imports_screenshots_post */
         Body_create_screenshot_import_api_v1_holding_imports_screenshots_post: {
@@ -2450,16 +2604,16 @@ export interface components {
         };
         /**
          * TradeCreateRequest
-         * @description 加减仓: record one purchase or redemption.
+         * @description 加减仓: record one purchase, redemption, installment or conversion.
          */
         TradeCreateRequest: {
             /** Account Id */
             account_id: number;
             /**
-             * Direction
+             * Operation
              * @enum {string}
              */
-            direction: "BUY" | "SELL";
+            operation: "BUY" | "SELL" | "AUTO_INVEST" | "CONVERT";
             /**
              * Trade Date
              * Format: date
@@ -2474,19 +2628,56 @@ export interface components {
             after_cutoff?: boolean;
             /**
              * Amount
-             * @description 买入金额（含申购费）
+             * @description 买入/定投金额（含申购费）
              */
             amount?: number | null;
             /**
              * Shares
-             * @description 卖出份额
+             * @description 卖出/转换份额
              */
             shares?: number | null;
             /**
              * Fee
-             * @description 申购费/赎回费
+             * @description 申购费/赎回费/转换费
              */
             fee?: number | null;
+            /**
+             * Target Code
+             * @description 转换目标基金
+             */
+            target_code?: string | null;
+        };
+        /**
+         * TradeLeg
+         * @description One fund's side of an order, priced on the confirm day.
+         */
+        TradeLeg: {
+            /** Fund Code */
+            fund_code: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "BUY" | "SELL";
+            /** Confirm Nav */
+            confirm_nav: number;
+            /**
+             * Confirm Nav Date
+             * Format: date
+             */
+            confirm_nav_date: string;
+            /** Shares Delta */
+            shares_delta: number;
+            /** Amount */
+            amount: number;
+            /** Shares Before */
+            shares_before: number;
+            /** Cost Before */
+            cost_before: number;
+            /** Shares After */
+            shares_after: number;
+            /** Cost After */
+            cost_after: number;
         };
         /**
          * TradePreviewResponse
@@ -2499,13 +2690,11 @@ export interface components {
              * @description Unique identifier for this request
              */
             request_id?: string;
-            /** Fund Code */
-            fund_code: string;
             /**
-             * Direction
+             * Operation
              * @enum {string}
              */
-            direction: "BUY" | "SELL";
+            operation: "BUY" | "SELL" | "AUTO_INVEST" | "CONVERT";
             /**
              * Trade Date
              * Format: date
@@ -2518,31 +2707,10 @@ export interface components {
              * Format: date
              */
             confirm_date: string;
-            /** Confirm Nav */
-            confirm_nav: number;
-            /**
-             * Confirm Nav Date
-             * Format: date
-             */
-            confirm_nav_date: string;
-            /** Unit Nav */
-            unit_nav?: number | null;
-            /** Nav Date */
-            nav_date?: string | null;
-            /** Order Shares */
-            order_shares: number;
-            /** Order Amount */
-            order_amount: number;
             /** Fee */
             fee: number;
-            /** Shares Before */
-            shares_before: number;
-            /** Cost Before */
-            cost_before: number;
-            /** Shares After */
-            shares_after: number;
-            /** Cost After */
-            cost_after: number;
+            /** Legs */
+            legs: components["schemas"]["TradeLeg"][];
         };
         /**
          * TransactionItem
@@ -3986,8 +4154,8 @@ export interface operations {
         parameters: {
             query: {
                 account_id: number;
-                /** @description BUY 或 SELL */
-                direction: "BUY" | "SELL";
+                /** @description BUY / SELL / AUTO_INVEST / CONVERT */
+                operation: "BUY" | "SELL" | "AUTO_INVEST" | "CONVERT";
                 /** @description 提交订单的那天 */
                 trade_date: string;
                 /** @description 是否 15:00 后提交 */
@@ -3995,6 +4163,8 @@ export interface operations {
                 amount?: number | null;
                 shares?: number | null;
                 fee?: number | null;
+                /** @description 转换目标基金 */
+                target_code?: string | null;
             };
             header?: never;
             path: {
@@ -4551,6 +4721,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_plans_api_v1_auto_invest_plans_get: {
+        parameters: {
+            query?: {
+                account_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoInvestPlansResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_plan_api_v1_auto_invest_plans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoInvestPlanCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoInvestPlanItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_plan_api_v1_auto_invest_plans__plan_id__delete: {
+        parameters: {
+            query?: {
+                /** @description 同时删掉这个计划生成的定投流水 */
+                with_orders?: boolean;
+            };
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_plan_api_v1_auto_invest_plans__plan_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoInvestPlanUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoInvestPlanItem"];
                 };
             };
             /** @description Validation Error */
