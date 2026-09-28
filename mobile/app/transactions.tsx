@@ -11,10 +11,14 @@ import { formatDate, formatMoney, formatNumber } from '@/utils/format';
 const TYPE_LABEL: Record<string, string> = {
   BUY: '买入',
   SELL: '卖出',
+  OPENING: '期初持仓',
   DIVIDEND: '分红',
   IMPORT_ADJUSTMENT: '导入修正',
   MANUAL_ADJUSTMENT: '手工修正',
 };
+
+// Rows that add up to a holding, as opposed to the audit trail of a snapshot.
+const TRADES = ['BUY', 'SELL', 'OPENING'];
 
 /** Transaction and adjustment history (spec 3.8). */
 export default function TransactionsScreen() {
@@ -33,7 +37,7 @@ export default function TransactionsScreen() {
           {accountId ? `账户 ${accounts.data?.items.find((item) => item.id === accountId)?.name ?? accountId}` : '全部账户'}
         </Text>
         <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 6 }}>
-          导入与手工修正都是审计型调整记录，不代表真实买卖流水；第一阶段不提供交易下单。
+          买入、卖出与期初持仓是流水，持仓份额与成本由它们累计得出；导入修正与手工修正只是快照覆盖的审计记录。
         </Text>
       </Card>
 
@@ -52,12 +56,13 @@ export default function TransactionsScreen() {
                     </Text>
                     <Badge
                       label={TYPE_LABEL[item.transaction_type] ?? item.transaction_type}
-                      tone={item.transaction_type === 'IMPORT_ADJUSTMENT' ? 'warning' : 'muted'}
+                      tone={TRADES.includes(item.transaction_type) ? 'muted' : 'warning'}
                     />
                   </View>
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 4 }}>
-                    {formatDate(item.trade_date)} · 份额 {formatNumber(item.shares)} · 净值 {formatNumber(item.nav)} · 金额{' '}
-                    {formatMoney(item.amount)}
+                    {formatDate(item.trade_date)}
+                    {item.confirm_date && item.confirm_date !== item.trade_date ? ` 确认 ${formatDate(item.confirm_date)}` : ''} ·
+                    份额 {formatNumber(item.shares)} · 净值 {formatNumber(item.nav)} · 金额 {formatMoney(item.amount)}
                     {item.fee !== null && item.fee !== undefined ? ` · 费用 ${formatMoney(item.fee)}` : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>

@@ -1,9 +1,10 @@
 /**
- * 买入确认日期 + 15:00 前后，共用的录入控件。
+ * 买入日期，以及只有下单才需要的 15:00 前后。
  *
- * 场外基金按未知价成交，这个日期决定成本、收益和持有天数，所以手动表单与导入
- * 草稿共用同一套控件和默认值。规则本身只在感叹号里讲一次——两个选项上再各挂
- * 一句解释，就把一行能放下的东西变成了两行噪音。
+ * 场外基金按未知价成交，确认日决定这一单按哪一场净值算，所以加减仓用带 cutoff
+ * 的那一组；同步持仓只是照抄三方页面，它的日期是「第一次买入哪天」，没有 cutoff
+ * 可言，用只填日期那一组。规则说明挂在感叹号上，两个选项各带一句解释会把一行
+ * 能放下的东西变成两行噪音。
  */
 
 import { useState } from 'react';
@@ -18,26 +19,25 @@ const RULES = [
   '15:00 前提交，按当天公布的净值确认份额。',
   '15:00 后提交，顺延到下一个交易日的净值。',
   '周末和节假日不确认交易，继续顺延到下一个交易日。',
-  '持仓成本、持有收益和持有天数都从确认那天算起。',
+  '这一单换成多少份额、成本按哪天算，都由确认日的净值决定。',
 ];
 
-export function PurchaseDateFields({
+/** 买入确认日期 + 感叹号说明，加减仓与导入草稿都用它。 */
+export function PurchaseDateField({
   value,
   onChangeText,
-  afterCutoff,
-  onAfterCutoff,
+  label = '买入确认日期',
 }: {
   value: string;
   onChangeText: (value: string) => void;
-  afterCutoff: boolean;
-  onAfterCutoff: (value: boolean) => void;
+  label?: string;
 }) {
   const [explaining, setExplaining] = useState(false);
 
   return (
     <>
       <Field
-        label="买入确认日期"
+        label={label}
         labelExtra={
           <Pressable
             accessibilityRole="button"
@@ -57,10 +57,6 @@ export function PurchaseDateFields({
         onChangeText={onChangeText}
         placeholder="请输入买入确认日期（YYYY-MM-DD）"
       />
-      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-        <Chip label="15:00前" active={!afterCutoff} onPress={() => onAfterCutoff(false)} />
-        <Chip label="15:00后" active={afterCutoff} onPress={() => onAfterCutoff(true)} />
-      </View>
 
       <Modal visible={explaining} transparent animationType="fade" onRequestClose={() => setExplaining(false)}>
         <View style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
@@ -68,7 +64,14 @@ export function PurchaseDateFields({
             accessibilityRole="button"
             accessibilityLabel="关闭说明"
             onPress={() => setExplaining(false)}
-            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(17,24,39,0.45)' }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: 'rgba(17,24,39,0.45)',
+            }}
           />
           <View style={{ backgroundColor: theme.surface, borderRadius: 16, padding: 18 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text, marginBottom: 10 }}>买入时间怎么算</Text>
@@ -86,6 +89,29 @@ export function PurchaseDateFields({
           </View>
         </View>
       </Modal>
+    </>
+  );
+}
+
+/** The same date plus which side of the cutoff the order fell on. */
+export function PurchaseDateFields({
+  value,
+  onChangeText,
+  afterCutoff,
+  onAfterCutoff,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  afterCutoff: boolean;
+  onAfterCutoff: (value: boolean) => void;
+}) {
+  return (
+    <>
+      <PurchaseDateField value={value} onChangeText={onChangeText} />
+      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+        <Chip label="15:00前" active={!afterCutoff} onPress={() => onAfterCutoff(false)} />
+        <Chip label="15:00后" active={afterCutoff} onPress={() => onAfterCutoff(true)} />
+      </View>
     </>
   );
 }

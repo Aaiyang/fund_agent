@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { PurchaseDateFields, purchaseDateProblem } from '@/components/PurchaseDateFields';
+import { PurchaseDateField, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -127,7 +127,6 @@ function ItemCard({
 }) {
   const [marketValue, setMarketValue] = useState(toInputNumber(item.market_value));
   const [purchaseDate, setPurchaseDate] = useState(item.purchase_date ?? '');
-  const [afterCutoff, setAfterCutoff] = useState(Boolean(item.purchase_after_cutoff));
   const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
 
@@ -172,14 +171,9 @@ function ItemCard({
         placeholder="请输入修正后的持有金额"
       />
       <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 8 }}>
-        截图里没有买入日期，默认按导入当天 15:00 前算；知道实际日期的话改这里，成本与持有天数都跟着走。
+        截图里没有买入日期，默认按导入当天记；知道实际日期的话改这里，持有天数从这天算。
       </Text>
-      <PurchaseDateFields
-        value={purchaseDate}
-        onChangeText={setPurchaseDate}
-        afterCutoff={afterCutoff}
-        onAfterCutoff={setAfterCutoff}
-      />
+      <PurchaseDateField value={purchaseDate} onChangeText={setPurchaseDate} />
       <View style={{ flexDirection: 'row' }}>
         <View style={{ flex: 1, marginRight: 6 }}>
           <Button
@@ -199,7 +193,6 @@ function ItemCard({
                   itemId: item.id,
                   market_value: marketValue.trim() === '' ? null : Number(marketValue),
                   purchase_date: purchaseDate.trim() || null,
-                  purchase_after_cutoff: afterCutoff,
                 },
                 { onError: (error) => setProblem(describeError(error)) },
               );

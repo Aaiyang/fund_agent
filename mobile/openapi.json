@@ -1832,14 +1832,14 @@
         }
       }
     },
-    "/api/v1/portfolio/positions/preview": {
+    "/api/v1/portfolio/positions/{fund_code}/trades/preview": {
       "get": {
         "tags": [
           "Portfolio"
         ],
-        "summary": "Preview Position",
-        "description": "Estimate 份额/成本/收益 for a purchase date, without writing anything.\n\nDeclared before `/positions/{fund_code}` so the literal path wins.",
-        "operationId": "preview_position_api_v1_portfolio_positions_preview_get",
+        "summary": "Preview Trade",
+        "description": "Price an order on its confirm day and show the resulting holding.\n\nDeclared before ``POST /positions/{fund_code}/trades`` in spirit but on a\ndistinct path, so no literal segment can be swallowed by the fund code.",
+        "operationId": "preview_trade_api_v1_portfolio_positions__fund_code__trades_preview_get",
         "security": [
           {
             "HTTPBearer": []
@@ -1848,26 +1848,49 @@
         "parameters": [
           {
             "name": "fund_code",
-            "in": "query",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 6,
-              "maxLength": 6,
               "title": "Fund Code"
             }
           },
           {
-            "name": "purchase_date",
+            "name": "account_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "BUY",
+                "SELL"
+              ],
+              "type": "string",
+              "description": "BUY 或 SELL",
+              "title": "Direction"
+            },
+            "description": "BUY 或 SELL"
+          },
+          {
+            "name": "trade_date",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
               "format": "date",
-              "description": "买入确认日期（提交当日的自然日）",
-              "title": "Purchase Date"
+              "description": "提交订单的那天",
+              "title": "Trade Date"
             },
-            "description": "买入确认日期（提交当日的自然日）"
+            "description": "提交订单的那天"
           },
           {
             "name": "after_cutoff",
@@ -1875,14 +1898,48 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "是否 15:00 后提交，决定用哪一场净值",
+              "description": "是否 15:00 后提交",
               "default": false,
               "title": "After Cutoff"
             },
-            "description": "是否 15:00 后提交，决定用哪一场净值"
+            "description": "是否 15:00 后提交"
           },
           {
-            "name": "market_value",
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Amount"
+            }
+          },
+          {
+            "name": "shares",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shares"
+            }
+          },
+          {
+            "name": "fee",
             "in": "query",
             "required": false,
             "schema": {
@@ -1895,7 +1952,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Market Value"
+              "title": "Fee"
             }
           }
         ],
@@ -1905,7 +1962,65 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PositionPreviewResponse"
+                  "$ref": "#/components/schemas/TradePreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/positions/{fund_code}/trades": {
+      "post": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Record Trade",
+        "description": "Record a purchase or redemption and re-project the holding from the ledger.",
+        "operationId": "record_trade_api_v1_portfolio_positions__fund_code__trades_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fund_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fund Code"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionItem"
                 }
               }
             }
@@ -1991,7 +2106,7 @@
           "Portfolio"
         ],
         "summary": "Upsert Position",
-        "description": "Create or update a position snapshot (manual entry, spec 3.7.1).\n\nUpdates require `expected_version`; a stale version returns 409 so a\nconcurrent screenshot import can never silently overwrite user edits.",
+        "description": "同步持仓: restate what the holdings screen shows (spec 3.7.1).\n\nUpdates require `expected_version`; a stale version returns 409 so a\nconcurrent screenshot import can never silently overwrite user edits. On a\nfund with a trade ledger, 份额/成本/收益 are dropped by the service — only\n持有金额 and 首次购买日期 come through this door.",
         "operationId": "upsert_position_api_v1_portfolio_positions__fund_code__patch",
         "security": [
           {
@@ -4378,11 +4493,6 @@
             ],
             "title": "Purchase Date"
           },
-          "purchase_after_cutoff": {
-            "type": "boolean",
-            "title": "Purchase After Cutoff",
-            "default": false
-          },
           "confidence": {
             "anyOf": [
               {
@@ -4555,17 +4665,6 @@
               }
             ],
             "title": "Purchase Date"
-          },
-          "purchase_after_cutoff": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purchase After Cutoff"
           }
         },
         "type": "object",
@@ -5204,6 +5303,11 @@
             ],
             "title": "Profit Loss Rate"
           },
+          "shares_derived": {
+            "type": "boolean",
+            "title": "Shares Derived",
+            "default": false
+          },
           "cost_derived": {
             "type": "boolean",
             "title": "Cost Derived",
@@ -5309,23 +5413,6 @@
             ],
             "title": "Purchase Date"
           },
-          "purchase_after_cutoff": {
-            "type": "boolean",
-            "title": "Purchase After Cutoff",
-            "default": false
-          },
-          "settlement_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Settlement Date"
-          },
           "holding_days": {
             "anyOf": [
               {
@@ -5336,6 +5423,11 @@
               }
             ],
             "title": "Holding Days"
+          },
+          "trade_count": {
+            "type": "integer",
+            "title": "Trade Count",
+            "default": 0
           },
           "created_at": {
             "anyOf": [
@@ -5375,154 +5467,23 @@
         "title": "PositionItem",
         "description": "One holding with query-time derived metrics (never stored)."
       },
-      "PositionPreviewResponse": {
+      "PositionUpsertRequest": {
         "properties": {
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Request Id",
-            "description": "Unique identifier for this request"
-          },
-          "fund_code": {
-            "type": "string",
-            "title": "Fund Code"
-          },
-          "purchase_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Purchase Date"
-          },
-          "purchase_after_cutoff": {
-            "type": "boolean",
-            "title": "Purchase After Cutoff"
-          },
-          "settlement_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Settlement Date"
-          },
-          "holding_days": {
+          "account_id": {
             "type": "integer",
-            "title": "Holding Days"
-          },
-          "settled_nav": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Settled Nav"
-          },
-          "settled_nav_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Settled Nav Date"
-          },
-          "unit_nav": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Nav"
-          },
-          "nav_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nav Date"
+            "title": "Account Id"
           },
           "shares": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "minimum": 0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Shares"
-          },
-          "cost_amount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Amount"
-          },
-          "average_cost_nav": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Average Cost Nav"
-          },
-          "profit_loss": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Profit Loss"
-          },
-          "profit_loss_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Profit Loss Rate"
-          }
-        },
-        "type": "object",
-        "required": [
-          "fund_code",
-          "purchase_date",
-          "purchase_after_cutoff",
-          "settlement_date",
-          "holding_days"
-        ],
-        "title": "PositionPreviewResponse",
-        "description": "GET /portfolio/positions/preview: what a purchase date implies."
-      },
-      "PositionUpsertRequest": {
-        "properties": {
-          "account_id": {
-            "type": "integer",
-            "title": "Account Id"
           },
           "cost_amount": {
             "anyOf": [
@@ -5569,30 +5530,21 @@
                 "type": "null"
               }
             ],
-            "title": "Purchase Date"
-          },
-          "purchase_after_cutoff": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purchase After Cutoff"
+            "title": "Purchase Date",
+            "description": "首次购买确认日，持有天数从这天算"
           },
           "reset": {
             "items": {
               "type": "string",
               "enum": [
+                "shares",
                 "cost_amount",
                 "profit_loss"
               ]
             },
             "type": "array",
             "title": "Reset",
-            "description": "把这些字段改回系统推算：清空已存值，之后由确认日净值推出"
+            "description": "把这些字段清空，回到由其余两格推算"
           },
           "expected_version": {
             "anyOf": [
@@ -5612,7 +5564,7 @@
           "account_id"
         ],
         "title": "PositionUpsertRequest",
-        "description": "Manual create/update of a position snapshot (partial allowed).\n\n份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus\nthe NAV the purchase settled on, so accepting them by hand would let a\nstale guess override the arithmetic."
+        "description": "同步持仓: restate what a holdings screen shows (partial allowed).\n\n平均成本净值 is not accepted — it is always 持仓成本 ÷ 份额. On a fund with a\nBUY/SELL ledger the service also drops 份额/成本/收益 here, because those\nbelong to the trade records and a snapshot must not undo them."
       },
       "PositionsResponse": {
         "properties": {
@@ -6252,6 +6204,196 @@
         "title": "TokenResponse",
         "description": "Response model for login endpoint.\n\nAttributes:\n    access_token: The JWT access token\n    token_type: The type of token (always \"bearer\")\n    expires_at: When the token expires\n    refresh_token: Optional long-lived refresh token (spec 3.1)"
       },
+      "TradeCreateRequest": {
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Direction"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date",
+            "description": "提交订单的那天"
+          },
+          "after_cutoff": {
+            "type": "boolean",
+            "title": "After Cutoff",
+            "description": "是否 15:00 后提交，决定用哪一场净值",
+            "default": false
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount",
+            "description": "买入金额（含申购费）"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares",
+            "description": "卖出份额"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee",
+            "description": "申购费/赎回费"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "direction",
+          "trade_date"
+        ],
+        "title": "TradeCreateRequest",
+        "description": "加减仓: record one purchase or redemption."
+      },
+      "TradePreviewResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "fund_code": {
+            "type": "string",
+            "title": "Fund Code"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Direction"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date"
+          },
+          "after_cutoff": {
+            "type": "boolean",
+            "title": "After Cutoff"
+          },
+          "confirm_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Confirm Date"
+          },
+          "confirm_nav": {
+            "type": "number",
+            "title": "Confirm Nav"
+          },
+          "confirm_nav_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Confirm Nav Date"
+          },
+          "unit_nav": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Nav"
+          },
+          "nav_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nav Date"
+          },
+          "order_shares": {
+            "type": "number",
+            "title": "Order Shares"
+          },
+          "order_amount": {
+            "type": "number",
+            "title": "Order Amount"
+          },
+          "fee": {
+            "type": "number",
+            "title": "Fee"
+          },
+          "shares_before": {
+            "type": "number",
+            "title": "Shares Before"
+          },
+          "cost_before": {
+            "type": "number",
+            "title": "Cost Before"
+          },
+          "shares_after": {
+            "type": "number",
+            "title": "Shares After"
+          },
+          "cost_after": {
+            "type": "number",
+            "title": "Cost After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fund_code",
+          "direction",
+          "trade_date",
+          "after_cutoff",
+          "confirm_date",
+          "confirm_nav",
+          "confirm_nav_date",
+          "order_shares",
+          "order_amount",
+          "fee",
+          "shares_before",
+          "cost_before",
+          "shares_after",
+          "cost_after"
+        ],
+        "title": "TradePreviewResponse",
+        "description": "GET .../trades/preview: what this order would do to the holding."
+      },
       "TransactionItem": {
         "properties": {
           "id": {
@@ -6285,6 +6427,18 @@
             "type": "string",
             "format": "date",
             "title": "Trade Date"
+          },
+          "confirm_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Date"
           },
           "shares": {
             "anyOf": [

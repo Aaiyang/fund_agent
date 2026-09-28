@@ -794,7 +794,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/portfolio/positions/preview": {
+    "/api/v1/portfolio/positions/{fund_code}/trades/preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -802,14 +802,35 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Preview Position
-         * @description Estimate 份额/成本/收益 for a purchase date, without writing anything.
+         * Preview Trade
+         * @description Price an order on its confirm day and show the resulting holding.
          *
-         *     Declared before `/positions/{fund_code}` so the literal path wins.
+         *     Declared before ``POST /positions/{fund_code}/trades`` in spirit but on a
+         *     distinct path, so no literal segment can be swallowed by the fund code.
          */
-        get: operations["preview_position_api_v1_portfolio_positions_preview_get"];
+        get: operations["preview_trade_api_v1_portfolio_positions__fund_code__trades_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/portfolio/positions/{fund_code}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Trade
+         * @description Record a purchase or redemption and re-project the holding from the ledger.
+         */
+        post: operations["record_trade_api_v1_portfolio_positions__fund_code__trades_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -839,10 +860,12 @@ export interface paths {
         head?: never;
         /**
          * Upsert Position
-         * @description Create or update a position snapshot (manual entry, spec 3.7.1).
+         * @description 同步持仓: restate what the holdings screen shows (spec 3.7.1).
          *
          *     Updates require `expected_version`; a stale version returns 409 so a
-         *     concurrent screenshot import can never silently overwrite user edits.
+         *     concurrent screenshot import can never silently overwrite user edits. On a
+         *     fund with a trade ledger, 份额/成本/收益 are dropped by the service — only
+         *     持有金额 and 首次购买日期 come through this door.
          */
         patch: operations["upsert_position_api_v1_portfolio_positions__fund_code__patch"];
         trace?: never;
@@ -1741,11 +1764,6 @@ export interface components {
             profit_loss_rate?: number | null;
             /** Purchase Date */
             purchase_date?: string | null;
-            /**
-             * Purchase After Cutoff
-             * @default false
-             */
-            purchase_after_cutoff?: boolean;
             /** Confidence */
             confidence?: number | null;
             /** Validation Status */
@@ -1785,8 +1803,6 @@ export interface components {
             profit_loss_rate?: number | null;
             /** Purchase Date */
             purchase_date?: string | null;
-            /** Purchase After Cutoff */
-            purchase_after_cutoff?: boolean | null;
         };
         /**
          * IndexCatalogItem
@@ -2043,6 +2059,11 @@ export interface components {
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
             /**
+             * Shares Derived
+             * @default false
+             */
+            shares_derived?: boolean;
+            /**
              * Cost Derived
              * @default false
              */
@@ -2073,15 +2094,13 @@ export interface components {
             is_updated?: boolean;
             /** Purchase Date */
             purchase_date?: string | null;
-            /**
-             * Purchase After Cutoff
-             * @default false
-             */
-            purchase_after_cutoff?: boolean;
-            /** Settlement Date */
-            settlement_date?: string | null;
             /** Holding Days */
             holding_days?: number | null;
+            /**
+             * Trade Count
+             * @default 0
+             */
+            trade_count?: number;
             /** Created At */
             created_at?: string | null;
             /**
@@ -2093,77 +2112,34 @@ export interface components {
             updated_at?: string | null;
         };
         /**
-         * PositionPreviewResponse
-         * @description GET /portfolio/positions/preview: what a purchase date implies.
-         */
-        PositionPreviewResponse: {
-            /**
-             * Request Id
-             * Format: uuid
-             * @description Unique identifier for this request
-             */
-            request_id?: string;
-            /** Fund Code */
-            fund_code: string;
-            /**
-             * Purchase Date
-             * Format: date
-             */
-            purchase_date: string;
-            /** Purchase After Cutoff */
-            purchase_after_cutoff: boolean;
-            /**
-             * Settlement Date
-             * Format: date
-             */
-            settlement_date: string;
-            /** Holding Days */
-            holding_days: number;
-            /** Settled Nav */
-            settled_nav?: number | null;
-            /** Settled Nav Date */
-            settled_nav_date?: string | null;
-            /** Unit Nav */
-            unit_nav?: number | null;
-            /** Nav Date */
-            nav_date?: string | null;
-            /** Shares */
-            shares?: number | null;
-            /** Cost Amount */
-            cost_amount?: number | null;
-            /** Average Cost Nav */
-            average_cost_nav?: number | null;
-            /** Profit Loss */
-            profit_loss?: number | null;
-            /** Profit Loss Rate */
-            profit_loss_rate?: number | null;
-        };
-        /**
          * PositionUpsertRequest
-         * @description Manual create/update of a position snapshot (partial allowed).
+         * @description 同步持仓: restate what a holdings screen shows (partial allowed).
          *
-         *     份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus
-         *     the NAV the purchase settled on, so accepting them by hand would let a
-         *     stale guess override the arithmetic.
+         *     平均成本净值 is not accepted — it is always 持仓成本 ÷ 份额. On a fund with a
+         *     BUY/SELL ledger the service also drops 份额/成本/收益 here, because those
+         *     belong to the trade records and a snapshot must not undo them.
          */
         PositionUpsertRequest: {
             /** Account Id */
             account_id: number;
+            /** Shares */
+            shares?: number | null;
             /** Cost Amount */
             cost_amount?: number | null;
             /** Market Value */
             market_value?: number | null;
             /** Profit Loss */
             profit_loss?: number | null;
-            /** Purchase Date */
+            /**
+             * Purchase Date
+             * @description 首次购买确认日，持有天数从这天算
+             */
             purchase_date?: string | null;
-            /** Purchase After Cutoff */
-            purchase_after_cutoff?: boolean | null;
             /**
              * Reset
-             * @description 把这些字段改回系统推算：清空已存值，之后由确认日净值推出
+             * @description 把这些字段清空，回到由其余两格推算
              */
-            reset?: ("cost_amount" | "profit_loss")[];
+            reset?: ("shares" | "cost_amount" | "profit_loss")[];
             /**
              * Expected Version
              * @description 乐观锁：更新已有持仓时必传客户端读到的 version；不匹配返回 409
@@ -2473,6 +2449,102 @@ export interface components {
             refresh_token?: string | null;
         };
         /**
+         * TradeCreateRequest
+         * @description 加减仓: record one purchase or redemption.
+         */
+        TradeCreateRequest: {
+            /** Account Id */
+            account_id: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "BUY" | "SELL";
+            /**
+             * Trade Date
+             * Format: date
+             * @description 提交订单的那天
+             */
+            trade_date: string;
+            /**
+             * After Cutoff
+             * @description 是否 15:00 后提交，决定用哪一场净值
+             * @default false
+             */
+            after_cutoff?: boolean;
+            /**
+             * Amount
+             * @description 买入金额（含申购费）
+             */
+            amount?: number | null;
+            /**
+             * Shares
+             * @description 卖出份额
+             */
+            shares?: number | null;
+            /**
+             * Fee
+             * @description 申购费/赎回费
+             */
+            fee?: number | null;
+        };
+        /**
+         * TradePreviewResponse
+         * @description GET .../trades/preview: what this order would do to the holding.
+         */
+        TradePreviewResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Fund Code */
+            fund_code: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "BUY" | "SELL";
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** After Cutoff */
+            after_cutoff: boolean;
+            /**
+             * Confirm Date
+             * Format: date
+             */
+            confirm_date: string;
+            /** Confirm Nav */
+            confirm_nav: number;
+            /**
+             * Confirm Nav Date
+             * Format: date
+             */
+            confirm_nav_date: string;
+            /** Unit Nav */
+            unit_nav?: number | null;
+            /** Nav Date */
+            nav_date?: string | null;
+            /** Order Shares */
+            order_shares: number;
+            /** Order Amount */
+            order_amount: number;
+            /** Fee */
+            fee: number;
+            /** Shares Before */
+            shares_before: number;
+            /** Cost Before */
+            cost_before: number;
+            /** Shares After */
+            shares_after: number;
+            /** Cost After */
+            cost_after: number;
+        };
+        /**
          * TransactionItem
          * @description One transaction or adjustment record.
          */
@@ -2492,6 +2564,8 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+            /** Confirm Date */
+            confirm_date?: string | null;
             /** Shares */
             shares?: number | null;
             /** Nav */
@@ -3908,18 +3982,24 @@ export interface operations {
             };
         };
     };
-    preview_position_api_v1_portfolio_positions_preview_get: {
+    preview_trade_api_v1_portfolio_positions__fund_code__trades_preview_get: {
         parameters: {
             query: {
-                fund_code: string;
-                /** @description 买入确认日期（提交当日的自然日） */
-                purchase_date: string;
-                /** @description 是否 15:00 后提交，决定用哪一场净值 */
+                account_id: number;
+                /** @description BUY 或 SELL */
+                direction: "BUY" | "SELL";
+                /** @description 提交订单的那天 */
+                trade_date: string;
+                /** @description 是否 15:00 后提交 */
                 after_cutoff?: boolean;
-                market_value?: number | null;
+                amount?: number | null;
+                shares?: number | null;
+                fee?: number | null;
             };
             header?: never;
-            path?: never;
+            path: {
+                fund_code: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -3930,7 +4010,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PositionPreviewResponse"];
+                    "application/json": components["schemas"]["TradePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_trade_api_v1_portfolio_positions__fund_code__trades_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fund_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TradeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PositionItem"];
                 };
             };
             /** @description Validation Error */

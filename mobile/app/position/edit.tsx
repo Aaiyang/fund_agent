@@ -3,22 +3,22 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { PurchaseDateFields, initialPurchaseDate, purchaseDateProblem } from '@/components/PurchaseDateFields';
+import { PurchaseDateField, initialPurchaseDate, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Row, Screen, SectionTitle, Stat } from '@/components/ui';
 import { theme } from '@/constants/theme';
-import { useAccounts, usePosition, usePositionPreview, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useFundDetail } from '@/hooks/useFunds';
+import { useAccounts, usePosition, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
-import { formatMoney, formatNumber, formatSignedMoney, formatSignedRate, toInputNumber } from '@/utils/format';
+import { formatMoney, formatNumber, formatSignedMoney, formatSignedRate, isCalendarDate, toInputNumber } from '@/utils/format';
 
 /**
- * Create or edit one holding snapshot (spec 3.7.1, optimistic lock 7.11).
+ * 同步持仓: restate what a third-party holdings screen shows (spec 3.7.1).
  *
- * Only what a person actually knows is entered: which fund, how much it is
- * worth now, and when it was bought. 份额/成本/收益 follow from the NAV the
- * purchase settled on, so they are shown as an estimate rather than asked for
- * — a hand-typed guess would otherwise be stored as fact and never revisited.
+ * This is the snapshot path, not the trade path — no date prices anything here.
+ * The three money figures are what he reads off the screen; the fourth is
+ * implied by them, so the form works out whichever side he did not type and
+ * shows it as a result rather than as another box.
  */
 export default function PositionEditScreen() {
   const params = useLocalSearchParams<{ code?: string; account_id?: string }>();
@@ -71,30 +71,25 @@ function PositionForm({
   existing: PositionItem | null;
 }) {
   const upsert = useUpsertPosition();
+  const code = initialCode.trim();
+  const detail = useFundDetail(code.length === 6 ? code : null);
   const [fundCode, setFundCode] = useState(initialCode);
-  const [marketValue, setMarketValue] = useState(toInputNumber(existing?.market_value));
   const [purchaseDate, setPurchaseDate] = useState(
     initialPurchaseDate(existing?.purchase_date, existing?.created_at ?? existing?.updated_at),
   );
-  // A row that never recorded a purchase keeps the import default: before the cutoff.
-  const [afterCutoff, setAfterCutoff] = useState(Boolean(existing?.purchase_date && existing.purchase_after_cutoff));
-  // The stored columns, not the figures the list shows: a derived cost must not
-  // come back as if it had been typed in.
-  const storedCost = existing && !existing.cost_derived ? toInputNumber(existing.cost_amount) : '';
-  const storedProfit = existing && !existing.profit_derived ? toInputNumber(existing.profit_loss) : '';
-  const [manualOpen, setManualOpen] = useState(Boolean(storedCost || storedProfit));
-  const [manualCost, setManualCost] = useState(storedCost);
-  const [manualProfit, setManualProfit] = useState(storedProfit);
+  // A ledger owns these columns, so the snapshot keeps only what it may still
+  // correct: the value on screen and the day the holding started.
+  const traded = tradedPosition(existing);
+  const [mode, setMode] = useState<'amount' | 'shares'>('amount');
+  const [marketValue, setMarketValue] = useState(snapshotText(existing, 'market_value'));
+  const [shares, setShares] = useState(traded || existing?.shares_derived ? '' : toInputNumber(existing?.shares));
+  const [costAmount, setCostAmount] = useState(snapshotText(existing, 'cost_amount'));
+  const [profitLoss, setProfitLoss] = useState(snapshotText(existing, 'profit_loss'));
   const [problem, setProblem] = useState<string | null>(null);
 
-  const settledAmount = useDebouncedValue(marketValue);
-  const settledDate = useDebouncedValue(purchaseDate);
-  const preview = usePositionPreview({
-    fundCode: fundCode.trim(),
-    purchaseDate: settledDate.trim(),
-    afterCutoff,
-    marketValue: settledAmount.trim(),
-  });
+  const nav = detail.data?.latest_nav ?? existing?.unit_nav ?? null;
+  const days = daysSince(purchaseDate);
+  const result = { ...resolve({ marketValue, shares, costAmount, profitLoss, nav, mode, traded }), holding_days: days };
 
   function submit() {
     setProblem(null);
@@ -106,43 +101,49 @@ function PositionForm({
       setProblem('基金代码需要是 6 位数字');
       return;
     }
-    const amounts: [string, string][] = manualOpen
-      ? [
-          ['持有金额', marketValue],
-          ['持仓成本', manualCost],
-          ['持有收益', manualProfit],
-        ]
-      : [['持有金额', marketValue]];
-    for (const [label, value] of amounts) {
-      if (value.trim() !== '' && Number.isNaN(Number(value))) {
-        setProblem(`${label} 不是有效数字`);
-        return;
-      }
-    }
     const dateProblem = purchaseDateProblem(purchaseDate);
     if (dateProblem) {
       setProblem(dateProblem);
       return;
     }
-    // While the section is open its fields own those columns: blanking one puts
-    // the figure back on the derived path. Closed, they are left untouched.
-    const reset = manualOpen
-      ? [
-          ...(manualCost.trim() === '' && storedCost !== '' ? ['cost_amount' as const] : []),
-          ...(manualProfit.trim() === '' && storedProfit !== '' ? ['profit_loss' as const] : []),
-        ]
-      : [];
+    const boxes: [keyof typeof LABELS, string][] = traded
+      ? [['market_value', marketValue]]
+      : mode === 'amount'
+        ? [
+            ['market_value', marketValue],
+            ['cost_amount', costAmount],
+            ['profit_loss', profitLoss],
+          ]
+        : [
+            ['shares', shares],
+            ['cost_amount', costAmount],
+            ['profit_loss', profitLoss],
+          ];
+    for (const [column, value] of boxes) {
+      if (value.trim() !== '' && Number.isNaN(Number(value))) {
+        setProblem(`${LABELS[column]} 不是有效数字`);
+        return;
+      }
+    }
+    const sent = {
+      market_value: traded ? number(marketValue) : result.market_value,
+      shares: traded || mode === 'amount' ? null : number(shares),
+      cost_amount: traded ? null : number(costAmount),
+      profit_loss: traded ? null : number(profitLoss),
+    };
     upsert.mutate(
       {
         fundCode: fundCode.trim(),
         account_id: accountId,
-        market_value: number(marketValue),
-        cost_amount: manualOpen ? number(manualCost) : null,
-        profit_loss: manualOpen ? number(manualProfit) : null,
+        ...sent,
         purchase_date: purchaseDate.trim() || null,
-        purchase_after_cutoff: afterCutoff,
-        reset,
-        // The lock token only matters for a row that already exists (spec 7.11).
+        // Whatever the row stored but this restatement does not carry goes back
+        // to being derived, so switching 口径 never leaves a stale figure behind.
+        reset: traded
+          ? []
+          : (['shares', 'cost_amount', 'profit_loss'] as const).filter(
+              (column) => stored(existing, column) !== null && sent[column] === null,
+            ),
         expected_version: existing?.version ?? null,
       },
       {
@@ -175,7 +176,7 @@ function PositionForm({
       </Card>
 
       <Card>
-        <SectionTitle title="买入信息" />
+        <SectionTitle title="同步持仓" />
         <Field
           label="基金代码"
           value={fundCode}
@@ -186,107 +187,175 @@ function PositionForm({
         <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
           {existing ? `已存在持仓：市值 ${formatMoney(existing.market_value)}` : '该账户下还没有这只基金的持仓'}
         </Text>
-        <PurchaseDateFields
+        <PurchaseDateField
+          label="首次购买日期"
           value={purchaseDate}
           onChangeText={setPurchaseDate}
-          afterCutoff={afterCutoff}
-          onAfterCutoff={setAfterCutoff}
         />
-        <Field
-          label="持有金额"
-          value={marketValue}
-          onChangeText={setMarketValue}
-          keyboardType="numeric"
-          placeholder="请输入当前持有金额"
-        />
-        {manualOpen ? (
+        {traded ? (
+          <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
+            这只基金记过 {existing?.trade_count} 笔买卖，份额与持仓成本以流水为准，这里只改持有金额和日期。
+          </Text>
+        ) : (
           <>
+            <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+              <Chip label="按金额填" active={mode === 'amount'} onPress={() => setMode('amount')} />
+              <Chip label="按份额填" active={mode === 'shares'} onPress={() => setMode('shares')} />
+            </View>
+            {mode === 'amount' ? (
+              <Field
+                label="持有金额"
+                value={marketValue}
+                onChangeText={setMarketValue}
+                keyboardType="numeric"
+                placeholder="请输入当前持有金额"
+              />
+            ) : (
+              <Field
+                label="持有份额"
+                value={shares}
+                onChangeText={setShares}
+                keyboardType="numeric"
+                placeholder="请输入持有份额"
+              />
+            )}
             <Field
               label="持仓成本"
-              value={manualCost}
-              onChangeText={setManualCost}
+              value={costAmount}
+              onChangeText={setCostAmount}
               keyboardType="numeric"
-              placeholder="留空则按系统推算"
+              placeholder="留空则由金额与收益推算"
             />
             <Field
               label="持有收益"
-              value={manualProfit}
-              onChangeText={setManualProfit}
+              value={profitLoss}
+              onChangeText={setProfitLoss}
               keyboardType="numeric"
-              placeholder="留空则按系统推算"
+              placeholder="留空则由金额与成本推算"
             />
             <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
-              多笔买入时成本推不准，按你实际的总投入填；填了就以你填的为准，清空则改回系统推算。
+              {mode === 'shares'
+                ? `按最新净值 ${formatNumber(nav, 4)} 换算持有金额。`
+                : '填你确定的两个，第三个留空由系统算；清空已填的会改回推算。'}
             </Text>
           </>
-        ) : null}
-        <Chip
-          label={manualOpen ? '收起手动修正' : '手动修正成本（多笔买入时）'}
-          active={manualOpen}
-          onPress={() => setManualOpen(!manualOpen)}
-        />
-        {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginTop: 12 }}>{problem}</Text> : null}
+        )}
+        {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
       </Card>
 
-      <DerivedCard preview={preview} settledDate={settledDate.trim()} amount={settledAmount.trim()} />
+      <Card>
+        <SectionTitle title="持仓结果" />
+        <Row>
+          <Stat label="持有金额" value={formatMoney(result.market_value)} />
+          <Stat label="持有份额" value={formatNumber(result.shares, 2)} tone="muted" />
+          <Stat label="持仓成本" value={formatMoney(result.cost_amount)} tone="muted" />
+          <Stat label="平均成本净值" value={formatNumber(result.average_cost_nav, 4)} tone="muted" />
+          <Stat label="持有收益" value={formatSignedMoney(result.profit_loss)} tone={signTone(result.profit_loss)} />
+          <Stat label="收益率" value={formatSignedRate(result.profit_loss_rate)} tone={signTone(result.profit_loss)} />
+          <Stat label="持有天数" value={result.holding_days === null ? '--' : `${result.holding_days}`} tone="muted" />
+        </Row>
+      </Card>
 
       <Card>
         <Button label="保存持仓" onPress={submit} loading={upsert.isPending} />
+        <View style={{ flexDirection: 'row', marginTop: 10 }}>
+          <View style={{ flex: 1, marginRight: 5 }}>
+            <Button
+              label="记录买入"
+              variant="secondary"
+              onPress={() => router.push({ pathname: '/position/trade', params: { code: code, direction: 'BUY' } })}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 5 }}>
+            <Button
+              label="记录卖出"
+              variant="secondary"
+              onPress={() => router.push({ pathname: '/position/trade', params: { code: code, direction: 'SELL' } })}
+            />
+          </View>
+        </View>
       </Card>
     </Screen>
   );
 }
 
-type Preview = ReturnType<typeof usePositionPreview>;
-
-/** The estimate the save will be priced on, with the two NAVs it came from. */
-function DerivedCard({ preview, settledDate, amount }: { preview: Preview; settledDate: string; amount: string }) {
-  if (!settledDate) {
-    return null;
-  }
-  // A disabled query reports `isPending` too, so only a live request is "推算中".
-  if (preview.isPending && preview.isFetching) {
-    return (
-      <Card>
-        <SectionTitle title="系统推算" />
-        <Text style={{ fontSize: 13, color: theme.textMuted }}>推算中…</Text>
-      </Card>
-    );
-  }
-  const data = preview.data;
-  if (!data) {
-    return null;
-  }
-  const note = data.unit_nav
-    ? data.settled_nav
-      ? '成本 = 持有金额 × 确认日净值 ÷ 最新净值'
-      : `还没有 ${settledDate} 之前的净值记录，成本推不出来`
-    : '这只基金还没有净值记录';
-  return (
-    <Card>
-      <SectionTitle title="系统推算" />
-      <Row>
-        <Stat label={`确认日净值 ${data.settled_nav_date ?? ''}`} value={formatNumber(data.settled_nav, 4)} tone="muted" />
-        <Stat label={`最新净值 ${data.nav_date ?? ''}`} value={formatNumber(data.unit_nav, 4)} tone="muted" />
-        <Stat label="持有份额" value={formatNumber(data.shares, 2)} tone="muted" />
-        <Stat label="持仓成本" value={formatMoney(data.cost_amount)} />
-        <Stat label="平均成本净值" value={formatNumber(data.average_cost_nav, 4)} tone="muted" />
-        <Stat label="持有收益" value={formatSignedMoney(data.profit_loss)} tone={signTone(data.profit_loss)} />
-        <Stat label="收益率" value={formatSignedRate(data.profit_loss_rate)} tone={signTone(data.profit_loss_rate)} />
-        <Stat label="持有天数" value={`${data.holding_days ?? '--'}`} tone="muted" />
-      </Row>
-      <Text style={{ fontSize: 12, color: theme.textFaint }}>
-        {amount.trim() === '' ? '填好持有金额就能算出成本与收益。' : note}
-      </Text>
-    </Card>
-  );
+/** A fund with a BUY/SELL ledger has its money figures owned by the trade records. */
+function tradedPosition(existing: PositionItem | null): boolean {
+  return (existing?.trade_count ?? 0) > 0;
 }
 
-function signTone(value: number | null | undefined): 'up' | 'down' | 'muted' {
-  if (!value) return 'muted';
-  return value > 0 ? 'up' : 'down';
+const LABELS = { market_value: '持有金额', shares: '持有份额', cost_amount: '持仓成本', profit_loss: '持有收益' };
+
+type ResolveInput = {
+  marketValue: string;
+  shares: string;
+  costAmount: string;
+  profitLoss: string;
+  nav: number | null;
+  mode: 'amount' | 'shares';
+  traded: boolean;
+};
+
+/** The same precedence the API uses, so the form shows what saving will store. */
+function resolve(input: ResolveInput) {
+  const marketValue = number(input.marketValue);
+  const shares = number(input.shares);
+  const cost = number(input.costAmount);
+  const profit = number(input.profitLoss);
+
+  const amount =
+    marketValue ?? (input.traded ? null : shares !== null && input.nav ? shares * input.nav : null);
+  const held = shares ?? (amount !== null && input.nav ? amount / input.nav : null);
+  const basis = input.traded ? cost : (cost ?? (amount !== null && profit !== null ? amount - profit : null));
+  const gained = input.traded ? profit : (profit ?? (amount !== null && basis !== null ? amount - basis : null));
+
+  return {
+    market_value: amount,
+    shares: held,
+    cost_amount: basis,
+    profit_loss: gained,
+    average_cost_nav: basis !== null && held ? basis / held : null,
+    profit_loss_rate: gained !== null && basis ? gained / basis : null,
+  };
+}
+
+/** Days since 首次购买日期, UTC-safe so a device's timezone cannot shift it. */
+function daysSince(value: string): number | null {
+  if (!isCalendarDate(value)) return null;
+  const [year, month, day] = value.trim().split('-').map(Number);
+  const then = Date.UTC(year, month - 1, day);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(Math.round((today - then) / 86_400_000), 0);
 }
 
 function number(value: string): number | null {
-  return value.trim() === '' ? null : Number(value);
+  return value.trim() === '' || Number.isNaN(Number(value)) ? null : Number(value);
+}
+
+/** Only what the row really stores: a derived figure must not prefill a box. */
+function snapshotText(
+  existing: PositionItem | null,
+  column: 'market_value' | 'cost_amount' | 'profit_loss',
+): string {
+  if (!existing) return '';
+  if (column !== 'market_value' && tradedPosition(existing)) return '';
+  const derived =
+    column === 'cost_amount' ? existing.cost_derived : column === 'profit_loss' ? existing.profit_derived : false;
+  return derived ? '' : toInputNumber(existing[column]);
+}
+
+function stored(
+  existing: PositionItem | null,
+  column: 'shares' | 'cost_amount' | 'profit_loss',
+): number | null {
+  if (!existing || tradedPosition(existing)) return null;
+  const derived =
+    column === 'shares' ? existing.shares_derived : column === 'cost_amount' ? existing.cost_derived : existing.profit_derived;
+  return derived ? null : (existing[column] ?? null);
+}
+
+function signTone(value: number | null): 'up' | 'down' | 'muted' {
+  if (!value) return 'muted';
+  return value > 0 ? 'up' : 'down';
 }

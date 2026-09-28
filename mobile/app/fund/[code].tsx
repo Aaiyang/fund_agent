@@ -239,16 +239,7 @@ export default function FundDetailScreen() {
               <Stat label="持有收益率" value={formatRate(position.data.profit_loss_rate)} tone={trendTone(position.data.profit_loss_rate)} />
               <Stat label="持仓成本净值" value={formatNumber(position.data.average_cost_nav)} />
               <Stat label="昨日收益" value={formatSignedMoney(position.data.daily_profit_loss)} tone={trendTone(position.data.daily_profit_loss)} />
-              <Stat
-                label="买入确认"
-                value={
-                  position.data.purchase_date
-                    ? `${position.data.purchase_date}${position.data.purchase_after_cutoff ? ' 15:00后' : ''}`
-                    : '--'
-                }
-                tone="muted"
-              />
-              <Stat label="适用净值日" value={position.data.settlement_date ?? '--'} tone="muted" />
+              <Stat label="首次购买" value={position.data.purchase_date ?? '--'} tone="muted" />
               <Stat
                 label="持有天数"
                 value={position.data.holding_days !== undefined && position.data.holding_days !== null ? `${position.data.holding_days}` : '--'}

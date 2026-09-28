@@ -53,26 +53,44 @@ export function usePosition(accountId: number | null, fundCode: string | null) {
 }
 
 /**
- * What a purchase date implies, priced before anything is saved. The entry
- * form shows these as estimates, so the arithmetic stays on the server where
- * the NAV history is.
+ * What an order would do to the holding, priced on its confirm day before
+ * anything is written. The arithmetic needs the NAV history, so it stays on the
+ * server and the form just shows the answer.
  */
-export function usePositionPreview(input: {
+export function useTradePreview(input: {
+  accountId: number | null;
   fundCode: string;
-  purchaseDate: string;
+  direction: 'BUY' | 'SELL';
+  tradeDate: string;
   afterCutoff: boolean;
-  marketValue: string;
+  amount: string;
+  shares: string;
+  fee: string;
 }) {
-  const { fundCode, purchaseDate, afterCutoff, marketValue } = input;
-  const ready = /^\d{6}$/.test(fundCode) && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate.trim());
+  const { accountId, fundCode, direction, tradeDate, afterCutoff, amount, shares, fee } = input;
+  const sized = direction === 'BUY' ? amount !== '' : shares !== '';
+  const ready =
+    accountId !== null && /^\d{6}$/.test(fundCode) && /^\d{4}-\d{2}-\d{2}$/.test(tradeDate.trim()) && sized;
   return useQuery({
-    queryKey: queryKeys.positionPreview(fundCode, purchaseDate, afterCutoff, marketValue),
+    queryKey: queryKeys.tradePreview(
+      accountId ?? -1,
+      fundCode,
+      direction,
+      tradeDate,
+      afterCutoff,
+      amount,
+      shares,
+      fee,
+    ),
     queryFn: () =>
-      api.get<components['schemas']['PositionPreviewResponse']>('/portfolio/positions/preview', {
-        fund_code: fundCode,
-        purchase_date: purchaseDate,
+      api.get<components['schemas']['TradePreviewResponse']>(`/portfolio/positions/${fundCode}/trades/preview`, {
+        account_id: accountId,
+        direction,
+        trade_date: tradeDate,
         after_cutoff: afterCutoff,
-        market_value: marketValue === '' ? null : Number(marketValue),
+        amount: amount === '' ? null : Number(amount),
+        shares: shares === '' ? null : Number(shares),
+        fee: fee === '' ? null : Number(fee),
       }),
     enabled: ready,
     staleTime: 60_000,
@@ -112,14 +130,28 @@ export function useDeleteAccount() {
 }
 
 /**
- * Create or edit a holding. `expected_version` is required when updating an
- * existing row; a stale version comes back as 409 (spec 7.11).
+ * 同步持仓: restate what the holdings screen shows. `expected_version` is
+ * required when updating an existing row; a stale version comes back as 409
+ * (spec 7.11).
  */
 export function useUpsertPosition() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ fundCode, ...payload }: { fundCode: string } & components['schemas']['PositionUpsertRequest']) =>
       api.patch<PositionItem>(`/portfolio/positions/${fundCode}`, payload),
+    onSuccess: () => invalidatePositions(client),
+  });
+}
+
+/** 加减仓: record one order. The server re-projects the holding from the ledger. */
+export function useRecordTrade() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      fundCode,
+      ...payload
+    }: { fundCode: string } & components['schemas']['TradeCreateRequest']) =>
+      api.post<PositionItem>(`/portfolio/positions/${fundCode}/trades`, payload),
     onSuccess: () => invalidatePositions(client),
   });
 }
