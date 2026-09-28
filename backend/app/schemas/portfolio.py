@@ -132,19 +132,19 @@ class PortfolioSummaryResponse(BaseResponse):
 class PositionUpsertRequest(BaseModel):
     """同步持仓: restate what a holdings screen shows (partial allowed).
 
-    The two figures he reads off that screen are 持有金额 (or 份额) and 持仓成本价.
-    持仓成本 and 持有收益 are not inputs — both follow from those two — and a
-    snapshot that restates them retires whatever an earlier import stored, so
-    the numbers cannot disagree with each other. On a fund with a BUY/SELL
-    ledger the service drops the money fields entirely.
+    The screen pairs its numbers differently depending on which side he reads
+    from, so the form offers two 口径: 持有金额 goes with 持有收益, 持有份额 goes
+    with 持仓成本价. Either pair fixes all four money figures; the one that is
+    not an input is derived and any stale stored value for it is retired.
     """
 
     account_id: int
     shares: float | None = Field(default=None, ge=0)
     market_value: float | None = Field(default=None, ge=0)
-    average_cost_nav: float | None = Field(default=None, ge=0, description="持仓成本价")
+    average_cost_nav: float | None = Field(default=None, ge=0, description="持仓成本价，与份额配对")
+    profit_loss: float | None = Field(default=None, description="持有收益，与金额配对")
     purchase_date: date | None = Field(default=None, description="首次购买确认日，持有天数从这天算")
-    reset: list[Literal["shares", "average_cost_nav"]] = Field(
+    reset: list[Literal["shares", "average_cost_nav", "profit_loss"]] = Field(
         default_factory=list,
         description="把这些字段清空，回到由其余字段推算",
     )

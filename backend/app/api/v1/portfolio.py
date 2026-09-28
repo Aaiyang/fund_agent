@@ -187,6 +187,7 @@ async def upsert_position(
             shares=payload.shares,
             market_value=payload.market_value,
             average_cost_nav=payload.average_cost_nav,
+            profit_loss=payload.profit_loss,
             purchase_date=payload.purchase_date,
             reset=payload.reset,
         )
