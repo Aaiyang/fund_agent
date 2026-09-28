@@ -89,7 +89,20 @@ function PositionForm({
 
   const nav = detail.data?.latest_nav ?? existing?.unit_nav ?? null;
   const days = daysSince(purchaseDate);
-  const result = { ...resolve({ marketValue, shares, costAmount, profitLoss, nav, mode, traded }), holding_days: days };
+  const typed = resolve({ marketValue, shares, costAmount, profitLoss, nav, mode, traded });
+  // With a ledger the figures he cannot edit are still the ones the trades add
+  // up to, so the card reports those rather than blanks next to his one input.
+  const result = traded
+    ? {
+        market_value: typed.market_value ?? existing?.market_value ?? null,
+        shares: existing?.shares ?? null,
+        cost_amount: existing?.cost_amount ?? null,
+        profit_loss: existing?.profit_loss ?? null,
+        average_cost_nav: existing?.average_cost_nav ?? null,
+        profit_loss_rate: existing?.profit_loss_rate ?? null,
+      }
+    : typed;
+  const figures = { ...result, holding_days: days };
 
   function submit() {
     setProblem(null);
@@ -246,13 +259,13 @@ function PositionForm({
       <Card>
         <SectionTitle title="持仓结果" />
         <Row>
-          <Stat label="持有金额" value={formatMoney(result.market_value)} />
-          <Stat label="持有份额" value={formatNumber(result.shares, 2)} tone="muted" />
-          <Stat label="持仓成本" value={formatMoney(result.cost_amount)} tone="muted" />
-          <Stat label="平均成本净值" value={formatNumber(result.average_cost_nav, 4)} tone="muted" />
-          <Stat label="持有收益" value={formatSignedMoney(result.profit_loss)} tone={signTone(result.profit_loss)} />
-          <Stat label="收益率" value={formatSignedRate(result.profit_loss_rate)} tone={signTone(result.profit_loss)} />
-          <Stat label="持有天数" value={result.holding_days === null ? '--' : `${result.holding_days}`} tone="muted" />
+          <Stat label="持有金额" value={formatMoney(figures.market_value)} />
+          <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />
+          <Stat label="持仓成本" value={formatMoney(figures.cost_amount)} tone="muted" />
+          <Stat label="平均成本净值" value={formatNumber(figures.average_cost_nav, 4)} tone="muted" />
+          <Stat label="持有收益" value={formatSignedMoney(figures.profit_loss)} tone={signTone(figures.profit_loss)} />
+          <Stat label="收益率" value={formatSignedRate(figures.profit_loss_rate)} tone={signTone(figures.profit_loss)} />
+          <Stat label="持有天数" value={figures.holding_days === null ? '--' : `${figures.holding_days}`} tone="muted" />
         </Row>
       </Card>
 
