@@ -31,10 +31,12 @@ class PositionFigures:
     average_cost_nav: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    # True when 持仓成本 was implied by two other stored figures rather than
-    # recorded. The entry form keeps those off its inputs: a derived number
-    # must not come back looking like something the user asserted.
+    # Which figures the row does not actually store. The entry form keeps them
+    # out of its inputs: a derived number echoed back as text is how a guess
+    # becomes a stored fact the next time he saves.
+    shares_derived: bool = False
     cost_derived: bool = False
+    profit_derived: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,5 +155,7 @@ def position_figures(
         average_cost_nav=cost_nav,
         profit_loss=profit,
         profit_loss_rate=profit / cost if profit is not None and cost else None,
+        shares_derived=shares is None and resolved_shares is not None,
         cost_derived=cost_amount is None and cost is not None,
+        profit_derived=profit_loss is None and profit is not None,
     )

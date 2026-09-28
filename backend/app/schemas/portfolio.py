@@ -77,8 +77,9 @@ class PositionItem(BaseModel):
     market_value: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    # Which of the two above the row actually stores: a derived figure must not
-    # be echoed back into the entry form as if the user had asserted it.
+    # Which of the figures above the row does not actually store: a derived one
+    # must not be echoed back into the entry form as if the user had asserted it.
+    shares_derived: bool = False
     cost_derived: bool = False
     profit_derived: bool = False
     daily_profit_loss: float | None = None
@@ -215,6 +216,9 @@ class TransactionItem(BaseModel):
     fund_name: str | None = None
     transaction_type: str
     trade_date: date
+    # The session an order was priced against. Only trades carry it; it is the
+    # day the ledger's shares and cost were bought at.
+    confirm_date: date | None = None
     shares: float | None = None
     nav: float | None = None
     amount: float | None = None

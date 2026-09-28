@@ -491,6 +491,7 @@ class PortfolioService:
                     fund_name=fund.fund_name if fund else None,
                     transaction_type=record.transaction_type,
                     trade_date=record.trade_date,
+                    confirm_date=record.confirm_date,
                     shares=record.shares,
                     nav=record.nav,
                     amount=record.amount,
@@ -633,8 +634,9 @@ class PortfolioService:
             profit_loss_rate=figures.profit_loss_rate,
             # The entry form keeps these off its inputs when set: a figure the
             # row does not actually store must not look like a fact.
+            shares_derived=figures.shares_derived,
             cost_derived=figures.cost_derived,
-            profit_derived=position.profit_loss is None and figures.profit_loss is not None,
+            profit_derived=figures.profit_derived,
             daily_profit_loss=daily_profit_loss,
             daily_return=daily_return,
             unit_nav=unit_nav,
