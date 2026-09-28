@@ -161,7 +161,7 @@ function ItemCard({
         </View>
       </View>
 
-      <Field label="修正持有金额（可选）" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" />
+      <Field label="修正持有金额" value={marketValue} onChangeText={setMarketValue} keyboardType="numeric" placeholder="请输入修正后的持有金额" />
       <View style={{ flexDirection: 'row' }}>
         <View style={{ flex: 1, marginRight: 6 }}>
           <Button
