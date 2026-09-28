@@ -83,7 +83,7 @@ export function HoldingsTable({ items }: { items: PositionItem[] }) {
         sub: `${item.fund_code} · ${formatMoney(item.market_value)}`,
       })}
       columns={COLUMNS}
-      hint="点表头排序（再点切换升/降） · 左右滑动查看其它列 · 占比与收益由后端在查询时计算，不落库"
+      hint="点表头排序（再点切换升/降） · 左右滑动查看其它列"
     />
   );
 }

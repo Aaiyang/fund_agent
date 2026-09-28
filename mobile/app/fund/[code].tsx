@@ -129,10 +129,6 @@ export default function FundDetailScreen() {
             <Stat label="基金经理" value={detail.data.manager_name ?? '--'} tone="muted" />
             <Stat label="规模" value={detail.data.asset_size ?? '--'} tone="muted" />
           </View>
-          <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 4 }}>
-            来源 {detail.data.source ?? '--'} · 数据截止 {formatDate(detail.data.source_as_of)} · 抓取于{' '}
-            {formatDateTime(detail.data.nav_fetched_at ?? detail.data.updated_at)}
-          </Text>
             <Text style={{ fontSize: 12, color: theme.primary, marginTop: 10 }}>前十大重仓股 ›</Text>
           </Pressable>
         </Card>

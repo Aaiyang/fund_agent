@@ -75,7 +75,7 @@ export function WatchlistTable({
         label: (item) => (pendingCode === item.fund_code ? '删除中' : '删除'),
         onPress: (item) => onRemove(item.fund_code),
       }}
-      hint="点表头排序（再点切换升/降） · 左右滑动查看其它列 · 橙色日期表示净值未更新 · 当日涨幅待估值接口接入"
+      hint="点表头排序（再点切换升/降） · 左右滑动查看其它列 · 橙色日期表示净值未更新"
     />
   );
 }

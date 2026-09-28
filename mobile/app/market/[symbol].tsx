@@ -122,7 +122,7 @@ export default function MarketScreen() {
           <Stat label="昨收" value={formatPrice(data?.prev_close)} tone="muted" />
         </View>
         <Text style={{ fontSize: 11, color: theme.textFaint }}>
-          行情时间 {data?.quote_time ?? '--'} · 停留页面期间每 30 秒刷新
+          行情时间 {data?.quote_time ?? '--'}
         </Text>
       </Card>
 
@@ -155,12 +155,12 @@ export default function MarketScreen() {
         {isMinute ? (
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
             {mode === 'fiveday'
-              ? `最近 5 个交易日、每天 ${Math.round((intraday.data?.total ?? 0) / 5)} 个分钟点，虚线是 ${formatPrice(intraday.data?.prev_close)}（窗口前一日收盘）`
+              ? `最近 5 个交易日，虚线是 ${formatPrice(intraday.data?.prev_close)}（窗口前一日收盘）`
               : `分时为最近一个交易日的分钟线，虚线是昨收 ${formatPrice(intraday.data?.prev_close)}`}
           </Text>
         ) : (
           <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
-            {`${HISTORY[period].label} ${history.data?.total ?? 0} 根，点选看单根行情，超出一屏可左右拖动`}
+            {'点选看单根行情，超出一屏可左右拖动'}
           </Text>
         )}
       </Card>

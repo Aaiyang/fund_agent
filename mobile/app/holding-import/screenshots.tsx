@@ -93,7 +93,7 @@ export default function ScreenshotImportScreen() {
       <Card>
         <SectionTitle title={`截图（${images.length}/${MAX_IMAGES}）`} />
         <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
-          支持多张：系统会按基金代码去重合并，单张失败不影响其余结果。原图仅临时保存，识别或确认后自动删除，不写入数据库。
+          支持多张：按基金代码去重合并，单张失败不影响其余结果。
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {images.map((image) => (

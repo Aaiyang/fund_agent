@@ -26,7 +26,7 @@ export default function ProfileScreen() {
   const history = useImportHistory();
 
   function confirmSignOut() {
-    confirmAction('退出登录', '退出后需要重新登录，且此前签发的刷新令牌会失效。', () =>
+    confirmAction('退出登录', '退出后需要重新登录。', () =>
       void signOut().then(() => router.replace('/login')),
     );
   }
@@ -90,9 +90,6 @@ export default function ProfileScreen() {
 
       <Card>
         <Button label="退出登录" variant="danger" onPress={confirmSignOut} />
-        <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 10 }}>
-          持仓截图只作为临时文件用于识别，确认或取消后由后端删除，不写入数据库。
-        </Text>
       </Card>
     </Screen>
   );

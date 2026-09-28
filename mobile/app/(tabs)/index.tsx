@@ -53,9 +53,6 @@ export default function HoldingsScreen() {
             ))}
             <NavTab accent label="+ 添加账户" onPress={() => router.push('/account/add')} />
           </ScrollView>
-          <Text style={{ fontSize: 11, color: theme.textFaint }}>
-            共 {accounts.data?.total ?? 0} 个账户 · 切换账户只影响下方统计与列表
-          </Text>
           <ScrollView
             ref={tapeRef}
             horizontal

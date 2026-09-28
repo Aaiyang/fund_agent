@@ -61,9 +61,6 @@ export default function FundHoldingsScreen() {
                   披露期 {data.quarter ?? '--'}
                   {data.previous_quarter ? ` · 对比 ${data.previous_quarter}` : ''}
                 </Text>
-                <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }}>
-                  持仓为季度披露，涨幅为个股行情，页面停留期间每 30 秒刷新一次
-                </Text>
                 {items.length === 0 ? (
                   <EmptyState title="暂无重仓股披露" hint="该基金尚未公布定期报告的股票持仓" />
                 ) : (

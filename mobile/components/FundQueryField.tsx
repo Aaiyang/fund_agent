@@ -64,8 +64,8 @@ export function FundQueryField({
               {search.isFetching
                 ? '搜索中…'
                 : search.isError
-                  ? '搜索请求失败，可直接提交，由后端识别'
-                  : '没有匹配项，也可直接提交，由后端识别'}
+                  ? '搜索请求失败，可直接提交'
+                  : '没有匹配项，也可直接提交'}
             </Text>
           ) : null}
           {suggestions.map((item) => (

@@ -35,9 +35,6 @@ export default function ImportReviewScreen() {
             return (
               <Card>
                 <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>正在识别截图…</Text>
-                <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 6 }}>
-                  识别在后台 Worker 中执行，页面会自动刷新结果。
-                </Text>
                 <LoadingState />
               </Card>
             );
