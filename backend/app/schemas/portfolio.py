@@ -3,8 +3,9 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.analytics.positions import Direction
 from app.schemas.base import BaseResponse, clean_required_text
 
 
@@ -88,12 +89,13 @@ class PositionItem(BaseModel):
     position_ratio: float | None = None
     nav_date: date | None = None
     is_updated: bool = False
+    # 首次购买确认日: the earliest BUY when there is a ledger, else whatever the
+    # snapshot recorded. 持有天数 counts from it.
     purchase_date: date | None = None
-    purchase_after_cutoff: bool = False
-    # The session whose NAV the purchase was priced against, derived from the
-    # cutoff; 持有天数 counts from it.
-    settlement_date: date | None = None
     holding_days: int | None = None
+    # How many BUY/SELL rows the shares and cost above were projected from.
+    # Non-zero means 同步持仓 may no longer restate them.
+    trade_count: int = 0
     created_at: datetime | None = None
     version: int = 1
     updated_at: datetime | None = None
@@ -126,22 +128,22 @@ class PortfolioSummaryResponse(BaseResponse):
 
 
 class PositionUpsertRequest(BaseModel):
-    """Manual create/update of a position snapshot (partial allowed).
+    """同步持仓: restate what a holdings screen shows (partial allowed).
 
-    份额 and 平均成本净值 are deliberately absent: both follow from 持有金额 plus
-    the NAV the purchase settled on, so accepting them by hand would let a
-    stale guess override the arithmetic.
+    平均成本净值 is not accepted — it is always 持仓成本 ÷ 份额. On a fund with a
+    BUY/SELL ledger the service also drops 份额/成本/收益 here, because those
+    belong to the trade records and a snapshot must not undo them.
     """
 
     account_id: int
+    shares: float | None = Field(default=None, ge=0)
     cost_amount: float | None = Field(default=None, ge=0)
     market_value: float | None = Field(default=None, ge=0)
     profit_loss: float | None = None
-    purchase_date: date | None = None
-    purchase_after_cutoff: bool | None = None
-    reset: list[Literal["cost_amount", "profit_loss"]] = Field(
+    purchase_date: date | None = Field(default=None, description="首次购买确认日，持有天数从这天算")
+    reset: list[Literal["shares", "cost_amount", "profit_loss"]] = Field(
         default_factory=list,
-        description="把这些字段改回系统推算：清空已存值，之后由确认日净值推出",
+        description="把这些字段清空，回到由其余两格推算",
     )
     expected_version: int | None = Field(
         default=None,
@@ -149,25 +151,48 @@ class PositionUpsertRequest(BaseModel):
     )
 
 
-class PositionPreviewResponse(BaseResponse):
-    """GET /portfolio/positions/preview: what a purchase date implies."""
+class TradeCreateRequest(BaseModel):
+    """加减仓: record one purchase or redemption."""
+
+    account_id: int
+    direction: Direction
+    trade_date: date = Field(description="提交订单的那天")
+    after_cutoff: bool = Field(default=False, description="是否 15:00 后提交，决定用哪一场净值")
+    amount: float | None = Field(default=None, gt=0, description="买入金额（含申购费）")
+    shares: float | None = Field(default=None, gt=0, description="卖出份额")
+    fee: float | None = Field(default=None, ge=0, description="申购费/赎回费")
+
+    @model_validator(mode="after")
+    def _order_carries_its_own_unit(self) -> "TradeCreateRequest":
+        """A buy is sized in money and a sell in shares; neither is inferable."""
+        if self.direction == "BUY" and self.amount is None:
+            raise ValueError("买入需要填写金额")
+        if self.direction == "SELL" and self.shares is None:
+            raise ValueError("卖出需要填写份额")
+        return self
+
+
+class TradePreviewResponse(BaseResponse):
+    """GET .../trades/preview: what this order would do to the holding."""
 
     fund_code: str
-    purchase_date: date
-    purchase_after_cutoff: bool
-    settlement_date: date
-    holding_days: int
-    # The two NAVs the estimate is made of, with the day each was published on
-    # so a missing row reads as "还没有那天的净值" instead of a silent blank.
-    settled_nav: float | None = None
-    settled_nav_date: date | None = None
+    direction: Direction
+    trade_date: date
+    after_cutoff: bool
+    # The session the order is priced against and its NAV. The two dates differ
+    # whenever the cutoff or a weekend moved the order along.
+    confirm_date: date
+    confirm_nav: float
+    confirm_nav_date: date
     unit_nav: float | None = None
     nav_date: date | None = None
-    shares: float | None = None
-    cost_amount: float | None = None
-    average_cost_nav: float | None = None
-    profit_loss: float | None = None
-    profit_loss_rate: float | None = None
+    order_shares: float
+    order_amount: float
+    fee: float
+    shares_before: float
+    cost_before: float
+    shares_after: float
+    cost_after: float
 
 
 class PositionDeleteResponse(BaseModel):

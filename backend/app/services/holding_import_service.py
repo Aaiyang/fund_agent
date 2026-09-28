@@ -230,8 +230,6 @@ class HoldingImportService:
         if "purchase_date" in fields:
             value = fields["purchase_date"]
             item.purchase_date = value if isinstance(value, date) else None
-        if "purchase_after_cutoff" in fields:
-            item.purchase_after_cutoff = bool(fields["purchase_after_cutoff"])
         if user_action is not None:
             item.user_action = user_action
 
@@ -246,7 +244,6 @@ class HoldingImportService:
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
             purchase_date=item.purchase_date,
-            purchase_after_cutoff=item.purchase_after_cutoff,
             confidence=item.confidence or 0.5,
         )
         validated = validate_draft_item(draft_item)
@@ -307,7 +304,6 @@ class HoldingImportService:
                 item.matched_fund_code,
                 expected_version=None,
                 purchase_date=None if keep else item.purchase_date,
-                purchase_after_cutoff=None if keep else item.purchase_after_cutoff,
                 **fields,
             )
             if position is None:
@@ -435,7 +431,6 @@ class HoldingImportService:
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
             purchase_date=item.purchase_date,
-            purchase_after_cutoff=item.purchase_after_cutoff,
             confidence=item.confidence,
             validation_status=item.validation_status,
             validation_issues=issues,

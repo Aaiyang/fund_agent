@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.analytics.positions import LedgerRow
 from app.core.database import get_async_session
 from app.models.holding_import import HoldingImport, HoldingImportItem
 from app.models.portfolio import PortfolioAccount, PortfolioPosition, Transaction
@@ -201,7 +202,6 @@ class PortfolioRepository:
         market_value: float | None = None,
         profit_loss: float | None = None,
         purchase_date: date | None = None,
-        purchase_after_cutoff: bool | None = None,
         reset: Sequence[str] = (),
     ) -> PortfolioPosition | None:
         """Insert or update a position with optimistic locking.
@@ -217,9 +217,7 @@ class PortfolioRepository:
             average_cost_nav: Cost per unit NAV.
             market_value: Current market value.
             profit_loss: Accumulated profit/loss.
-            purchase_date: When the purchase was confirmed.
-            purchase_after_cutoff: Whether it was confirmed after 15:00, which
-                moves the applicable NAV to the next session.
+            purchase_date: 首次购买确认日, the day 持有天数 counts from.
             reset: Column names to blank out after applying the values above,
                 returning each figure to its derived path.
 
@@ -245,7 +243,6 @@ class PortfolioRepository:
                     market_value=market_value,
                     profit_loss=profit_loss,
                     purchase_date=purchase_date,
-                    purchase_after_cutoff=purchase_after_cutoff or False,
                     version=1,
                     updated_at=utc_now(),
                     created_at=utc_now(),
@@ -271,7 +268,6 @@ class PortfolioRepository:
                 "market_value": market_value,
                 "profit_loss": profit_loss,
                 "purchase_date": purchase_date,
-                "purchase_after_cutoff": purchase_after_cutoff,
             }
             for key, value in supplied.items():
                 if value is not None:
@@ -327,6 +323,55 @@ class PortfolioRepository:
             result = await session.execute(statement)
             return list(result.scalars().all())
 
+    async def ledger_rows(self, user_id: int, account_id: int | None = None) -> dict[tuple[int, str], list[LedgerRow]]:
+        """Group every BUY/SELL row by (account, fund) in trade order.
+
+        The whole ledger in one read: projecting a fund means walking every one
+        of its rows, because a partial sell carries cost out at the average the
+        holding was carried at. An OPENING row is the snapshot the ledger was
+        started from and adds like a buy. Adjustment rows are excluded — they
+        record a snapshot overwrite, not a trade.
+        """
+        async with get_async_session() as session:
+            statement = (
+                select(Transaction)
+                .where(
+                    col(Transaction.user_id) == user_id,
+                    col(Transaction.transaction_type).in_(("OPENING", "BUY", "SELL")),
+                )
+                .order_by(col(Transaction.trade_date), col(Transaction.id))
+            )
+            if account_id is not None:
+                statement = statement.where(col(Transaction.account_id) == account_id)
+            result = await session.execute(statement)
+            grouped: dict[tuple[int, str], list[LedgerRow]] = {}
+            for row in result.scalars().all():
+                grouped.setdefault((row.account_id, row.fund_code), []).append(
+                    LedgerRow(
+                        kind="SELL" if row.transaction_type == "SELL" else "BUY",
+                        shares=row.shares or 0.0,
+                        amount=row.amount or 0.0,
+                    )
+                )
+            return grouped
+
+    async def earliest_confirm_date(self, user_id: int, account_id: int, fund_code: str) -> date | None:
+        """The first purchase's confirm day, which is where 持有天数 starts."""
+        async with get_async_session() as session:
+            statement = (
+                select(col(Transaction.confirm_date))
+                .where(
+                    col(Transaction.user_id) == user_id,
+                    col(Transaction.account_id) == account_id,
+                    col(Transaction.fund_code) == fund_code,
+                    col(Transaction.transaction_type).in_(("OPENING", "BUY")),
+                    col(Transaction.confirm_date).is_not(None),
+                )
+                .order_by(col(Transaction.confirm_date))
+                .limit(1)
+            )
+            return (await session.execute(statement)).scalar_one_or_none()
+
     async def add_transaction(
         self,
         user_id: int,
@@ -334,6 +379,7 @@ class PortfolioRepository:
         fund_code: str,
         transaction_type: str,
         trade_date: date,
+        confirm_date: date | None = None,
         shares: float | None = None,
         nav: float | None = None,
         amount: float | None = None,
@@ -349,6 +395,7 @@ class PortfolioRepository:
                 fund_code=fund_code,
                 transaction_type=transaction_type,
                 trade_date=trade_date,
+                confirm_date=confirm_date,
                 shares=shares,
                 nav=nav,
                 amount=amount,

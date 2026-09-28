@@ -114,7 +114,6 @@ class ImportRepository:
                         profit_loss=item.profit_loss,
                         profit_loss_rate=item.profit_loss_rate,
                         purchase_date=item.purchase_date,
-                        purchase_after_cutoff=item.purchase_after_cutoff,
                         confidence=item.confidence,
                         validation_status=item.validation_status,
                         validation_issues=item.validation_issues,

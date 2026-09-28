@@ -18,11 +18,20 @@ from app.schemas.portfolio import (
     PortfolioSummaryResponse,
     PositionDeleteResponse,
     PositionItem,
-    PositionPreviewResponse,
     PositionUpsertRequest,
     PositionsResponse,
+    TradeCreateRequest,
+    TradePreviewResponse,
 )
-from app.services.portfolio_service import AccountNotFoundError, PositionConflictError, portfolio_service
+from app.analytics.positions import Direction
+from app.services.portfolio_service import (
+    AccountNotFoundError,
+    NavNotPublishedError,
+    PositionConflictError,
+    TradeInputError,
+    TradeTooLargeError,
+    portfolio_service,
+)
 
 router = APIRouter()
 
@@ -58,21 +67,67 @@ async def list_positions(
     return PositionsResponse(items=items, total=len(items))
 
 
-@router.get("/positions/preview", response_model=PositionPreviewResponse)
+@router.get("/positions/{fund_code}/trades/preview", response_model=TradePreviewResponse)
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["portfolio"][0])
-async def preview_position(
+async def preview_trade(
     request: Request,
-    fund_code: str = Query(min_length=6, max_length=6),
-    purchase_date: date = Query(description="买入确认日期（提交当日的自然日）"),
-    after_cutoff: bool = Query(default=False, description="是否 15:00 后提交，决定用哪一场净值"),
-    market_value: float | None = Query(default=None, ge=0),
+    fund_code: str,
+    account_id: int = Query(gt=0),
+    direction: Direction = Query(description="BUY 或 SELL"),
+    trade_date: date = Query(description="提交订单的那天"),
+    after_cutoff: bool = Query(default=False, description="是否 15:00 后提交"),
+    amount: float | None = Query(default=None, gt=0),
+    shares: float | None = Query(default=None, gt=0),
+    fee: float | None = Query(default=None, ge=0),
     identity: AuthIdentity = Depends(get_current_identity),
-) -> PositionPreviewResponse:
-    """Estimate 份额/成本/收益 for a purchase date, without writing anything.
+) -> TradePreviewResponse:
+    """Price an order on its confirm day and show the resulting holding.
 
-    Declared before `/positions/{fund_code}` so the literal path wins.
+    Declared before ``POST /positions/{fund_code}/trades`` in spirit but on a
+    distinct path, so no literal segment can be swallowed by the fund code.
     """
-    return await portfolio_service.preview_position(fund_code, purchase_date, after_cutoff, market_value)
+    try:
+        return await portfolio_service.preview_trade(
+            identity.user_id, account_id, fund_code, direction, trade_date, after_cutoff, amount, shares, fee
+        )
+    except AccountNotFoundError as e:
+        raise HTTPException(status_code=404, detail="account_not_found") from e
+    except NavNotPublishedError as e:
+        raise HTTPException(status_code=409, detail="nav_not_published") from e
+    except TradeInputError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/positions/{fund_code}/trades", response_model=PositionItem)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["portfolio"][0])
+async def record_trade(
+    request: Request,
+    fund_code: str,
+    payload: TradeCreateRequest,
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> PositionItem:
+    """Record a purchase or redemption and re-project the holding from the ledger."""
+    try:
+        return await portfolio_service.record_trade(
+            identity.user_id,
+            payload.account_id,
+            fund_code,
+            payload.direction,
+            payload.trade_date,
+            payload.after_cutoff,
+            amount=payload.amount,
+            shares=payload.shares,
+            fee=payload.fee,
+        )
+    except AccountNotFoundError as e:
+        raise HTTPException(status_code=404, detail="account_not_found") from e
+    except NavNotPublishedError as e:
+        logger.info("trade_nav_not_published", user_id=identity.user_id, fund_code=e.fund_code)
+        raise HTTPException(status_code=409, detail="nav_not_published") from e
+    except TradeInputError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except TradeTooLargeError as e:
+        raise HTTPException(status_code=422, detail=f"shares_exceed_holding:{e.held}") from e
 
 
 @router.get("/positions/{fund_code}", response_model=PositionItem)
@@ -105,10 +160,12 @@ async def upsert_position(
     payload: PositionUpsertRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionItem:
-    """Create or update a position snapshot (manual entry, spec 3.7.1).
+    """同步持仓: restate what the holdings screen shows (spec 3.7.1).
 
     Updates require `expected_version`; a stale version returns 409 so a
-    concurrent screenshot import can never silently overwrite user edits.
+    concurrent screenshot import can never silently overwrite user edits. On a
+    fund with a trade ledger, 份额/成本/收益 are dropped by the service — only
+    持有金额 and 首次购买日期 come through this door.
     """
     try:
         return await portfolio_service.upsert_position(
@@ -116,11 +173,11 @@ async def upsert_position(
             payload.account_id,
             fund_code,
             expected_version=payload.expected_version,
+            shares=payload.shares,
             cost_amount=payload.cost_amount,
             market_value=payload.market_value,
             profit_loss=payload.profit_loss,
             purchase_date=payload.purchase_date,
-            purchase_after_cutoff=payload.purchase_after_cutoff,
             reset=payload.reset,
         )
     except AccountNotFoundError as e:

@@ -36,11 +36,13 @@ class PortfolioAccount(BaseModel, table=True):
 
 
 class PortfolioPosition(BaseModel, table=True):
-    """Current holdings snapshot for one fund inside one account.
+    """Current holdings for one fund inside one account.
 
-    Snapshot semantics: imports and manual edits overwrite this row and bump
-    `version`; derived metrics (rates, daily P/L, ratio) are computed at query
-    time, never stored.
+    ``shares`` and ``cost_amount`` are a projection of the fund's BUY/SELL
+    ledger whenever that ledger has rows — the trade write recomputes both.
+    Without a ledger they are whatever 同步持仓 recorded. ``market_value`` is
+    always the snapshot figure, so correcting it never touches the ledger.
+    Derived metrics (rates, daily P/L, ratio) are computed at query time.
     """
 
     __tablename__ = "portfolio_position"  # pyright: ignore[reportAssignmentType]
@@ -57,10 +59,11 @@ class PortfolioPosition(BaseModel, table=True):
     profit_loss: float | None = Field(default=None)
 
     # When the purchase was confirmed. Funds price an order at that day's NAV
-    # before 15:00 and the next session's after, so the cutoff side is stored
-    # rather than a clock time the user would have to guess at.
+    # before 15:00 and the next session's after, so the cutoff is resolved into
+    # this date at write time instead of being stored as a clock time the user
+    # would have to guess at. With a ledger it is the earliest BUY's confirm
+    # day, which is where 持有天数 counts from.
     purchase_date: date | None = Field(default=None)
-    purchase_after_cutoff: bool = Field(default=False)
 
     # Optimistic lock — concurrent import vs manual edit returns 409, never silent overwrite
     version: int = Field(default=1)
@@ -75,9 +78,10 @@ class PortfolioPosition(BaseModel, table=True):
 class Transaction(BaseModel, table=True):
     """Transaction or adjustment record.
 
-    First-phase writes are audit-only: IMPORT_ADJUSTMENT rows produced by
-    confirmed holdings imports. BUY/SELL/DIVIDEND/MANUAL_ADJUSTMENT exist as
-    types for manual records and future features.
+    BUY and SELL rows are the ledger a position is projected from, so they
+    carry the resolved ``confirm_date`` and the NAV the units were priced at.
+    IMPORT_ADJUSTMENT and MANUAL_ADJUSTMENT rows are audit-only: they record
+    what a snapshot overwrite replaced and never move the projection.
     """
 
     id: int | None = Field(default=None, primary_key=True)
@@ -86,6 +90,9 @@ class Transaction(BaseModel, table=True):
     fund_code: str = Field(max_length=12, index=True)
     transaction_type: str = Field(max_length=30)
     trade_date: date = Field(index=True)
+    # The session the order was priced against: trade_date, or the next one
+    # when it was submitted after 15:00 or on a non-trading day.
+    confirm_date: date | None = Field(default=None)
     shares: float | None = Field(default=None)
     nav: float | None = Field(default=None)
     amount: float | None = Field(default=None)

@@ -71,11 +71,9 @@ class HoldingImportItem(BaseModel, table=True):
     profit_loss: float | None = Field(default=None)
     profit_loss_rate: float | None = Field(default=None)
     # When the holding was bought, corrected by the user on the review page.
-    # Defaults to the import day before the 15:00 cutoff: a holdings screenshot
-    # shows no trade date, and confirming without a date would leave 持有天数
-    # and the cost estimate blank forever.
+    # Defaults to the import day: a holdings screenshot shows no trade date, and
+    # confirming without one would leave 持有天数 blank forever.
     purchase_date: date | None = Field(default=None)
-    purchase_after_cutoff: bool = Field(default=False)
 
     confidence: float | None = Field(default=None)
     validation_status: str = Field(default="pending", max_length=30)

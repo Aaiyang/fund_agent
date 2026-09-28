@@ -5,14 +5,22 @@ from stored snapshots + latest NAVs — never persisted, so they can't drift
 (MVP spec 12.8). All future agents/tools must go through this service.
 """
 
-import asyncio
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
 from app.analytics import period_return, window_return
-from app.analytics.positions import position_figures
+from app.analytics.positions import (
+    Direction,
+    LedgerRow,
+    OrderDelta,
+    price_buy,
+    price_sell,
+    position_figures,
+    project_ledger,
+)
 from app.analytics.returns import NavPoint
 from app.analytics.settlement import settlement_date
 from app.core.logging import logger
@@ -24,7 +32,7 @@ from app.schemas.portfolio import (
     AccountItem,
     PortfolioSummary,
     PositionItem,
-    PositionPreviewResponse,
+    TradePreviewResponse,
     TransactionItem,
 )
 from app.utils.clock import business_today
@@ -45,6 +53,38 @@ class AccountNameConflictError(Exception):
         """Keep the offending name so the route can echo it back."""
         super().__init__(name)
         self.name = name
+
+
+class NavNotPublishedError(Exception):
+    """The confirm day has no NAV yet, so an order cannot become shares."""
+
+    def __init__(self, fund_code: str, confirm_date: date) -> None:
+        """Carry both halves of the answer so the form can explain the wait."""
+        super().__init__(f"{fund_code} has no published NAV at or before {confirm_date}")
+        self.fund_code = fund_code
+        self.confirm_date = confirm_date
+
+
+class TradeInputError(Exception):
+    """The order is missing the figure its direction needs."""
+
+
+class TradeTooLargeError(Exception):
+    """Selling more shares than the ledger holds would drive it negative."""
+
+    def __init__(self, held: float) -> None:
+        """Keep the current holding so the route can say how much is sellable."""
+        super().__init__(f"only {held} shares held")
+        self.held = held
+
+
+@dataclass(frozen=True)
+class _PricedOrder:
+    """The session an order was priced against, with the NAV that did it."""
+
+    confirm_date: date
+    nav: float
+    nav_date: date
 
 
 _WEEKLY_DAYS = 7
@@ -139,12 +179,10 @@ class PortfolioService:
         positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in positions) or 0.0
         histories = await self._recent_history([position.fund_code for position in positions])
-        settled_navs = await self._settled_navs(positions)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
         items = []
         for position in positions:
-            items.append(
-                await self._position_item(position, total_value, histories.get(position.fund_code), settled_navs)
-            )
+            items.append(await self._position_item(position, total_value, histories.get(position.fund_code), ledger))
         return items
 
     async def get_position(self, user_id: int, account_id: int, fund_code: str) -> PositionItem | None:
@@ -156,8 +194,8 @@ class PortfolioService:
         siblings = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in siblings)
         histories = await self._recent_history([fund_code])
-        settled_navs = await self._settled_navs([position])
-        return await self._position_item(position, total_value, histories.get(fund_code), settled_navs)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+        return await self._position_item(position, total_value, histories.get(fund_code), ledger)
 
     async def upsert_position(
         self,
@@ -166,24 +204,31 @@ class PortfolioService:
         fund_code: str,
         expected_version: int | None = None,
         purchase_date: date | None = None,
-        purchase_after_cutoff: bool | None = None,
         reset: Sequence[str] = (),
         **fields: float | None,
     ) -> PositionItem:
         """Create or update a position snapshot with optimistic locking.
+
+        A fund with a BUY/SELL ledger only accepts 持有金额 and 首次购买日期 from
+        here: 份额 and 持仓成本 belong to the ledger, and letting a snapshot
+        overwrite them would silently undo recorded trades.
 
         Raises:
             AccountNotFoundError: unknown or foreign account → HTTP 404.
             PositionConflictError: version mismatch → HTTP 409 upstream.
         """
         await self.ensure_account(user_id, account_id)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+        if ledger.get((account_id, fund_code)):
+            for owned in ("cost_amount", "profit_loss"):
+                fields.pop(owned, None)
+                reset = [name for name in reset if name != owned]
         updated = await portfolio_repository.upsert_position(
             user_id,
             account_id,
             fund_code,
             expected_version,
             purchase_date=purchase_date,
-            purchase_after_cutoff=purchase_after_cutoff,
             reset=reset,
             **fields,
         )
@@ -210,41 +255,162 @@ class PortfolioService:
         account_positions = await portfolio_repository.list_positions(user_id, account_id)
         total_value = sum(p.market_value or 0.0 for p in account_positions)
         histories = await self._recent_history([fund_code])
-        settled_navs = await self._settled_navs([updated])
-        return await self._position_item(updated, total_value, histories.get(fund_code), settled_navs)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+        return await self._position_item(updated, total_value, histories.get(fund_code), ledger)
 
-    async def preview_position(
-        self, fund_code: str, purchase_date: date, after_cutoff: bool, market_value: float | None = None
-    ) -> PositionPreviewResponse:
-        """What a purchase date implies, before anything is written.
+    @staticmethod
+    async def _price_order(fund_code: str, trade_date: date, after_cutoff: bool) -> _PricedOrder:
+        """Resolve which session an order was priced against, and its NAV.
 
-        The entry form prices a holding from the confirmation-day NAV, so the
-        arithmetic has to run server-side where the NAV history lives; the
-        figures here are the estimate alone and never include overrides the
-        user typed into 手动修正.
+        Raises:
+            NavNotPublishedError: the fund has no NAV at or before the confirm
+                day, so the order cannot be turned into shares yet.
         """
-        settled = settlement_date(purchase_date, after_cutoff)
+        confirm = settlement_date(trade_date, after_cutoff)
+        row = await fund_repository.get_nav_on_or_before(fund_code, confirm)
+        if row is None or not row.unit_nav:
+            raise NavNotPublishedError(fund_code, confirm)
+        return _PricedOrder(confirm_date=confirm, nav=row.unit_nav, nav_date=row.nav_date)
+
+    @staticmethod
+    def _opening_row(position: PortfolioPosition | None) -> LedgerRow | None:
+        """The snapshot a ledger has to start from, when there was one first.
+
+        Recording a purchase on a fund that arrived as a holdings screenshot
+        used to reset its basis to that single order: the snapshot said 1019.19
+        and the ledger said 1000. Carrying the snapshot in as an opening row
+        makes the new order an addition to what he already held.
+        """
+        if position is None or (position.shares is None and position.cost_amount is None):
+            return None
+        return LedgerRow(kind="BUY", shares=position.shares or 0.0, amount=position.cost_amount or 0.0)
+
+    def _projection_rows(self, position: PortfolioPosition | None, rows: list[LedgerRow]) -> list[LedgerRow]:
+        """Rows the holding is projected from, opening balance included.
+
+        Both the preview and the write run through here, so the numbers shown
+        before saving are the numbers saving produces.
+        """
+        if rows:
+            return rows
+        opening = self._opening_row(position)
+        return [opening] if opening else []
+
+    async def preview_trade(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        direction: Direction,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None = None,
+        shares: float | None = None,
+        fee: float | None = None,
+    ) -> TradePreviewResponse:
+        """What this order would do to the holding, before writing anything."""
+        await self.ensure_account(user_id, account_id)
+        priced = await self._price_order(fund_code, trade_date, after_cutoff)
+        position = await portfolio_repository.get_position(user_id, account_id, fund_code)
+        rows = (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
+        delta = self._order_delta(direction, priced.nav, amount, shares, fee)
         latest = await fund_repository.get_latest_nav(fund_code)
-        settled_row = await fund_repository.get_nav_on_or_before(fund_code, settled)
-        unit_nav = latest.unit_nav if latest else None
-        settled_nav = settled_row.unit_nav if settled_row else None
-        figures = position_figures(market_value=market_value, unit_nav=unit_nav, settled_nav=settled_nav)
-        return PositionPreviewResponse(
-            fund_code=fund_code,
-            purchase_date=purchase_date,
-            purchase_after_cutoff=after_cutoff,
-            settlement_date=settled,
-            holding_days=max((business_today() - settled).days, 0),
-            settled_nav=settled_nav,
-            settled_nav_date=settled_row.nav_date if settled_row else None,
-            unit_nav=unit_nav,
-            nav_date=latest.nav_date if latest else None,
-            shares=figures.shares,
-            cost_amount=figures.cost_amount,
-            average_cost_nav=figures.average_cost_nav,
-            profit_loss=figures.profit_loss,
-            profit_loss_rate=figures.profit_loss_rate,
+        return self._trade_preview(
+            fund_code,
+            direction,
+            trade_date,
+            after_cutoff,
+            priced,
+            self._projection_rows(position, rows),
+            delta,
+            latest,
         )
+
+    async def record_trade(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        direction: Direction,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None = None,
+        shares: float | None = None,
+        fee: float | None = None,
+    ) -> PositionItem:
+        """Write one BUY/SELL row and re-project the holding from the ledger.
+
+        The position's 份额/成本 are overwritten from the whole ledger rather
+        than nudged by a delta, so a fund always reads back the same way no
+        matter what order its rows arrived in.
+        """
+        await self.ensure_account(user_id, account_id)
+        priced = await self._price_order(fund_code, trade_date, after_cutoff)
+        delta = self._order_delta(direction, priced.nav, amount, shares, fee)
+        position = await portfolio_repository.get_position(user_id, account_id, fund_code)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+        rows = self._projection_rows(position, ledger.get((account_id, fund_code), []))
+        held = project_ledger(rows).shares
+        if direction == "SELL" and delta.shares > held:
+            raise TradeTooLargeError(held)
+
+        if not ledger.get((account_id, fund_code)) and len(rows) == 1:
+            # Persist the opening balance the preview priced against, so the
+            # next trade projects from the same baseline rather than losing it.
+            await portfolio_repository.add_transaction(
+                user_id=user_id,
+                account_id=account_id,
+                fund_code=fund_code,
+                transaction_type="OPENING",
+                trade_date=position.purchase_date if position and position.purchase_date else priced.confirm_date,
+                confirm_date=position.purchase_date if position else None,
+                shares=rows[0].shares,
+                amount=rows[0].amount,
+                source="position_snapshot",
+            )
+        await portfolio_repository.add_transaction(
+            user_id=user_id,
+            account_id=account_id,
+            fund_code=fund_code,
+            transaction_type=direction,
+            trade_date=trade_date,
+            confirm_date=priced.confirm_date,
+            shares=delta.shares,
+            nav=priced.nav,
+            amount=delta.amount,
+            fee=delta.fee,
+            source="manual",
+        )
+        totals = project_ledger(
+            (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
+        )
+        latest = await fund_repository.get_latest_nav(fund_code)
+        await portfolio_repository.upsert_position(
+            user_id,
+            account_id,
+            fund_code,
+            None,
+            shares=totals.shares,
+            cost_amount=totals.cost_amount,
+            market_value=totals.shares * latest.unit_nav if latest and latest.unit_nav else None,
+            purchase_date=await portfolio_repository.earliest_confirm_date(user_id, account_id, fund_code),
+            # Whatever a snapshot left in these two columns describes the old
+            # holding, not the one this ledger now adds up to.
+            reset=["average_cost_nav", "profit_loss"],
+        )
+        logger.info(
+            "trade_recorded",
+            user_id=user_id,
+            account_id=account_id,
+            fund_code=fund_code,
+            direction=direction,
+            confirm_date=priced.confirm_date.isoformat(),
+            shares=delta.shares,
+        )
+        position = await self.get_position(user_id, account_id, fund_code)
+        if position is None:  # the account and position both exist by now
+            raise AssertionError(f"position vanished after trade on {fund_code}")
+        return position
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """Remove a position and write an audit adjustment."""
@@ -274,17 +440,17 @@ class PortfolioService:
         latest_at: datetime | None = None
         # One batched read instead of a per-position NAV query.
         latest_navs = await fund_repository.get_latest_navs([position.fund_code for position in positions])
-        settled_navs = await self._settled_navs(positions)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
 
         for position in positions:
             summary.total_market_value += position.market_value or 0.0
-            key = self._settlement_key(position)
+            rows = ledger.get((position.account_id, position.fund_code), [])
+            totals = project_ledger(rows) if rows else None
             figures = position_figures(
                 market_value=position.market_value,
-                cost_amount=position.cost_amount,
-                profit_loss=position.profit_loss,
+                cost_amount=totals.cost_amount if totals else position.cost_amount,
+                profit_loss=None if totals else position.profit_loss,
                 unit_nav=latest_navs[position.fund_code].unit_nav if position.fund_code in latest_navs else None,
-                settled_nav=settled_navs.get(key) if key else None,
             )
             summary.total_cost += figures.cost_amount or 0.0
             summary.total_profit_loss += figures.profit_loss or 0.0
@@ -352,57 +518,85 @@ class PortfolioService:
         )
 
     @staticmethod
-    def _settlement_key(position: PortfolioPosition) -> tuple[str, date] | None:
-        """(基金代码, 适用净值日) when the row says when it was bought."""
-        if position.purchase_date is None:
-            return None
-        return position.fund_code, settlement_date(position.purchase_date, position.purchase_after_cutoff)
+    def _order_delta(
+        direction: Direction, nav: float, amount: float | None, shares: float | None, fee: float | None
+    ) -> OrderDelta:
+        """Turn the figure the user gave into ledger units at this day's NAV.
 
-    async def _settled_navs(self, positions: list[PortfolioPosition]) -> dict[tuple[str, date], float]:
-        """Confirmation-day NAVs for the rows that need a cost estimate.
-
-        A snapshot that already carries 持仓成本 or 持有收益 can be answered
-        without a price, so those are skipped. The remaining lookups run
-        concurrently: each is an indexed single-row read, so the fan-out costs
-        less than lining them up.
+        Raises:
+            TradeInputError: 买入 without an amount or 卖出 without a share
+                count. Neither can be guessed — one buys an unknown quantity,
+                the other sells an unknown part of the holding.
         """
-        wanted: dict[tuple[str, date], None] = {}
-        for position in positions:
-            key = self._settlement_key(position)
-            if (
-                key is not None
-                and key not in wanted
-                and position.cost_amount is None
-                and position.profit_loss is None
-                and position.market_value is not None
-            ):
-                wanted[key] = None
-        rows = await asyncio.gather(
-            *(fund_repository.get_nav_on_or_before(fund_code, settled) for fund_code, settled in wanted)
+        charge = fee or 0.0
+        if direction == "BUY":
+            if not amount:
+                raise TradeInputError("买入需要填写金额")
+            return price_buy(nav, amount, charge)
+        if not shares:
+            raise TradeInputError("卖出需要填写份额")
+        return price_sell(nav, shares, charge)
+
+    @staticmethod
+    def _trade_preview(
+        fund_code: str,
+        direction: Direction,
+        trade_date: date,
+        after_cutoff: bool,
+        priced: _PricedOrder,
+        rows: list[LedgerRow],
+        delta: OrderDelta,
+        latest: FundNav | None,
+    ) -> TradePreviewResponse:
+        """Assemble the before/after the trade form shows next to its inputs.
+
+        The "after" state re-runs the projection with the new row appended, so
+        the preview and the write can never disagree about what a partial sell
+        does to the cost basis.
+        """
+        before = project_ledger(rows)
+        after = project_ledger([*rows, LedgerRow(kind=direction, shares=delta.shares, amount=delta.amount)])
+        return TradePreviewResponse(
+            fund_code=fund_code,
+            direction=direction,
+            trade_date=trade_date,
+            after_cutoff=after_cutoff,
+            confirm_date=priced.confirm_date,
+            confirm_nav=priced.nav,
+            confirm_nav_date=priced.nav_date,
+            unit_nav=latest.unit_nav if latest else None,
+            nav_date=latest.nav_date if latest else None,
+            order_shares=delta.shares,
+            order_amount=delta.amount,
+            fee=delta.fee,
+            shares_before=before.shares,
+            cost_before=before.cost_amount,
+            shares_after=after.shares,
+            cost_after=after.cost_amount,
         )
-        return {key: row.unit_nav for key, row in zip(wanted, rows, strict=True) if row is not None and row.unit_nav}
 
     async def _position_item(
         self,
         position: PortfolioPosition,
         total_value: float,
         history: list[FundNav] | None = None,
-        settled_navs: dict[tuple[str, date], float] | None = None,
+        ledger: dict[tuple[int, str], list[LedgerRow]] | None = None,
     ) -> PositionItem:
         """Enrich a stored position with query-time derived metrics."""
         fund = await fund_repository.get_fund(position.fund_code)
         latest = await fund_repository.get_latest_nav(position.fund_code)
 
         unit_nav = latest.unit_nav if latest else None
-        key = self._settlement_key(position)
+        rows = (ledger or {}).get((position.account_id, position.fund_code), [])
+        totals = project_ledger(rows) if rows else None
         figures = position_figures(
             market_value=position.market_value,
-            shares=position.shares,
-            cost_amount=position.cost_amount,
-            average_cost_nav=position.average_cost_nav,
-            profit_loss=position.profit_loss,
+            shares=totals.shares if totals else position.shares,
+            cost_amount=totals.cost_amount if totals else position.cost_amount,
+            # With a ledger these two describe a holding that no longer exists.
+            average_cost_nav=None if totals else position.average_cost_nav,
+            profit_loss=None if totals else position.profit_loss,
             unit_nav=unit_nav,
-            settled_nav=(settled_navs or {}).get(key) if key else None,
         )
 
         daily_profit_loss = None
@@ -422,10 +616,9 @@ class PortfolioService:
         if total_value > 0 and position.market_value is not None:
             position_ratio = position.market_value / total_value
 
-        settled = holding_days = None
-        if position.purchase_date is not None:
-            settled = settlement_date(position.purchase_date, position.purchase_after_cutoff)
-            holding_days = max((business_today() - settled).days, 0)
+        # 首次购买确认日 is maintained by the ledger; without one it is whatever
+        # the snapshot recorded, and 持有天数 counts from it directly.
+        holding_days = max((business_today() - position.purchase_date).days, 0) if position.purchase_date else None
 
         return PositionItem(
             id=position.id,
@@ -438,8 +631,8 @@ class PortfolioService:
             market_value=position.market_value,
             profit_loss=figures.profit_loss,
             profit_loss_rate=figures.profit_loss_rate,
-            # The entry form folds these back into 手动修正 only when the row
-            # actually stores them; a derived figure must not look like a fact.
+            # The entry form keeps these off its inputs when set: a figure the
+            # row does not actually store must not look like a fact.
             cost_derived=figures.cost_derived,
             profit_derived=position.profit_loss is None and figures.profit_loss is not None,
             daily_profit_loss=daily_profit_loss,
@@ -451,9 +644,8 @@ class PortfolioService:
             nav_date=latest.nav_date if latest else None,
             is_updated=latest is not None,
             purchase_date=position.purchase_date,
-            purchase_after_cutoff=position.purchase_after_cutoff,
-            settlement_date=settled,
             holding_days=holding_days,
+            trade_count=len(rows),
             created_at=position.created_at,
             version=position.version or 1,
             updated_at=position.updated_at,

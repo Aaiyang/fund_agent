@@ -1,6 +1,6 @@
 """What a holdings row leaves open is derived here, never read as zero."""
 
-from app.analytics.positions import position_figures
+from app.analytics.positions import LedgerRow, position_figures, price_buy, price_sell, project_ledger
 from app.services.portfolio_service import period_profit_loss
 
 
@@ -11,19 +11,20 @@ class TestStoredFiguresWin:
         assert figures.profit_loss == 889.0
         assert not figures.cost_derived
 
-    def test_stored_cost_beats_the_nav_estimate(self) -> None:
-        figures = position_figures(market_value=900.5, cost_amount=1019.19, unit_nav=3.0372, settled_nav=3.3905)
-        assert figures.cost_amount == 1019.19
+    def test_a_cost_projected_from_the_ledger_is_not_recomputed(self) -> None:
+        figures = position_figures(market_value=23121.0, cost_amount=22232.0)
+        assert figures.cost_amount == 22232.0
+        assert figures.profit_loss == 889.0
 
-    def test_stored_profit_beats_the_nav_estimate(self) -> None:
-        figures = position_figures(market_value=900.5, profit_loss=-50.0, unit_nav=3.0372, settled_nav=3.3905)
-        assert figures.cost_amount == 950.5
-        assert figures.profit_loss == -50.0
+    def test_a_blank_row_stays_blank_rather_than_zero(self) -> None:
+        assert position_figures().profit_loss is None
 
 
 class TestCostFromTwoStoredFigures:
     def test_derives_from_amount_minus_profit(self) -> None:
-        assert position_figures(market_value=23121.0, profit_loss=889.0).cost_amount == 22232.0
+        figures = position_figures(market_value=23121.0, profit_loss=889.0)
+        assert figures.cost_amount == 22232.0
+        assert figures.cost_derived
 
     def test_derives_from_amount_minus_cost(self) -> None:
         assert position_figures(market_value=23121.0, cost_amount=22232.0).profit_loss == 889.0
@@ -38,31 +39,70 @@ class TestCostFromTwoStoredFigures:
         assert figures.profit_loss_rate is None
 
 
-class TestCostFromTheSettledNav:
-    def test_amount_is_discounted_back_to_the_confirmation_day(self) -> None:
-        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.3905)
-        assert figures.cost_amount is not None
-        assert round(figures.cost_amount, 2) == 1005.25
-        assert figures.cost_derived
+class TestLedgerProjection:
+    def test_buys_accumulate_shares_and_cost(self) -> None:
+        totals = project_ledger(
+            [
+                LedgerRow(kind="BUY", shares=1000.0, amount=3000.0),
+                LedgerRow(kind="BUY", shares=500.0, amount=1750.0),
+            ]
+        )
+        assert totals.shares == 1500.0
+        assert totals.cost_amount == 4750.0
 
-    def test_profit_is_the_gap_between_the_two_prices(self) -> None:
-        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.3905)
-        assert figures.profit_loss is not None
-        assert round(figures.profit_loss, 2) == -104.75
+    def test_a_partial_sell_carries_cost_out_at_the_average_held(self) -> None:
+        # Half of a 3000/1000 holding leaves 1500 of cost, not the sale price:
+        # the gain on the way out must stay in 持有收益, not vanish from the basis.
+        totals = project_ledger(
+            [
+                LedgerRow(kind="BUY", shares=1000.0, amount=3000.0),
+                LedgerRow(kind="SELL", shares=500.0, amount=2000.0),
+            ]
+        )
+        assert totals.shares == 500.0
+        assert totals.cost_amount == 1500.0
 
-    def test_a_purchase_after_the_last_published_nav_prices_at_cost(self) -> None:
-        figures = position_figures(market_value=900.5, unit_nav=3.0372, settled_nav=3.0372)
-        assert figures.cost_amount == 900.5
-        assert figures.profit_loss == 0.0
+    def test_a_full_exit_leaves_no_negative_remainder(self) -> None:
+        totals = project_ledger(
+            [
+                LedgerRow(kind="BUY", shares=1000.0, amount=3000.0),
+                LedgerRow(kind="SELL", shares=1000.0, amount=3300.0),
+            ]
+        )
+        assert totals.shares == 0.0
+        assert totals.cost_amount == 0.0
 
-    def test_nothing_without_the_day_it_settled_on(self) -> None:
-        assert position_figures(market_value=900.5, unit_nav=3.0372).cost_amount is None
+    def test_a_sell_without_any_holding_changes_nothing(self) -> None:
+        totals = project_ledger([LedgerRow(kind="SELL", shares=100.0, amount=400.0)])
+        assert totals.shares == 0.0
+        assert totals.cost_amount == 0.0
 
-    def test_nothing_without_a_current_price(self) -> None:
-        assert position_figures(market_value=900.5, settled_nav=3.3905).cost_amount is None
+    def test_rebuying_after_a_full_exit_starts_the_basis_again(self) -> None:
+        totals = project_ledger(
+            [
+                LedgerRow(kind="BUY", shares=1000.0, amount=3000.0),
+                LedgerRow(kind="SELL", shares=1000.0, amount=3300.0),
+                LedgerRow(kind="BUY", shares=200.0, amount=700.0),
+            ]
+        )
+        assert totals.shares == 200.0
+        assert totals.cost_amount == 700.0
 
-    def test_a_zero_nav_is_not_divided_by(self) -> None:
-        assert position_figures(market_value=900.5, unit_nav=0.0, settled_nav=3.3905).cost_amount is None
+
+class TestOrderPricing:
+    def test_the_subscription_fee_buys_nothing_but_stays_in_cost(self) -> None:
+        delta = price_buy(nav=3.0, amount=3030.0, fee=30.0)
+        assert delta.shares == 1000.0
+        assert delta.amount == 3030.0
+        assert delta.fee == 30.0
+
+    def test_a_redemption_credits_what_actually_arrived(self) -> None:
+        delta = price_sell(nav=3.2, shares=1000.0, fee=16.0)
+        assert delta.shares == 1000.0
+        assert delta.amount == 3184.0
+
+    def test_a_fee_free_buy_becomes_amount_over_nav(self) -> None:
+        assert price_buy(nav=2.5, amount=1000.0).shares == 400.0
 
 
 class TestSharesAndCostPerShare:
@@ -73,6 +113,11 @@ class TestSharesAndCostPerShare:
         shares = position_figures(market_value=23121.0, unit_nav=3.42).shares
         assert shares is not None
         assert round(shares, 2) == 6760.53
+
+    def test_nothing_without_a_price_to_divide_by(self) -> None:
+        assert position_figures(market_value=23121.0, unit_nav=None).shares is None
+        assert position_figures(market_value=23121.0, unit_nav=0.0).shares is None
+        assert position_figures(unit_nav=3.42).shares is None
 
     def test_average_cost_nav_follows_cost_over_shares(self) -> None:
         figures = position_figures(market_value=23121.0, cost_amount=22232.0, shares=7000.0)

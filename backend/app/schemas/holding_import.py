@@ -30,7 +30,6 @@ class ImportItemOut(BaseModel):
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
     purchase_date: date | None = None
-    purchase_after_cutoff: bool = False
     confidence: float | None = None
     validation_status: str
     validation_issues: list[str] = []
@@ -92,7 +91,6 @@ class ImportItemUpdateRequest(BaseModel):
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
     purchase_date: date | None = None
-    purchase_after_cutoff: bool | None = None
 
 
 class ImportConfirmResponse(BaseResponse):
