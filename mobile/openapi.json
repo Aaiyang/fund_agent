@@ -3376,6 +3376,7 @@
           "frequency": {
             "type": "string",
             "enum": [
+              "daily",
               "weekly",
               "biweekly",
               "monthly"
@@ -3451,6 +3452,7 @@
           "frequency": {
             "type": "string",
             "enum": [
+              "daily",
               "weekly",
               "biweekly",
               "monthly"
@@ -3540,6 +3542,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "daily",
                   "weekly",
                   "biweekly",
                   "monthly"

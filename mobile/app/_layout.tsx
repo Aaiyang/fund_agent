@@ -43,7 +43,12 @@ export default function RootLayout() {
         <Stack.Screen name="transactions" options={{ title: '交易记录' }} />
         <Stack.Screen name="nav-history" options={{ title: '净值详情' }} />
         <Stack.Screen name="fund/[code]" options={{ title: '基金详情' }} />
+        <Stack.Screen name="fund-holdings" options={{ title: '重仓股' }} />
+        <Stack.Screen name="market/[symbol]" options={{ title: '行情分析' }} />
         <Stack.Screen name="position/edit" options={{ title: '修改持仓' }} />
+        <Stack.Screen name="position/trade" options={{ title: '加减仓' }} />
+        <Stack.Screen name="auto-invest" options={{ title: '定投计划' }} />
+        <Stack.Screen name="profile/edit" options={{ title: '编辑资料' }} />
         <Stack.Screen name="account/index" options={{ title: '账户管理' }} />
         <Stack.Screen name="account/add" options={{ title: '添加账户' }} />
         <Stack.Screen name="account/[id]" options={{ title: '账户详情' }} />

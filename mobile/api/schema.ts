@@ -1289,7 +1289,7 @@ export interface components {
              * @default weekly
              * @enum {string}
              */
-            frequency?: "weekly" | "biweekly" | "monthly";
+            frequency?: "daily" | "weekly" | "biweekly" | "monthly";
             /**
              * Run Day
              * @description 每周几（1-7）或每月几号（1-31）
@@ -1323,7 +1323,7 @@ export interface components {
              * Frequency
              * @enum {string}
              */
-            frequency: "weekly" | "biweekly" | "monthly";
+            frequency: "daily" | "weekly" | "biweekly" | "monthly";
             /** Run Day */
             run_day: number;
             /**
@@ -1348,7 +1348,7 @@ export interface components {
             /** Amount */
             amount?: number | null;
             /** Frequency */
-            frequency?: ("weekly" | "biweekly" | "monthly") | null;
+            frequency?: ("daily" | "weekly" | "biweekly" | "monthly") | null;
             /** Run Day */
             run_day?: number | null;
             /** Start Date */

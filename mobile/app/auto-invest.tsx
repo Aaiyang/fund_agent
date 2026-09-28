@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
@@ -9,9 +10,11 @@ import { useAutoInvestPlans, useCreatePlan, useDeletePlan, useUpdatePlan, type A
 import { useUiStore } from '@/stores/ui';
 import { formatDate, formatMoney, localToday } from '@/utils/format';
 
-type Frequency = 'weekly' | 'biweekly' | 'monthly';
+type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly';
 
-const FREQUENCIES: { key: Frequency; label: string; max: number }[] = [
+/** `max` is the day-number range; 每天 has no day to name, so it has none. */
+const FREQUENCIES: { key: Frequency; label: string; max: number | null }[] = [
+  { key: 'daily', label: '每天', max: null },
   { key: 'weekly', label: '每周', max: 7 },
   { key: 'biweekly', label: '每两周', max: 7 },
   { key: 'monthly', label: '每月', max: 31 },
@@ -21,10 +24,12 @@ const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '�
 
 /** 定投计划: the schedule, and what it has already bought. */
 export default function AutoInvestScreen() {
+  const params = useLocalSearchParams<{ fund?: string; new?: string }>();
   const accountId = useUiStore((state) => state.accountId);
   const plans = useAutoInvestPlans(accountId);
   const create = useCreatePlan();
-  const [creating, setCreating] = useState(false);
+  // 持仓页的「同步定投」带着基金代码跳过来，直接展开新建表单。
+  const [creating, setCreating] = useState(params.new === '1');
 
   return (
     <Screen>
@@ -51,7 +56,9 @@ export default function AutoInvestScreen() {
         />
       </Card>
 
-      {creating ? <CreatePlan accountId={accountId} create={create} onDone={() => setCreating(false)} /> : null}
+      {creating ? (
+        <CreatePlan accountId={accountId} fundCode={params.fund ?? ''} create={create} onDone={() => setCreating(false)} />
+      ) : null}
     </Screen>
   );
 }
@@ -113,20 +120,22 @@ function PlanCard({ plan }: { plan: AutoInvestPlan }) {
 
 function CreatePlan({
   accountId,
+  fundCode: initialCode,
   create,
   onDone,
 }: {
   accountId: number | null;
+  fundCode: string;
   create: ReturnType<typeof useCreatePlan>;
   onDone: () => void;
 }) {
-  const [fundCode, setFundCode] = useState('');
+  const [fundCode, setFundCode] = useState(initialCode);
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('weekly');
   const [runDay, setRunDay] = useState('1');
   const [startDate, setStartDate] = useState(localToday());
   const [problem, setProblem] = useState<string | null>(null);
-  const max = FREQUENCIES.find((entry) => entry.key === frequency)?.max ?? 7;
+  const max = FREQUENCIES.find((entry) => entry.key === frequency)?.max ?? null;
 
   function submit() {
     setProblem(null);
@@ -142,8 +151,8 @@ function CreatePlan({
       setProblem('请填写每期扣款金额');
       return;
     }
-    const day = Number(runDay);
-    if (!Number.isInteger(day) || day < 1 || day > max) {
+    const day = max === null ? 1 : Number(runDay);
+    if (max !== null && (!Number.isInteger(day) || day < 1 || day > max)) {
       setProblem(`扣款日要在 1-${max} 之间`);
       return;
     }
@@ -176,13 +185,15 @@ function CreatePlan({
           <Chip key={entry.key} label={entry.label} active={frequency === entry.key} onPress={() => setFrequency(entry.key)} />
         ))}
       </View>
-      <Field
-        label={frequency === 'monthly' ? '每月几号扣款（1-31）' : '星期几扣款（1=周一 … 7=周日）'}
-        value={runDay}
-        onChangeText={setRunDay}
-        keyboardType="numeric"
-        placeholder={frequency === 'monthly' ? '请输入 1-31' : '请输入 1-7'}
-      />
+      {max !== null ? (
+        <Field
+          label={frequency === 'monthly' ? '每月几号扣款（1-31）' : '星期几扣款（1=周一 … 7=周日）'}
+          value={runDay}
+          onChangeText={setRunDay}
+          keyboardType="numeric"
+          placeholder={frequency === 'monthly' ? '请输入 1-31' : '请输入 1-7'}
+        />
+      ) : null}
       <Field label="开始日期" value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" />
       <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
         到期后打开这个页面就会补成买入流水；净值还没公布的那一期会留到下次。
@@ -194,6 +205,7 @@ function CreatePlan({
 }
 
 function describe(frequency: string, runDay: number): string {
+  if (frequency === 'daily') return '每天';
   if (frequency === 'monthly') return `每月 ${runDay} 号`;
   const label = FREQUENCIES.find((entry) => entry.key === frequency)?.label ?? frequency;
   return `${label} ${WEEKDAYS[runDay - 1] ?? runDay}`;

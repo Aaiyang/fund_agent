@@ -273,12 +273,14 @@ function PositionForm({
         <SectionTitle title="加减仓" action="定投计划" onAction={() => router.push('/auto-invest')} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {TRADE_ACTIONS.map((action) => (
-            <View key={action.operation} style={{ flexBasis: '50%', paddingHorizontal: 5, marginBottom: 10 }}>
+            <View key={action.label} style={{ flexBasis: '50%', paddingHorizontal: 5, marginBottom: 10 }}>
               <Button
                 label={action.label}
                 variant="secondary"
                 onPress={() =>
-                  router.push({ pathname: '/position/trade', params: { code: code, operation: action.operation } })
+                  action.operation
+                    ? router.push({ pathname: '/position/trade', params: { code, operation: action.operation } })
+                    : router.push({ pathname: '/auto-invest', params: { fund: code, new: 1 } })
                 }
               />
             </View>
@@ -289,11 +291,16 @@ function PositionForm({
   );
 }
 
-const TRADE_ACTIONS: { operation: 'BUY' | 'SELL' | 'AUTO_INVEST' | 'CONVERT'; label: string }[] = [
-  { operation: 'BUY', label: '同步加仓' },
-  { operation: 'SELL', label: '同步减仓' },
-  { operation: 'AUTO_INVEST', label: '同步定投' },
-  { operation: 'CONVERT', label: '同步转换' },
+/**
+ * The three one-off orders go to the trade form. 定投 does not: a debit is
+ * decided by the plan's schedule, not by a date typed here, so it opens the
+ * plan form with this fund already filled in.
+ */
+const TRADE_ACTIONS: { label: string; operation?: 'BUY' | 'SELL' | 'CONVERT' }[] = [
+  { label: '同步加仓', operation: 'BUY' },
+  { label: '同步减仓', operation: 'SELL' },
+  { label: '同步转换', operation: 'CONVERT' },
+  { label: '同步定投' },
 ];
 
 /** A fund with a BUY/SELL ledger has its money figures owned by the trade records. */
@@ -309,7 +316,7 @@ type SendColumn = 'market_value' | 'shares' | 'average_cost_nav' | 'profit_loss'
 const LABELS: Record<SendColumn, string> = {
   market_value: '持有金额',
   shares: '持有份额',
-  average_cost_nav: '持有成本',
+  average_cost_nav: '持有成本（净值）',
   profit_loss: '持有收益',
 };
 

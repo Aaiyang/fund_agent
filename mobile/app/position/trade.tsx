@@ -17,11 +17,14 @@ import { formatMoney, formatNumber, formatSignedMoney, localToday } from '@/util
 const OPERATIONS: { key: TradeOperation; label: string; verb: string; fee: string; byMoney: boolean }[] = [
   { key: 'BUY', label: '加仓', verb: '确认加仓', fee: '申购费（可选）', byMoney: true },
   { key: 'SELL', label: '减仓', verb: '确认减仓', fee: '赎回费（可选）', byMoney: false },
-  { key: 'AUTO_INVEST', label: '定投', verb: '确认定投', fee: '申购费（可选）', byMoney: true },
   { key: 'CONVERT', label: '转换', verb: '确认转换', fee: '转换费（可选）', byMoney: false },
 ];
 
-/** 加减仓: record one of the four operations a holdings app lets you do. */
+/**
+ * 加减仓: record one order. Which of the three this is comes from the button
+ * that opened the screen — re-asking here only let him change his mind after
+ * typing. 定投 is not one of them: its date and amount come from a plan.
+ */
 export default function TradeScreen() {
   const params = useLocalSearchParams<{ code?: string; account_id?: string; operation?: string }>();
   const viewAccount = useUiStore((state) => state.accountId);
@@ -36,9 +39,9 @@ export default function TradeScreen() {
     accounts.data?.items[0]?.id ??
     null;
   const existing = usePosition(accountId, fundCode.length === 6 ? fundCode : null);
-  const [operation, setOperation] = useState<TradeOperation>(
-    OPERATIONS.some((entry) => entry.key === params.operation) ? (params.operation as TradeOperation) : 'BUY',
-  );
+  const operation: TradeOperation = OPERATIONS.some((entry) => entry.key === params.operation)
+    ? (params.operation as TradeOperation)
+    : 'BUY';
 
   if (accounts.isPending || (accountId !== null && fundCode.length === 6 && existing.isPending)) {
     return (
@@ -56,7 +59,6 @@ export default function TradeScreen() {
       fundCode={fundCode}
       existing={existing.data ?? null}
       operation={operation}
-      onOperation={setOperation}
     />
   );
 }
@@ -68,7 +70,6 @@ function TradeForm({
   fundCode,
   existing,
   operation,
-  onOperation,
 }: {
   accounts: { id: number; name: string }[];
   accountId: number | null;
@@ -76,7 +77,6 @@ function TradeForm({
   fundCode: string;
   existing: PositionItem | null;
   operation: TradeOperation;
-  onOperation: (operation: TradeOperation) => void;
 }) {
   const record = useRecordTrade();
   const detail = useFundDetail(fundCode.length === 6 ? fundCode : null);
@@ -174,11 +174,7 @@ function TradeForm({
           dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
           note={`当前持有 ${formatNumber(held, 2)} 份 · 市值 ${formatMoney(existing?.market_value)}`}
         />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
-          {OPERATIONS.map((item) => (
-            <Chip key={item.key} label={item.label} active={operation === item.key} onPress={() => onOperation(item.key)} />
-          ))}
-        </View>
+        <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>{entry.label}</Text>
         <PurchaseDateFields
           value={tradeDate}
           onChangeText={setTradeDate}
@@ -187,7 +183,7 @@ function TradeForm({
         />
         {entry.byMoney ? (
           <Field
-            label={operation === 'AUTO_INVEST' ? '本期定投金额' : '买入金额'}
+            label="买入金额"
             value={amount}
             onChangeText={setAmount}
             keyboardType="numeric"
