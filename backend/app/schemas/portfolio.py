@@ -131,20 +131,20 @@ class PortfolioSummaryResponse(BaseResponse):
 class PositionUpsertRequest(BaseModel):
     """同步持仓: restate what a holdings screen shows (partial allowed).
 
-    平均成本净值 is not accepted — it is always 持仓成本 ÷ 份额. On a fund with a
-    BUY/SELL ledger the service also drops 份额/成本/收益 here, because those
-    belong to the trade records and a snapshot must not undo them.
+    持仓成本 and 平均成本净值 are not inputs — both follow from 持有金额 minus
+    持有收益, and a stored cost would otherwise outrank a profit he restates.
+    On a fund with a BUY/SELL ledger the service also drops 份额/收益 here,
+    because those belong to the trade records.
     """
 
     account_id: int
     shares: float | None = Field(default=None, ge=0)
-    cost_amount: float | None = Field(default=None, ge=0)
     market_value: float | None = Field(default=None, ge=0)
     profit_loss: float | None = None
     purchase_date: date | None = Field(default=None, description="首次购买确认日，持有天数从这天算")
-    reset: list[Literal["shares", "cost_amount", "profit_loss"]] = Field(
+    reset: list[Literal["shares", "profit_loss"]] = Field(
         default_factory=list,
-        description="把这些字段清空，回到由其余两格推算",
+        description="把这些字段清空，回到由其余字段推算",
     )
     expected_version: int | None = Field(
         default=None,

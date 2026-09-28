@@ -185,7 +185,6 @@ async def upsert_position(
             fund_code,
             expected_version=payload.expected_version,
             shares=payload.shares,
-            cost_amount=payload.cost_amount,
             market_value=payload.market_value,
             profit_loss=payload.profit_loss,
             purchase_date=payload.purchase_date,
