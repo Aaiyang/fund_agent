@@ -14,16 +14,26 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUiStore } from '@/stores/ui';
 import { formatMoney, formatNumber, formatSignedMoney, localToday } from '@/utils/format';
 
-const OPERATIONS: { key: TradeOperation; label: string; verb: string; fee: string; byMoney: boolean }[] = [
-  { key: 'BUY', label: '加仓', verb: '确认加仓', fee: '申购费（可选）', byMoney: true },
-  { key: 'SELL', label: '减仓', verb: '确认减仓', fee: '赎回费（可选）', byMoney: false },
-  { key: 'CONVERT', label: '转换', verb: '确认转换', fee: '转换费（可选）', byMoney: false },
+const OPERATIONS: {
+  key: TradeOperation;
+  label: string;
+  verb: string;
+  fee: string;
+  byMoney: boolean;
+  pickDate: boolean;
+  amountLabel: string;
+}[] = [
+  { key: 'BUY', label: '加仓', verb: '确认加仓', fee: '申购费（可选）', byMoney: true, pickDate: true, amountLabel: '买入金额' },
+  { key: 'SELL', label: '减仓', verb: '确认减仓', fee: '赎回费（可选）', byMoney: false, pickDate: true, amountLabel: '' },
+  { key: 'AUTO_INVEST', label: '定投', verb: '确认定投', fee: '申购费（可选）', byMoney: true, pickDate: false, amountLabel: '本期定投金额' },
+  { key: 'CONVERT', label: '转换', verb: '确认转换', fee: '转换费（可选）', byMoney: false, pickDate: true, amountLabel: '' },
 ];
 
 /**
- * 加减仓: record one order. Which of the three this is comes from the button
- * that opened the screen — re-asking here only let him change his mind after
- * typing. 定投 is not one of them: its date and amount come from a plan.
+ * 加减仓: record one order against the holding he already has. Which operation
+ * this is comes from the button that opened the screen — re-asking here only
+ * let him change his mind after typing. 定投 fixes its own day to today and
+ * prices before the cutoff, so it asks for an amount and nothing else.
  */
 export default function TradeScreen() {
   const params = useLocalSearchParams<{ code?: string; account_id?: string; operation?: string }>();
@@ -134,8 +144,8 @@ function TradeForm({
         fundCode: fundCode.trim(),
         account_id: accountId,
         operation,
-        trade_date: tradeDate.trim(),
-        after_cutoff: afterCutoff,
+        trade_date: entry.pickDate ? tradeDate.trim() : localToday(),
+        after_cutoff: entry.pickDate ? afterCutoff : false,
         amount: entry.byMoney ? Number(amount) : null,
         shares: entry.byMoney ? null : Number(shares),
         fee: fee.trim() === '' ? null : Number(fee),
@@ -175,15 +185,21 @@ function TradeForm({
           note={`当前持有 ${formatNumber(held, 2)} 份 · 市值 ${formatMoney(existing?.market_value)}`}
         />
         <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>{entry.label}</Text>
-        <PurchaseDateFields
-          value={tradeDate}
-          onChangeText={setTradeDate}
-          afterCutoff={afterCutoff}
-          onAfterCutoff={setAfterCutoff}
-        />
+        {entry.pickDate ? (
+          <PurchaseDateFields
+            value={tradeDate}
+            onChangeText={setTradeDate}
+            afterCutoff={afterCutoff}
+            onAfterCutoff={setAfterCutoff}
+          />
+        ) : (
+          <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>
+            本期扣款日 {tradeDate}，按 15:00 前的净值计算。
+          </Text>
+        )}
         {entry.byMoney ? (
           <Field
-            label="买入金额"
+            label={entry.amountLabel}
             value={amount}
             onChangeText={setAmount}
             keyboardType="numeric"

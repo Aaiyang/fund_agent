@@ -1,4 +1,3 @@
-import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
@@ -24,12 +23,10 @@ const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '�
 
 /** 定投计划: the schedule, and what it has already bought. */
 export default function AutoInvestScreen() {
-  const params = useLocalSearchParams<{ fund?: string; new?: string }>();
   const accountId = useUiStore((state) => state.accountId);
   const plans = useAutoInvestPlans(accountId);
   const create = useCreatePlan();
-  // 持仓页的「同步定投」带着基金代码跳过来，直接展开新建表单。
-  const [creating, setCreating] = useState(params.new === '1');
+  const [creating, setCreating] = useState(false);
 
   return (
     <Screen>
@@ -56,9 +53,7 @@ export default function AutoInvestScreen() {
         />
       </Card>
 
-      {creating ? (
-        <CreatePlan accountId={accountId} fundCode={params.fund ?? ''} create={create} onDone={() => setCreating(false)} />
-      ) : null}
+      {creating ? <CreatePlan accountId={accountId} create={create} onDone={() => setCreating(false)} /> : null}
     </Screen>
   );
 }
@@ -120,16 +115,14 @@ function PlanCard({ plan }: { plan: AutoInvestPlan }) {
 
 function CreatePlan({
   accountId,
-  fundCode: initialCode,
   create,
   onDone,
 }: {
   accountId: number | null;
-  fundCode: string;
   create: ReturnType<typeof useCreatePlan>;
   onDone: () => void;
 }) {
-  const [fundCode, setFundCode] = useState(initialCode);
+  const [fundCode, setFundCode] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('weekly');
   const [runDay, setRunDay] = useState('1');

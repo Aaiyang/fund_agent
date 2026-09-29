@@ -278,9 +278,7 @@ function PositionForm({
                 label={action.label}
                 variant="secondary"
                 onPress={() =>
-                  action.operation
-                    ? router.push({ pathname: '/position/trade', params: { code, operation: action.operation } })
-                    : router.push({ pathname: '/auto-invest', params: { fund: code, new: 1 } })
+                  router.push({ pathname: '/position/trade', params: { code, operation: action.operation } })
                 }
               />
             </View>
@@ -292,15 +290,16 @@ function PositionForm({
 }
 
 /**
- * The three one-off orders go to the trade form. 定投 does not: a debit is
- * decided by the plan's schedule, not by a date typed here, so it opens the
- * plan form with this fund already filled in.
+ * All four add to or take away from the holding that is already there. 定投 is
+ * one of them — a debit that already happened — but it fixes its own day to
+ * today, so it asks for an amount only. The recurring schedule lives on the
+ * 定投计划 page, reached from the card's own action.
  */
-const TRADE_ACTIONS: { label: string; operation?: 'BUY' | 'SELL' | 'CONVERT' }[] = [
+const TRADE_ACTIONS: { label: string; operation: 'BUY' | 'SELL' | 'AUTO_INVEST' | 'CONVERT' }[] = [
   { label: '同步加仓', operation: 'BUY' },
   { label: '同步减仓', operation: 'SELL' },
+  { label: '同步定投', operation: 'AUTO_INVEST' },
   { label: '同步转换', operation: 'CONVERT' },
-  { label: '同步定投' },
 ];
 
 /** A fund with a BUY/SELL ledger has its money figures owned by the trade records. */
