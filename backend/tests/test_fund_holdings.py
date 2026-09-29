@@ -27,7 +27,7 @@ US_LINE = (
 )
 
 
-def _holding(code: str, quarter: str, weight: float | None) -> FundExternalHolding:
+def _holding(code: str, quarter: str | None, weight: float | None) -> FundExternalHolding:
     return FundExternalHolding(fund_code="011452", stock_code=code, stock_name=code, weight=weight, quarter=quarter)
 
 

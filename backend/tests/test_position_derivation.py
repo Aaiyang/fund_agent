@@ -111,6 +111,7 @@ class TestCostFromTheCostPrice:
         assert figures.cost_amount is not None
         assert round(figures.cost_amount, 2) == 1019.19
         assert figures.cost_derived
+        assert figures.profit_loss is not None
         assert round(figures.profit_loss, 2) == -118.69
 
     def test_a_cost_the_row_stores_still_wins(self) -> None:
@@ -167,7 +168,9 @@ class TestPeriodProfitLoss:
         assert period_profit_loss(23121.0, 0.04) == 924.84
 
     def test_loss_window_returns_a_negative_amount(self) -> None:
-        assert period_profit_loss(23121.0, -0.02) < 0
+        loss = period_profit_loss(23121.0, -0.02)
+        assert loss is not None
+        assert loss < 0
 
     def test_none_when_either_side_is_missing(self) -> None:
         assert period_profit_loss(None, 0.04) is None

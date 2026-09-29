@@ -161,7 +161,7 @@ class TradeCreateRequest(BaseModel):
     operation: Operation
     trade_date: date = Field(description="提交订单的那天")
     after_cutoff: bool = Field(default=False, description="是否 15:00 后提交，决定用哪一场净值")
-    amount: float | None = Field(default=None, gt=0, description="买入/定投金额（含申购费）")
+    amount: float | None = Field(default=None, gt=0, description="买入/定投的成交金额")
     shares: float | None = Field(default=None, gt=0, description="卖出/转换份额")
     target_code: str | None = Field(default=None, min_length=6, max_length=6, description="转换目标基金")
 
