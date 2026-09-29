@@ -1941,23 +1941,6 @@
             }
           },
           {
-            "name": "fee",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Fee"
-            }
-          },
-          {
             "name": "target_code",
             "in": "query",
             "required": false,
@@ -6791,19 +6774,6 @@
             "title": "Shares",
             "description": "卖出/转换份额"
           },
-          "fee": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fee",
-            "description": "申购费/赎回费/转换费"
-          },
           "target_code": {
             "anyOf": [
               {
@@ -6924,10 +6894,6 @@
             "format": "date",
             "title": "Confirm Date"
           },
-          "fee": {
-            "type": "number",
-            "title": "Fee"
-          },
           "legs": {
             "items": {
               "$ref": "#/components/schemas/TradeLeg"
@@ -6942,7 +6908,6 @@
           "trade_date",
           "after_cutoff",
           "confirm_date",
-          "fee",
           "legs"
         ],
         "title": "TradePreviewResponse",

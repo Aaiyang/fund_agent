@@ -18,15 +18,14 @@ const OPERATIONS: {
   key: TradeOperation;
   label: string;
   verb: string;
-  fee: string;
   byMoney: boolean;
   pickDate: boolean;
   amountLabel: string;
 }[] = [
-  { key: 'BUY', label: '加仓', verb: '确认加仓', fee: '申购费（可选）', byMoney: true, pickDate: true, amountLabel: '买入金额' },
-  { key: 'SELL', label: '减仓', verb: '确认减仓', fee: '赎回费（可选）', byMoney: false, pickDate: true, amountLabel: '' },
-  { key: 'AUTO_INVEST', label: '定投', verb: '确认定投', fee: '申购费（可选）', byMoney: true, pickDate: false, amountLabel: '本期定投金额' },
-  { key: 'CONVERT', label: '转换', verb: '确认转换', fee: '转换费（可选）', byMoney: false, pickDate: true, amountLabel: '' },
+  { key: 'BUY', label: '加仓', verb: '确认加仓', byMoney: true, pickDate: true, amountLabel: '买入金额' },
+  { key: 'SELL', label: '减仓', verb: '确认减仓', byMoney: false, pickDate: true, amountLabel: '' },
+  { key: 'AUTO_INVEST', label: '定投', verb: '确认定投', byMoney: true, pickDate: false, amountLabel: '本期定投金额' },
+  { key: 'CONVERT', label: '转换', verb: '确认转换', byMoney: false, pickDate: true, amountLabel: '' },
 ];
 
 /**
@@ -93,7 +92,6 @@ function TradeForm({
   const entry = OPERATIONS.find((item) => item.key === operation) ?? OPERATIONS[0];
   const [amount, setAmount] = useState('');
   const [shares, setShares] = useState('');
-  const [fee, setFee] = useState('');
   const [targetCode, setTargetCode] = useState('');
   const [tradeDate, setTradeDate] = useState(localToday());
   const [afterCutoff, setAfterCutoff] = useState(false);
@@ -101,7 +99,6 @@ function TradeForm({
 
   const settledAmount = useDebouncedValue(amount);
   const settledShares = useDebouncedValue(shares);
-  const settledFee = useDebouncedValue(fee);
   const settledDate = useDebouncedValue(tradeDate);
   const settledTarget = useDebouncedValue(targetCode);
   const preview = useTradePreview({
@@ -112,7 +109,6 @@ function TradeForm({
     afterCutoff,
     amount: settledAmount.trim(),
     shares: settledShares.trim(),
-    fee: settledFee.trim(),
     targetCode: settledTarget.trim(),
   });
 
@@ -148,7 +144,6 @@ function TradeForm({
         after_cutoff: entry.pickDate ? afterCutoff : false,
         amount: entry.byMoney ? Number(amount) : null,
         shares: entry.byMoney ? null : Number(shares),
-        fee: fee.trim() === '' ? null : Number(fee),
         target_code: operation === 'CONVERT' ? targetCode.trim() : null,
       },
       {
@@ -224,7 +219,6 @@ function TradeForm({
             placeholder="请输入转入基金的 6 位代码"
           />
         ) : null}
-        <Field label={entry.fee} value={fee} onChangeText={setFee} keyboardType="numeric" placeholder="不填按 0 计算" />
         {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
       </Card>
 

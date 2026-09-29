@@ -37,9 +37,8 @@ export const queryKeys = {
     afterCutoff: boolean,
     amount: string,
     shares: string,
-    fee: string,
     target: string,
-  ) => ['portfolio', 'trade-preview', accountId, code, operation, day, afterCutoff, amount, shares, fee, target] as const,
+  ) => ['portfolio', 'trade-preview', accountId, code, operation, day, afterCutoff, amount, shares, target] as const,
 
   accounts: ['accounts'] as const,
   transactionsAll: ['transactions'] as const,

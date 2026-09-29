@@ -2649,11 +2649,6 @@ export interface components {
              */
             shares?: number | null;
             /**
-             * Fee
-             * @description 申购费/赎回费/转换费
-             */
-            fee?: number | null;
-            /**
              * Target Code
              * @description 转换目标基金
              */
@@ -2719,8 +2714,6 @@ export interface components {
              * Format: date
              */
             confirm_date: string;
-            /** Fee */
-            fee: number;
             /** Legs */
             legs: components["schemas"]["TradeLeg"][];
         };
@@ -4174,7 +4167,6 @@ export interface operations {
                 after_cutoff?: boolean;
                 amount?: number | null;
                 shares?: number | null;
-                fee?: number | null;
                 /** @description 转换目标基金 */
                 target_code?: string | null;
             };

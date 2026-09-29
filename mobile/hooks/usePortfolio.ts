@@ -67,10 +67,9 @@ export function useTradePreview(input: {
   afterCutoff: boolean;
   amount: string;
   shares: string;
-  fee: string;
   targetCode: string;
 }) {
-  const { accountId, fundCode, operation, tradeDate, afterCutoff, amount, shares, fee, targetCode } = input;
+  const { accountId, fundCode, operation, tradeDate, afterCutoff, amount, shares, targetCode } = input;
   const sized = operation === 'BUY' || operation === 'AUTO_INVEST' ? amount !== '' : shares !== '';
   const converted = operation !== 'CONVERT' || /^\d{6}$/.test(targetCode.trim());
   const ready =
@@ -88,7 +87,6 @@ export function useTradePreview(input: {
       afterCutoff,
       amount,
       shares,
-      fee,
       targetCode,
     ),
     queryFn: () =>
@@ -99,7 +97,6 @@ export function useTradePreview(input: {
         after_cutoff: afterCutoff,
         amount: amount === '' ? null : Number(amount),
         shares: shares === '' ? null : Number(shares),
-        fee: fee === '' ? null : Number(fee),
         target_code: operation === 'CONVERT' ? targetCode.trim() : null,
       }),
     enabled: ready,

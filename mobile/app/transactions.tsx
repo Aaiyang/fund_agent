@@ -66,7 +66,7 @@ export default function TransactionsScreen() {
                     {formatDate(item.trade_date)}
                     {item.confirm_date && item.confirm_date !== item.trade_date ? ` 确认 ${formatDate(item.confirm_date)}` : ''} ·
                     份额 {formatNumber(item.shares)} · 净值 {formatNumber(item.nav)} · 金额 {formatMoney(item.amount)}
-                    {item.fee !== null && item.fee !== undefined ? ` · 费用 ${formatMoney(item.fee)}` : ''}
+                    {item.fee ? ` · 费用 ${formatMoney(item.fee)}` : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
                     来源 {item.source}
