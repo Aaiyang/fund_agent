@@ -1,7 +1,9 @@
 """What a holdings row leaves open is derived here, never read as zero."""
 
+import pytest
+
 from app.analytics.positions import LedgerRow, position_figures, price_buy, price_sell, project_ledger
-from app.services.portfolio_service import period_profit_loss
+from app.services.portfolio_service import PortfolioService, TradeInputError, period_profit_loss
 
 
 class TestStoredFiguresWin:
@@ -103,6 +105,28 @@ class TestOrderPricing:
 
     def test_a_fee_free_buy_becomes_amount_over_nav(self) -> None:
         assert price_buy(nav=2.5, amount=1000.0).shares == 400.0
+
+
+class TestOrderDeltaFromTheService:
+    """The order screen hands over one figure: money for a buy, units for an exit."""
+
+    def test_the_whole_amount_buys_at_the_confirm_nav(self) -> None:
+        delta = PortfolioService._order_delta("BUY", 2.5, 1000.0, None)
+        assert delta.shares == 400.0
+        assert delta.amount == 1000.0
+
+    def test_a_sell_carries_the_units_and_what_they_are_worth(self) -> None:
+        delta = PortfolioService._order_delta("SELL", 3.2, None, 1000.0)
+        assert delta.shares == 1000.0
+        assert delta.amount == 3200.0
+
+    def test_a_buy_without_an_amount_is_refused_not_guessed(self) -> None:
+        with pytest.raises(TradeInputError):
+            PortfolioService._order_delta("BUY", 2.5, None, 400.0)
+
+    def test_a_sell_without_units_is_refused(self) -> None:
+        with pytest.raises(TradeInputError):
+            PortfolioService._order_delta("SELL", 2.5, 1000.0, None)
 
 
 class TestCostFromTheCostPrice:
