@@ -148,7 +148,7 @@ function CreatePlan({
       return;
     }
     if (amount.trim() === '' || Number(amount) <= 0) {
-      setProblem('请填写每期扣款金额');
+      setProblem('请填写每期定投金额');
       return;
     }
     const day = max === null ? 1 : Number(runDay);
@@ -179,7 +179,7 @@ function CreatePlan({
     <Card>
       <SectionTitle title="新建定投计划" />
       <Field label="基金代码" value={fundCode} onChangeText={setFundCode} keyboardType="numeric" placeholder="请输入基金代码" />
-      <Field label="每期扣款金额" value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="请输入金额" />
+      <Field label="每期定投金额" value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="请输入金额" />
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
         {FREQUENCIES.map((entry) => (
           <Chip key={entry.key} label={entry.label} active={frequency === entry.key} onPress={() => setFrequency(entry.key)} />
