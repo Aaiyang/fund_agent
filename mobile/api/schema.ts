@@ -2640,7 +2640,7 @@ export interface components {
             after_cutoff?: boolean;
             /**
              * Amount
-             * @description 买入/定投金额（含申购费）
+             * @description 买入/定投的成交金额
              */
             amount?: number | null;
             /**

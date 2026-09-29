@@ -266,7 +266,7 @@ function Preview({ query, byMoney }: { query: PreviewQuery; byMoney: boolean }) 
           <Card key={`${leg.fund_code}-${leg.direction}`}>
             <SectionTitle title={`${leg.fund_code} ${leg.direction === 'SELL' ? '转出' : '转入'}`} />
             <Row>
-              <Stat label={`确认日 ${data.confirm_date}`} value={formatNumber(leg.confirm_nav, 4)} tone="muted" />
+              <Stat label={`确认日净值（${data.confirm_date}）`} value={formatNumber(leg.confirm_nav, 4)} tone="muted" />
               <Stat
                 label={byMoney ? '得到份额' : '份额变动'}
                 value={formatSignedNumber(leg.shares_delta)}
