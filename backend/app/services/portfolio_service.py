@@ -284,19 +284,42 @@ class PortfolioService:
         return _PricedOrder(confirm_date=confirm, nav=row.unit_nav, nav_date=row.nav_date)
 
     @staticmethod
-    def _opening_row(position: PortfolioPosition | None) -> LedgerRow | None:
+    def _opening_row(position: PortfolioPosition | None, unit_nav: float | None) -> LedgerRow | None:
         """The snapshot a ledger has to start from, when there was one first.
 
         Recording a purchase on a fund that arrived as a holdings screenshot
         used to reset its basis to that single order: the snapshot said 1019.19
         and the ledger said 1000. Carrying the snapshot in as an opening row
         makes the new order an addition to what he already held.
-        """
-        if position is None or (position.shares is None and position.cost_amount is None):
-            return None
-        return LedgerRow(kind="BUY", shares=position.shares or 0.0, amount=position.cost_amount or 0.0)
 
-    def _projection_rows(self, position: PortfolioPosition | None, rows: list[LedgerRow]) -> list[LedgerRow]:
+        The seed is built from the *resolved* figures, not the stored columns:
+        a 按金额 snapshot keeps only 市值 and 收益, so its units and cost exist
+        nowhere until they are worked out. Reading the columns directly made
+        such a holding seed an opening of nothing, and the first 加仓 or 定投
+        then looked like it had cleared the position outright.
+        """
+        if position is None:
+            return None
+        figures = position_figures(
+            market_value=position.market_value,
+            shares=position.shares,
+            cost_amount=position.cost_amount,
+            average_cost_nav=position.average_cost_nav,
+            profit_loss=position.profit_loss,
+            unit_nav=unit_nav,
+        )
+        if not figures.shares:
+            return None
+        # A row with units but no cost and no profit has no basis to carry.
+        # Break-even is the only reading that does not invent a gain or a loss.
+        cost = figures.cost_amount if figures.cost_amount is not None else position.market_value
+        if cost is None:
+            return None
+        return LedgerRow(kind="BUY", shares=figures.shares, amount=cost)
+
+    def _projection_rows(
+        self, position: PortfolioPosition | None, rows: list[LedgerRow], unit_nav: float | None
+    ) -> list[LedgerRow]:
         """Rows the holding is projected from, opening balance included.
 
         Both the preview and the write run through here, so the numbers shown
@@ -304,7 +327,7 @@ class PortfolioService:
         """
         if rows:
             return rows
-        opening = self._opening_row(position)
+        opening = self._opening_row(position, unit_nav)
         return [opening] if opening else []
 
     @staticmethod
@@ -312,26 +335,31 @@ class PortfolioService:
         """The ledger one fund's holding is projected from."""
         return (await portfolio_repository.ledger_rows(user_id, account_id)).get((account_id, fund_code), [])
 
+    @staticmethod
+    async def _unit_nav(fund_code: str) -> float | None:
+        """The price the snapshot's 市值 is marked at, for the opening seed."""
+        latest = await fund_repository.get_latest_nav(fund_code)
+        return latest.unit_nav if latest and latest.unit_nav else None
+
     async def _planned_rows(
         self, user_id: int, account_id: int, fund_code: str
     ) -> tuple[PortfolioPosition | None, list[LedgerRow]]:
         """A fund's stored snapshot and its ledger, read together for pricing."""
         position = await portfolio_repository.get_position(user_id, account_id, fund_code)
-        return position, self._projection_rows(position, await self._rows_of(user_id, account_id, fund_code))
+        rows = await self._rows_of(user_id, account_id, fund_code)
+        return position, self._projection_rows(position, rows, await self._unit_nav(fund_code))
 
     async def _ensure_opening(self, user_id: int, account_id: int, fund_code: str, confirm: date) -> None:
         """Carry a snapshot holding into the ledger before the first row lands on it.
 
-        Recording a purchase on a fund that arrived as a holdings screenshot
-        used to reset its basis to that single order: the snapshot said 1019.19
-        and the ledger said 1000. The opening row makes the new order an
-        addition to what he already held — and it is what the preview priced
-        against, so both views of the fund agree.
+        This is the write side of ``_projection_rows``: whatever the preview
+        priced against is what gets persisted, so the two can never disagree
+        about whether the old holding survived the new order.
         """
         if await self._rows_of(user_id, account_id, fund_code):
             return
         position = await portfolio_repository.get_position(user_id, account_id, fund_code)
-        opening = self._opening_row(position)
+        opening = self._opening_row(position, await self._unit_nav(fund_code))
         if opening is None or position is None:
             return
         await portfolio_repository.add_transaction(
