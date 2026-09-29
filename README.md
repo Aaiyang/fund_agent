@@ -10,14 +10,16 @@
 
 当前产品形态是**个人基金管理应用**（需求与技术规范见 [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)），在第一阶段闭环之外保留了模板的 Agent 基础设施：
 
-- **基金数据** — AKShare 经 `FundDataProvider` 隔离采集，落库 PostgreSQL + Redis 热点缓存；区间收益/最大回撤/波动率由后端 Python 计算（`app/analytics`），不由 LLM 计算
+- **基金数据** — AKShare 采集基金净值与持仓披露，个股与指数行情走新浪/腾讯，统一在 `FundDataProvider` 等适配器后面隔离；基金净值（`fund_nav`）与指数收盘（`index_quote`）落库 PostgreSQL + 热点缓存，个股报价、K线/分时与重仓股披露只按需实时抓、不落库，抓不到就留空而不是补假数。区间收益/最大回撤/波动率由后端 Python 计算（`app/analytics`），不由 LLM 计算
 - **自选基金** — 搜索、加删、分组与组内排序，列表带最新净值、当日涨跌与持有标识
-- **持仓管理** — 多账户、资产汇总、派生指标查询时计算不落库、持仓修改带乐观锁（409）
+- **持仓管理** — 多账户与资产汇总；录入分两条互不打架的路径：**同步持仓**记第三方 App 上的快照（按金额或按份额两种口径各配一对数字），**加减仓**记加仓/减仓/定投/转换四笔操作，写进 `transaction` 流水账本。份额与持仓成本是流水的投影（卖出按持仓均价结转成本，不按卖出价），首次动账会先把当时的快照种成期初行；下单按 15:00 cutoff 落到确认日、用确认日净值定价，成交预览与写入同一套算法。派生指标查询时计算不落库；乐观锁 409、当日净值未公布 409、卖出超过持有 422
+- **定投计划** — 每天/每周/每两周/每月 + 扣款日，读计划列表时把到期未记的期数补成流水（幂等键去重），净值未出的那一期延后补
 - **持仓导入** — 手动录入与第三方 App 截图识别两条来源，统一 `HoldingImportProvider`；一律「解析 → 预览 → 用户确认 → 写入」，原图仅临时保存并在确认/失败后删除
+- **行情分析** — 基金详情页的净值走势与指数基准对比（指数收盘按缺口增量补库）、前十大重仓股与行业分布；个股/指数分析页的蜡烛图（日K/周K/月K）与分时/五日，行情侧全部实时抓上游、不落库
 - **后台任务** — Taskiq + Redis（无 Redis 时进程内兜底）、有界并发、幂等键与分布式锁、PostgreSQL 侧任务账本（状态/重试/错误）
 - **Agent 预留** — LangGraph 图、Checkpointer、LLM 服务、Langfuse 全部保留；`POST /api/v1/agent/chat` 返回 501，App 保留 Agent Tab
 - **可观测性与安全** — structlog、Prometheus 指标、JWT（Access + Refresh，登出可撤销）、slowapi 限流、输入清洗、detect-secrets
-- **前端** — `mobile/` Expo + React Native + Expo Router + TanStack Query + Zustand + SecureStore（Android / iOS / Web 同一套代码）；`frontend/` 为模板遗留的网页聊天端
+- **前端** — `mobile/` Expo + React Native + Expo Router + TanStack Query + Zustand + SecureStore（Android / iOS / Web 同一套代码，接口类型由后端 OpenAPI 生成）；`frontend/` 为模板遗留的网页聊天端
 
 ## 快速开始
 
@@ -32,8 +34,19 @@ make install                       # 安装依赖 + pre-commit hooks
 make migrate                       # 建表（需要本地 PostgreSQL）
 make dev                           # 启动开发服务器（端口 8000，Windows 走 run_local.py）
 make test                          # pytest 单测
+make check                         # ruff + pyright
 make worker                        # Taskiq worker（基金同步 + 截图识别，需 Redis）
 ```
+
+`make` 目标依赖 `uv`。机器上没有 `uv` 时，用已经建好的虚拟环境直接调用等价命令：
+
+```bash
+.venv/Scripts/python.exe scripts/run_local.py --host 0.0.0.0 --port 8000   # 启动（手机也能连）
+.venv/Scripts/python.exe -m alembic upgrade head                           # 迁移
+.venv/Scripts/python.exe -m pytest -q                                      # 单测
+```
+
+不要直接跑 `uvicorn app.main:app`：Windows 下 psycopg 的异步驱动需要 Selector 事件循环，`run_local.py` 里已经设好。也别长期依赖 `--reload`，本机 StatReload 会静默漏保存。
 
 打开 [http://localhost:8000/docs](http://localhost:8000/docs) 查看交互式 API 文档。
 
@@ -45,13 +58,13 @@ make worker                        # Taskiq worker（基金同步 + 截图识别
 cd mobile
 npm install
 cp .env.example .env               # EXPO_PUBLIC_API_BASE_URL
-npx expo start --web               # 浏览器版：http://localhost:8081
+npm run web                        # 浏览器版：http://localhost:8081
 npx expo run:android --device      # 真机调试（需 Android 设备与开发构建）
 ```
 
-真机访问后端必须使用电脑局域网 IP（例如 `http://192.168.1.10:8000/api/v1`），`localhost` 指向手机自身；同时要把该来源加进后端 `ALLOWED_ORIGINS`。
+真机访问后端必须使用电脑局域网 IP（例如 `http://192.168.1.10:8000/api/v1`），`localhost` 指向手机自身；同时要把该来源加进后端 `ALLOWED_ORIGINS`。`EXPO_PUBLIC_*` 是打包时内联的，改过 `.env` 要用 `npx expo start --web --clear` 重启才生效。
 
-`npm run generate:api` 会从运行中的后端拉取 OpenAPI 并重新生成 `api/schema.ts`，避免前后端类型漂移。
+`npm run generate:api` 会从运行中的后端拉取 OpenAPI 并重新生成 `api/schema.ts`，避免前后端类型漂移（改了后端接口就跑一次，需要后端在 8000 上）。
 
 ### 网页端（模板聊天界面）
 
@@ -87,27 +100,32 @@ npm run dev        # http://localhost:3000
 ```
 backend/             # FastAPI + LangGraph 后端（基金域）
   app/
-    api/v1/          # auth、chatbot、funds、watchlist、portfolio、accounts、
-                     #  transactions、holding-imports、agent（占位），汇总于 api.py
+    api/v1/          # auth、chatbot、funds、indexes、markets、watchlist、portfolio、
+                     #  accounts、transactions、holding-imports、auto-invest、agent，汇总于 api.py
     core/            # config / cache(Valkey+兜底) / database(异步引擎) / task_queue /
                      #  limiter / logging / metrics / middleware / observability / prompts
     models/          # SQLModel 模型（多词类名需显式 __tablename__）
     schemas/         # Pydantic 请求/响应模型 + 图状态
-    repositories/    # 异步数据访问（fund/portfolio/watchlist/import/job）
+    repositories/    # 异步数据访问（fund / portfolio / watchlist / import / job /
+                     #  index / auto_invest）
     services/        # 领域服务单例（fund / fund_sync / watchlist / portfolio /
-                     #  holding_import / memory / embeddings / session_naming / llm）
-    integrations/    # fund_data(AKShare Provider) 、holdings(手动/截图 Provider + Vision Adapter)
-    analytics/       # 纯函数金融指标（收益/回撤/波动率）
+                     #  holding_import / auto_invest / market / memory / embeddings /
+                     #  session_naming / llm）
+    integrations/    # fund_data（AKShare 基金、新浪与腾讯行情 + normalizer）、
+                     #  holdings（手动/截图 Provider + Vision Adapter）
+    analytics/       # 纯函数金融计算：收益/回撤/波动率、持仓投影与推导、
+                     #  15:00 确认日结算、定投到期日（金额一律不交给 LLM）
     workers/         # Taskiq 任务 + run_job 账本包装 + 周期调度
     utils/           # clock.py（时间口径唯一入口）、auth、sanitization…
     core/langgraph/  # Agent 图与工具
   alembic/           # 数据库迁移
-  tests/             # pytest 单测（纯函数与任务账本）
+  tests/             # pytest 单测（分析计算、结算与到期日程、各源 normalizer、任务账本）
   evals/             # LLM 评估框架（基于 Langfuse）
 mobile/              # Expo + React Native 客户端（四 Tab：持有/自选/Agent/我的）
   api/               # client + 由 OpenAPI 生成的 schema.ts
   hooks/ stores/ components/ utils/  # 查询 hooks、Zustand、UI 原语、格式化
-  app/               # Expo Router 路由文件
+  app/               # Expo Router 路由文件（持仓编辑、下单、定投计划、流水、
+                     #  重仓股、行情分析、导入等）
 frontend/            # 模板遗留网页聊天端（React 19 + Vinext）
 docs/ docs_zh/       # 项目文档（英/中）；docs/PROJECT_SPEC.md 为需求权威来源
 ```
@@ -137,6 +155,12 @@ docs/ docs_zh/       # 项目文档（英/中）；docs/PROJECT_SPEC.md 为需�
 
 **持仓截图识别一直是「识别失败」？**
 检查 `VISION_*` 与 `SILICONFLOW_API_KEY`：账号未开通该模型时上游会返回 `403 Model disabled`，批次会落到 `PARSE_FAILED` 并带上错误信息，原图仍会被清理，不影响已有持仓。
+
+**持仓份额和三方 App 上显示的对不上？**
+用「同步持仓 · 按金额填」时，份额是按 `持有金额 ÷ 最新净值` 推出来的，而金额是截图那一天的数，净值一动推算份额就会跟着偏。要准就用「按份额填」直接报份额；一旦记过加减仓流水，份额与持仓成本就以账本投影为准，快照改不动它们。
+
+**净值或行情一直不更新？**
+落库的基金净值由 worker 同步（`make worker`，或把 `FUND_HOT_SYNC_ENABLED` 打开做周期扫描）；没 Redis 时队列只在进程内执行，进程一退就不再更新。指数收盘在读取时按缺口增量补库，前十大重仓股、行业分布与个股分时/K 线每次进页面实时抓，不依赖 worker。
 
 **没有 Redis 能跑吗？**
 可以。缓存与锁退化为进程内实现，后台任务由 InMemoryBroker 在进程内执行；但跨进程互斥与「不随进程死亡的持久队列」需要 Redis + `make worker`。
