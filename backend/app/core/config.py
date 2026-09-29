@@ -240,14 +240,6 @@ class Settings:
         # Calendar dates (trade_date, nav freshness) follow the fund market, not the host tz
         self.FUND_BUSINESS_TZ = os.getenv("FUND_BUSINESS_TZ", "Asia/Shanghai")
 
-        # Vision (screenshot extraction) Configuration
-        self.VISION_ENABLED = os.getenv("VISION_ENABLED", "true").lower() in ("true", "1", "t", "yes")
-        self.VISION_BASE_URL = os.getenv("VISION_BASE_URL", "https://api.siliconflow.cn/v1")
-        self.VISION_API_KEY = os.getenv("VISION_API_KEY", os.getenv("SILICONFLOW_API_KEY", ""))
-        self.VISION_MODEL = os.getenv("VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct")
-        self.VISION_TIMEOUT_SECONDS = float(os.getenv("VISION_TIMEOUT_SECONDS", "120"))
-        self.VISION_MAX_TOKENS = int(os.getenv("VISION_MAX_TOKENS", "4096"))
-
         # Holding import Configuration
         self.HOLDING_IMPORT_MAX_IMAGES = int(os.getenv("HOLDING_IMPORT_MAX_IMAGES", "5"))
         self.HOLDING_IMPORT_MAX_IMAGE_MB = int(os.getenv("HOLDING_IMPORT_MAX_IMAGE_MB", "8"))

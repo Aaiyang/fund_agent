@@ -9,6 +9,7 @@ only as temporary files and are deleted after confirm/fail/cancel.
 import asyncio
 import io
 import time
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from app.models.holding_import import HoldingImport, HoldingImportItem
 from app.repositories.import_repository import import_repository
 from app.repositories.job_repository import job_repository
 from app.repositories.portfolio_repository import portfolio_repository
-from app.schemas.holding_import import ImportDetail, ImportItemOut
+from app.schemas.holding_import import ImportCandidate, ImportDetail, ImportItemOut
 from app.services.fund_service import fund_service
 from app.services.portfolio_service import portfolio_service
 from app.workers import SCREENSHOT_IMPORT_TASK
@@ -138,7 +139,7 @@ class HoldingImportService:
                 )
             )
         except Exception as e:
-            await self.mark_failed(import_id, f"vision_extraction_failed: {e}")
+            await self.mark_failed(import_id, f"ocr_extraction_failed: {e}")
             return
 
         screenshot_parse_duration_seconds.observe(time.monotonic() - started)
@@ -193,9 +194,28 @@ class HoldingImportService:
             if item.matched_fund_code:
                 current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
             item_outs.append(
-                self._item_out(item, current.market_value if current else None, current.version if current else None)
+                self._item_out(
+                    item,
+                    current.market_value if current else None,
+                    current.version if current else None,
+                    await self._candidates_for(item),
+                )
             )
         return self._detail(record, item_outs)
+
+    async def _candidates_for(self, item: HoldingImportItem) -> list[ImportCandidate]:
+        """The funds a name the parse could not settle on might still be.
+
+        A screenshot row whose name is truncated is usually several share
+        classes of one fund; listing them turns the fix into one tap instead of
+        making him look up and type a 6-digit code.
+        """
+        if item.matched_fund_code or not item.raw_fund_name:
+            return []
+        return [
+            ImportCandidate(fund_code=match.fund_code, fund_name=match.fund_name, score=match.score)
+            for match in await fund_service.match_fund_names(item.raw_fund_name)
+        ]
 
     async def update_item(
         self,
@@ -414,7 +434,10 @@ class HoldingImportService:
 
     @staticmethod
     def _item_out(
-        item: HoldingImportItem, current_market_value: float | None, current_version: int | None
+        item: HoldingImportItem,
+        current_market_value: float | None,
+        current_version: int | None,
+        candidates: Sequence[ImportCandidate] = (),
     ) -> ImportItemOut:
         """Map an item row to its output schema with diff fields."""
         raw_issues = item.validation_issues
@@ -437,6 +460,7 @@ class HoldingImportService:
             user_action=item.user_action,
             current_market_value=current_market_value,
             current_version=current_version,
+            candidates=list(candidates),
         )
 
     @staticmethod

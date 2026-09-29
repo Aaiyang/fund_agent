@@ -16,6 +16,14 @@ class ManualImportRequest(BaseModel):
     positions: list[ManualPositionInput]
 
 
+class ImportCandidate(BaseModel):
+    """One fund a screenshot name could still be, offered for one-tap choice."""
+
+    fund_code: str
+    fund_name: str
+    score: float
+
+
 class ImportItemOut(BaseModel):
     """One pending import row with diff fields for the confirm page."""
 
@@ -37,6 +45,10 @@ class ImportItemOut(BaseModel):
     # Diff preview: current holdings vs recognized vs after import
     current_market_value: float | None = None
     current_version: int | None = None
+    # Recomputed when a row is read, never stored: an unresolved name is
+    # usually several share classes of one fund, and the list has to reflect
+    # the register as it is now rather than as it was when the parse ran.
+    candidates: list[ImportCandidate] = []
 
 
 class ImportDetail(BaseModel):

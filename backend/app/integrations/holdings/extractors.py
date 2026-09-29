@@ -1,19 +1,26 @@
 """ScreenshotPositionExtractor: image → structured fields.
 
-Sits between the ScreenshotImportProvider and the Vision/OCR adapter so the
-provider stays business-logic-only (MVP spec 3.7.2 component split).
+Sits between the ScreenshotImportProvider and the OCR engine so the provider
+stays business-logic-only (MVP spec 3.7.2 component split): the engine reads
+pixels, this turns them into rows, and nothing above it knows which OCR
+library is installed.
 """
 
 import asyncio
 import hashlib
-from datetime import date
 from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.integrations.fund_data.normalizer import to_date, to_float
 from app.integrations.holdings.base import RawExtractedPosition
-from app.integrations.holdings.vision_adapter import vision_adapter
+from app.integrations.holdings.fields import to_positions
+from app.integrations.holdings.layout import build_layout
+from app.integrations.holdings.ocr import OcrUnavailableError, screenshot_ocr
+from app.integrations.holdings.rows import read_rows
+
+# ONNX Runtime already spreads one page over its threads; a second page in
+# parallel keeps the worker busy without queuing a third copy of the models.
+_CONCURRENCY = 2
 
 
 def image_hash(path: str) -> str:
@@ -22,7 +29,7 @@ def image_hash(path: str) -> str:
 
 
 class ScreenshotPositionExtractor:
-    """Extracts raw positions from screenshots via the vision adapter."""
+    """Extracts raw positions from screenshots with local OCR."""
 
     async def extract(self, image_paths: list[str]) -> tuple[list[RawExtractedPosition], list[str], str | None]:
         """Extract positions from all images.
@@ -31,51 +38,43 @@ class ScreenshotPositionExtractor:
             image_paths: Local temp file paths of uploaded screenshots.
 
         Returns:
-            (positions, image_hashes, error_message). Images that fail to
-            parse don't abort the batch — remaining results still return
-            (spec 3.7.2 multi-screenshot requirements); the first error is
-            reported alongside.
+            (positions, image_hashes, error_message). Images that fail to parse
+            don't abort the batch — remaining results still return (spec 3.7.2
+            multi-screenshot requirements); the first error is reported
+            alongside.
         """
-        positions: list[RawExtractedPosition] = []
         hashes: list[str] = []
-        errors: list[str] = []
-        seen_hashes: set[str] = set()
-
+        unique: list[str] = []
+        seen: set[str] = set()
         for path in image_paths:
             # Hashing reads the whole file: up to 8MB per screenshot, so it
             # must not run on the event loop.
             digest = await asyncio.to_thread(image_hash, path)
             hashes.append(digest)
-            if digest in seen_hashes:
+            if digest in seen:
                 logger.info("screenshot_duplicate_skipped", digest=digest)
                 continue
-            seen_hashes.add(digest)
+            seen.add(digest)
+            unique.append(path)
 
-            try:
-                rows = await vision_adapter.extract_positions(path)
-            except Exception as e:
-                logger.warning("screenshot_extraction_failed", path=path, error=str(e))
-                errors.append(f"{Path(path).name}: {e}")
-                continue
+        semaphore = asyncio.Semaphore(_CONCURRENCY)
 
-            for row in rows:
-                positions.append(
-                    RawExtractedPosition(
-                        fund_name=str(row.get("fund_name") or "").strip() or None,
-                        fund_code=str(row.get("fund_code") or "").strip() or None,
-                        market_value=to_float(row.get("market_value")),
-                        shares=to_float(row.get("shares")),
-                        cost_amount=to_float(row.get("cost_amount")),
-                        average_cost_nav=to_float(row.get("average_cost_nav")),
-                        profit_loss=to_float(row.get("profit_loss")),
-                        profit_loss_rate=to_float(row.get("profit_loss_rate")),
-                        daily_profit_loss=to_float(row.get("daily_profit_loss")),
-                        data_date=to_date(row.get("data_date")) or date.today(),
-                        confidence=to_float(row.get("confidence")) or 0.5,
-                    )
-                )
+        async def read(path: str) -> tuple[list[RawExtractedPosition], str | None]:
+            async with semaphore:
+                try:
+                    return await self._read_one(path), None
+                except OcrUnavailableError:
+                    # Every image would fail the same way; say it once, loudly,
+                    # instead of a batch of per-file noise.
+                    raise
+                except Exception as e:
+                    logger.warning("screenshot_extraction_failed", path=path, error=str(e))
+                    return [], f"{Path(path).name}: {e}"
 
-        error_message = "; ".join(errors) if errors else None
+        results = await asyncio.gather(*(read(path) for path in unique))
+        positions = [position for rows, _ in results for position in rows]
+        errors = [error for _, error in results if error]
+
         logger.info(
             "screenshot_extraction_batch_done",
             images=len(image_paths),
@@ -83,7 +82,20 @@ class ScreenshotPositionExtractor:
             errors=len(errors),
             max_images=settings.HOLDING_IMPORT_MAX_IMAGES,
         )
-        return positions, hashes, error_message
+        return positions, hashes, "; ".join(errors) if errors else None
+
+    async def _read_one(self, path: str) -> list[RawExtractedPosition]:
+        """One screenshot: OCR, then structure → rows → fields.
+
+        Raises:
+            OcrUnavailableError: the optional OCR extra is not installed.
+        """
+        page = await screenshot_ocr.read(path)
+        layout = build_layout(page)
+        rows = read_rows(page, layout)
+        if not rows:
+            logger.warning("screenshot_no_rows_detected", image=Path(path).name, blocks=len(page.blocks))
+        return to_positions(rows, layout)
 
 
 screenshot_position_extractor = ScreenshotPositionExtractor()

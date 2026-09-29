@@ -46,7 +46,7 @@ holding_imports_total = Counter(
 
 screenshot_parse_duration_seconds = Histogram(
     "screenshot_parse_duration_seconds",
-    "Time spent parsing holding screenshots (vision extraction)",
+    "Time spent parsing holding screenshots (local OCR)",
     buckets=[1.0, 5.0, 15.0, 30.0, 60.0, 120.0],
 )
 

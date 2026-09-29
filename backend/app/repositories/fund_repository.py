@@ -36,6 +36,16 @@ class FundRepository:
             result = await session.execute(select(Fund).where(col(Fund.fund_code) == fund_code))
             return result.scalar_one_or_none()
 
+    async def all_names(self) -> list[tuple[str, str]]:
+        """Every stored fund as a (code, name) pair, for name matching.
+
+        Two columns only: the whole table is read into memory to score
+        screenshot names against, and the NAV history would not fit.
+        """
+        async with get_async_session() as session:
+            result = await session.execute(select(col(Fund.fund_code), col(Fund.fund_name)))
+            return [(str(code), str(name)) for code, name in result.all()]
+
     async def search_funds(self, keyword: str, limit: int = 50) -> list[Fund]:
         """Search local fund master data by code prefix or fuzzy name."""
         keyword_clean = keyword.strip()

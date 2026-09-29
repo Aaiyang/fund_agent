@@ -55,8 +55,15 @@ def normalize_raw_position(raw: RawExtractedPosition) -> DraftPositionItem:
         average_cost_nav=raw.average_cost_nav,
         profit_loss=raw.profit_loss,
         profit_loss_rate=raw.profit_loss_rate,
+        truncated=raw.truncated,
+        partial=raw.partial,
         confidence=raw.confidence,
     )
+
+
+def _sign(value: float) -> int:
+    """-1 / 0 / 1, so a pair of figures can be compared without float maths."""
+    return (value > 0) - (value < 0)
 
 
 def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
@@ -80,6 +87,18 @@ def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
         issues.append("profit_loss_rate_out_of_range")
     if item.confidence < LOW_CONFIDENCE_THRESHOLD:
         issues.append("low_confidence")
+    # Screenshot-specific: a clipped name is several funds until he picks one,
+    # and a row whose columns filled unevenly was cut off by the screen.
+    if item.truncated:
+        issues.append("fund_name_truncated")
+    if item.partial:
+        issues.append("row_incomplete")
+    if item.profit_loss is not None and item.profit_loss_rate is not None:
+        if _sign(item.profit_loss) != _sign(item.profit_loss_rate) and 0 not in (
+            item.profit_loss,
+            item.profit_loss_rate,
+        ):
+            issues.append("profit_and_rate_disagree")
 
     blocking = {"fund_unresolved", "missing_market_value_and_shares"}
     item.validation_issues = issues

@@ -23,6 +23,7 @@ from app.integrations.fund_data.akshare_client import AKSHARE_AVAILABLE
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
 from app.integrations.fund_data.models import FundExternalHolding
 from app.integrations.fund_data.normalizer import parse_quarter, sina_symbol, tencent_symbol
+from app.integrations.holdings.name_match import NameMatch, decide, rank_names
 from app.models.fund import Fund, FundNav
 from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist
@@ -401,6 +402,24 @@ class FundService:
     # Fund resolution (used by holdings imports)
     # ------------------------------------------------------------------
 
+    async def name_directory(self) -> list[tuple[str, str]]:
+        """(code, name) pairs a screenshot name can be matched against.
+
+        The register is complete; the local table only holds funds this
+        deployment has touched. Local rows win on conflict because that is the
+        spelling the rest of the app shows.
+        """
+        local = await fund_repository.all_names()
+        if not AKSHARE_AVAILABLE:
+            return local
+        external = await akshare_fund_provider.get_name_directory()
+        local_codes = {code for code, _ in local}
+        return local + [pair for pair in external if pair[0] not in local_codes]
+
+    async def match_fund_names(self, name: str, limit: int = 5) -> list[NameMatch]:
+        """Rank the directory against one name, best first."""
+        return rank_names(name, await self.name_directory(), limit=limit)
+
     async def resolve_fund(self, raw_name: str | None, raw_code: str | None) -> tuple[Fund | None, float]:
         """Match raw extracted name/code to a standard fund entity.
 
@@ -418,25 +437,17 @@ class FundService:
         if not name_clean:
             return None, 0.0
 
-        exact = await fund_repository.search_funds(name_clean, limit=5)
-        exact_matches = [fund for fund in exact if fund.fund_name == name_clean]
-        if len(exact_matches) == 1:
-            return exact_matches[0], 0.85
-        if exact_matches:
-            return None, 0.0  # ambiguous — requires user confirmation
-
-        if not exact and AKSHARE_AVAILABLE:
-            external = await akshare_fund_provider.search_funds(name_clean)
-            for record in external[:20]:
-                await fund_write_repository.upsert_fund_from_record(record)
-            exact = await fund_repository.search_funds(name_clean, limit=5)
-            exact_matches = [fund for fund in exact if fund.fund_name == name_clean]
-            if len(exact_matches) == 1:
-                return exact_matches[0], 0.85
-
-        if len(exact) == 1:
-            return exact[0], 0.6
-        return None, 0.0
+        # Ranked matching rather than "exact name or nothing": the screenshot
+        # prints 天弘恒生科技ETF联接(QDII)C while the register spells the same
+        # fund 天弘恒生科技ETF联接C, and several share classes of one fund are
+        # never collapsed into a guess.
+        winner = decide(await self.match_fund_names(name_clean))
+        if winner is None:
+            return None, 0.0
+        fund = await self._get_fund_ensuring_data(winner.fund_code)
+        if fund is None:
+            return None, 0.0
+        return fund, round(winner.score * 0.9, 2)
 
     # ------------------------------------------------------------------
     # Data freshness

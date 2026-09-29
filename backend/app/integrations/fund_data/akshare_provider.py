@@ -50,6 +50,9 @@ from app.utils.sanitization import sanitize_string
 
 # Cache the full open-fund rank table in-process for cheap search + latest NAV
 _RANK_CACHE_TTL_SECONDS = 6 * 3600
+# The master (code, name) list changes a few times a month; refreshing it daily
+# keeps a screenshot import from paying for it more than once a day.
+_NAME_DIRECTORY_TTL_SECONDS = 24 * 3600
 
 
 def match_records(records: list[FundExternalRecord], keyword: str) -> list[FundExternalRecord]:
@@ -73,6 +76,8 @@ class AKShareFundProvider:
         self._last_call_monotonic = 0.0
         self._rank_index: list[FundExternalRecord] = []
         self._rank_cached_at = 0.0
+        self._name_directory: list[tuple[str, str]] = []
+        self._name_cached_at = 0.0
 
     # ------------------------------------------------------------------
     # Public API (FundDataProvider)
@@ -241,6 +246,27 @@ class AKShareFundProvider:
             self._rank_cached_at = time.monotonic()
             logger.info("akshare_rank_index_built", rows=len(normalized))
         return normalized
+
+    async def get_name_directory(self) -> list[tuple[str, str]]:
+        """Every registered fund's (code, name) pair, cached.
+
+        The rank table has whole companies missing from it — no 广发纳指 row,
+        for one — so matching a name read off a screenshot needs the master
+        list. It changes slowly and costs one call, so it lives longer.
+        """
+        if self._name_directory and (time.monotonic() - self._name_cached_at) < _NAME_DIRECTORY_TTL_SECONDS:
+            return self._name_directory
+        rows = await self._call("fund_name_em")
+        directory = [
+            (str(row["基金代码"]).strip(), str(row["基金简称"]).strip())
+            for row in rows or []
+            if row.get("基金代码") and row.get("基金简称")
+        ]
+        if directory:
+            self._name_directory = directory
+            self._name_cached_at = time.monotonic()
+            logger.info("akshare_name_directory_built", rows=len(directory))
+        return directory
 
     async def _throttle(self) -> None:
         """Enforce a minimum interval between external calls."""
