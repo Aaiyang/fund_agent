@@ -78,7 +78,6 @@ async def preview_trade(
     after_cutoff: bool = Query(default=False, description="是否 15:00 后提交"),
     amount: float | None = Query(default=None, gt=0),
     shares: float | None = Query(default=None, gt=0),
-    fee: float | None = Query(default=None, ge=0),
     target_code: str | None = Query(default=None, min_length=6, max_length=6, description="转换目标基金"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> TradePreviewResponse:
@@ -97,7 +96,6 @@ async def preview_trade(
             after_cutoff,
             amount,
             shares,
-            fee,
             target_code,
         )
     except AccountNotFoundError as e:
@@ -127,7 +125,6 @@ async def record_trade(
             payload.after_cutoff,
             amount=payload.amount,
             shares=payload.shares,
-            fee=payload.fee,
             target_code=payload.target_code,
         )
     except AccountNotFoundError as e:

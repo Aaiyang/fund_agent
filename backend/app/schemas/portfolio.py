@@ -163,7 +163,6 @@ class TradeCreateRequest(BaseModel):
     after_cutoff: bool = Field(default=False, description="是否 15:00 后提交，决定用哪一场净值")
     amount: float | None = Field(default=None, gt=0, description="买入/定投金额（含申购费）")
     shares: float | None = Field(default=None, gt=0, description="卖出/转换份额")
-    fee: float | None = Field(default=None, ge=0, description="申购费/赎回费/转换费")
     target_code: str | None = Field(default=None, min_length=6, max_length=6, description="转换目标基金")
 
     @model_validator(mode="after")
@@ -206,7 +205,6 @@ class TradePreviewResponse(BaseResponse):
     # The session the order is priced against. It differs from trade_date
     # whenever the cutoff or a non-trading day moved the order along.
     confirm_date: date
-    fee: float
     legs: list[TradeLeg]
 
 

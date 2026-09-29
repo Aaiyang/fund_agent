@@ -433,7 +433,6 @@ class PortfolioService:
         after_cutoff: bool,
         amount: float | None,
         shares: float | None,
-        fee: float | None,
         target_code: str | None,
     ) -> tuple[date, list[TradeLeg], list[tuple[str, str, OrderDelta, float]]]:
         """Price an order into the ledger rows it would write.
@@ -445,7 +444,6 @@ class PortfolioService:
             NavNotPublishedError: either fund has no NAV for the confirm day.
             TradeTooLargeError: the exit sells more than the holding carries.
         """
-        charge = fee or 0.0
         priced = await self._price_order(fund_code, trade_date, after_cutoff)
         _, source_rows = await self._planned_rows(user_id, account_id, fund_code)
         held = project_ledger(source_rows).shares
@@ -455,7 +453,7 @@ class PortfolioService:
             if target == fund_code:
                 raise TradeInputError("转换目标不能是同一只基金")
             target_priced = await self._price_order(target, trade_date, after_cutoff)
-            out = price_sell(priced.nav, float(shares or 0.0), charge)
+            out = price_sell(priced.nav, float(shares or 0.0))
             if out.shares > held:
                 raise TradeTooLargeError(held)
             into = price_buy(target_priced.nav, out.amount)
@@ -471,7 +469,7 @@ class PortfolioService:
             return priced.confirm_date, legs, rows
 
         direction: Direction = "SELL" if operation == "SELL" else "BUY"
-        delta = self._order_delta(direction, priced.nav, amount, shares, charge)
+        delta = self._order_delta(direction, priced.nav, amount, shares)
         if direction == "SELL" and delta.shares > held:
             raise TradeTooLargeError(held)
         row_type = {"BUY": "BUY", "SELL": "SELL", "AUTO_INVEST": "AUTO_INVEST"}[operation]
@@ -488,20 +486,18 @@ class PortfolioService:
         after_cutoff: bool,
         amount: float | None = None,
         shares: float | None = None,
-        fee: float | None = None,
         target_code: str | None = None,
     ) -> TradePreviewResponse:
         """What this order would do to the holding, before writing anything."""
         await self.ensure_account(user_id, account_id)
         confirm, legs, _ = await self._plan_order(
-            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, fee, target_code
+            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, target_code
         )
         return TradePreviewResponse(
             operation=operation,
             trade_date=trade_date,
             after_cutoff=after_cutoff,
             confirm_date=confirm,
-            fee=fee or 0.0,
             legs=legs,
         )
 
@@ -515,7 +511,6 @@ class PortfolioService:
         after_cutoff: bool,
         amount: float | None = None,
         shares: float | None = None,
-        fee: float | None = None,
         target_code: str | None = None,
         source: str = "manual",
         external_ref: str | None = None,
@@ -523,7 +518,7 @@ class PortfolioService:
         """Write an order's ledger rows and re-project every fund it touched."""
         await self.ensure_account(user_id, account_id)
         confirm, _, rows = await self._plan_order(
-            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, fee, target_code
+            user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, target_code
         )
         touched: list[str] = []
         for index, (fund, row_type, delta, nav) in enumerate(rows):
@@ -538,7 +533,6 @@ class PortfolioService:
                 shares=delta.shares,
                 nav=nav,
                 amount=delta.amount,
-                fee=delta.fee,
                 source=source,
                 # Only the buying leg carries the idempotency key: one key per
                 # order, and a retry must not add the pair twice.
@@ -670,9 +664,7 @@ class PortfolioService:
         )
 
     @staticmethod
-    def _order_delta(
-        direction: Direction, nav: float, amount: float | None, shares: float | None, fee: float | None
-    ) -> OrderDelta:
+    def _order_delta(direction: Direction, nav: float, amount: float | None, shares: float | None) -> OrderDelta:
         """Turn the figure the user gave into ledger units at this day's NAV.
 
         Raises:
@@ -680,14 +672,13 @@ class PortfolioService:
                 count. Neither can be guessed — one buys an unknown quantity,
                 the other sells an unknown part of the holding.
         """
-        charge = fee or 0.0
         if direction == "BUY":
             if not amount:
                 raise TradeInputError("买入需要填写金额")
-            return price_buy(nav, amount, charge)
+            return price_buy(nav, amount)
         if not shares:
             raise TradeInputError("卖出需要填写份额")
-        return price_sell(nav, shares, charge)
+        return price_sell(nav, shares)
 
     async def _position_item(
         self,
