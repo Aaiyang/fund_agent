@@ -150,9 +150,6 @@ through `os.getenv`, so third-party limits stay tunable without code changes
 | `FUND_BUSINESS_TZ` | `Asia/Shanghai` | Calendar used for `trade_date` and holding days |
 | `FUND_HOT_SYNC_ENABLED` | `false` | Periodically enqueue a Hot Fund sweep from the API process |
 | `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | Interval of that sweep |
-| `VISION_ENABLED` | `true` | Screenshot recognition switch; `false` marks batches `PARSE_FAILED` |
-| `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | SiliconFlow `Qwen/Qwen2.5-VL-72B-Instruct` | OpenAI-compatible vision endpoint (`VISION_API_KEY` falls back to `SILICONFLOW_API_KEY`) |
-| `VISION_TIMEOUT_SECONDS` / `VISION_MAX_TOKENS` | `120` / `4096` | Vision call budget |
 | `HOLDING_IMPORT_MAX_IMAGES` | `5` | Screenshots per batch |
 | `HOLDING_IMPORT_MAX_IMAGE_MB` | `8` | Per-file upload limit |
 | `HOLDING_IMPORT_TEMP_DIR` | `.runtime/holding_imports` | Where originals live until deleted |
@@ -163,3 +160,8 @@ through `os.getenv`, so third-party limits stay tunable without code changes
 The hot-cache TTL for latest NAV and search results is not an env var: it is
 `_LATEST_NAV_CACHE_TTL_SECONDS` / `_SEARCH_CACHE_TTL_SECONDS` in
 `app/services/fund_service.py` (300s).
+
+Screenshot recognition has no settings at all: it runs locally, PP-OCR models on
+ONNX Runtime, installed with `uv sync --extra ocr`. Without that extra a batch
+fails as `PARSE_FAILED` carrying `ocr_runtime_not_installed` — it does not
+silently import nothing, and no image is ever sent to a third party.

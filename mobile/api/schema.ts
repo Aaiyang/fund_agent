@@ -1799,6 +1799,18 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * ImportCandidate
+         * @description One fund a screenshot name could still be, offered for one-tap choice.
+         */
+        ImportCandidate: {
+            /** Fund Code */
+            fund_code: string;
+            /** Fund Name */
+            fund_name: string;
+            /** Score */
+            score: number;
+        };
+        /**
          * ImportConfirmResponse
          * @description POST /holding-imports/{import_id}/confirm response.
          */
@@ -1933,6 +1945,11 @@ export interface components {
             current_market_value?: number | null;
             /** Current Version */
             current_version?: number | null;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates?: components["schemas"]["ImportCandidate"][];
         };
         /**
          * ImportItemUpdateRequest

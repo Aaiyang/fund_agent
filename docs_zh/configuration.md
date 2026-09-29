@@ -148,9 +148,6 @@ cp .env.example .env.development
 | `FUND_BUSINESS_TZ` | `Asia/Shanghai` | `trade_date` 与持有天数使用的日历 |
 | `FUND_HOT_SYNC_ENABLED` | `false` | 由 API 进程周期入队热基金扫描 |
 | `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | 扫描间隔 |
-| `VISION_ENABLED` | `true` | 截图识别开关；关闭时批次置 `PARSE_FAILED` |
-| `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | SiliconFlow `Qwen/Qwen2.5-VL-72B-Instruct` | OpenAI 兼容视觉端点（`VISION_API_KEY` 可回退到 `SILICONFLOW_API_KEY`） |
-| `VISION_TIMEOUT_SECONDS` / `VISION_MAX_TOKENS` | `120` / `4096` | 视觉调用预算 |
 | `HOLDING_IMPORT_MAX_IMAGES` | `5` | 单批截图数量上限 |
 | `HOLDING_IMPORT_MAX_IMAGE_MB` | `8` | 单文件大小上限 |
 | `HOLDING_IMPORT_TEMP_DIR` | `.runtime/holding_imports` | 原图临时目录（用后即删） |
@@ -161,3 +158,7 @@ cp .env.example .env.development
 最新净值与搜索结果的热点缓存 TTL 不是环境变量，而是
 `app/services/fund_service.py` 里的常量 `_LATEST_NAV_CACHE_TTL_SECONDS` /
 `_SEARCH_CACHE_TTL_SECONDS`（300 秒）。
+
+截图识别没有任何配置项：它在本地跑，PP-OCR 模型 + ONNX Runtime，用
+`uv sync --extra ocr` 安装。没装这个 extra 时批次会以 `PARSE_FAILED` 失败并带上
+`ocr_runtime_not_installed`，不会静默导入空结果，图片也从不发给第三方。

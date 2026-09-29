@@ -4686,6 +4686,30 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "ImportCandidate": {
+        "properties": {
+          "fund_code": {
+            "type": "string",
+            "title": "Fund Code"
+          },
+          "fund_name": {
+            "type": "string",
+            "title": "Fund Name"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fund_code",
+          "fund_name",
+          "score"
+        ],
+        "title": "ImportCandidate",
+        "description": "One fund a screenshot name could still be, offered for one-tap choice."
+      },
       "ImportConfirmResponse": {
         "properties": {
           "request_id": {
@@ -5057,6 +5081,14 @@
               }
             ],
             "title": "Current Version"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCandidate"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
           }
         },
         "type": "object",

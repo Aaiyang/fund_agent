@@ -14,7 +14,7 @@
 - **自选基金** — 搜索、加删、分组与组内排序，列表带最新净值、当日涨跌与持有标识
 - **持仓管理** — 多账户与资产汇总；录入分两条互不打架的路径：**同步持仓**记第三方 App 上的快照（按金额或按份额两种口径各配一对数字），**加减仓**记加仓/减仓/定投/转换四笔操作，写进 `transaction` 流水账本。份额与持仓成本是流水的投影（卖出按持仓均价结转成本，不按卖出价），首次动账会先把当时的快照种成期初行；下单按 15:00 cutoff 落到确认日、用确认日净值定价，成交预览与写入同一套算法。派生指标查询时计算不落库；乐观锁 409、当日净值未公布 409、卖出超过持有 422
 - **定投计划** — 每天/每周/每两周/每月 + 扣款日，读计划列表时把到期未记的期数补成流水（幂等键去重），净值未出的那一期延后补
-- **持仓导入** — 手动录入与第三方 App 截图识别两条来源，统一 `HoldingImportProvider`；一律「解析 → 预览 → 用户确认 → 写入」，原图仅临时保存并在确认/失败后删除
+- **持仓导入** — 手动录入与第三方 App 截图识别两条来源，统一 `HoldingImportProvider`；截图走**本地 OCR**（PP-OCR 模型 + ONNX Runtime，图片不出机器），按截图自己的表头定列、按纵坐标聚行，认不出或认歧的基金带候选回到确认页；一律「解析 → 预览 → 用户确认 → 写入」，原图仅临时保存并在确认/失败后删除
 - **行情分析** — 基金详情页的净值走势与指数基准对比（指数收盘按缺口增量补库）、前十大重仓股与行业分布；个股/指数分析页的蜡烛图（日K/周K/月K）与分时/五日，行情侧全部实时抓上游、不落库
 - **后台任务** — Taskiq + Redis（无 Redis 时进程内兜底）、有界并发、幂等键与分布式锁、PostgreSQL 侧任务账本（状态/重试/错误）
 - **Agent 预留** — LangGraph 图、Checkpointer、LLM 服务、Langfuse 全部保留；`POST /api/v1/agent/chat` 返回 501，App 保留 Agent Tab
@@ -31,6 +31,7 @@
 cd backend
 cp .env.example .env.development   # 填入 LLM / Embedding / JWT 密钥与 POSTGRES_* 连接
 make install                       # 安装依赖 + pre-commit hooks
+                                   # 要用截图导入再加：uv sync --extra ocr
 make migrate                       # 建表（需要本地 PostgreSQL）
 make dev                           # 启动开发服务器（端口 8000，Windows 走 run_local.py）
 make test                          # pytest 单测
@@ -90,8 +91,7 @@ npm run dev        # http://localhost:3000
 | `AKSHARE_MAX_CONCURRENCY` / `_TIMEOUT_SECONDS` / `_MAX_RETRIES` / `_MIN_INTERVAL_SECONDS` | 外部基金数据采集的并发、超时、重试与节流 |
 | `FUND_NAV_STALE_HOURS` / `FUND_BUSINESS_TZ` | 净值新鲜度窗口与业务日历（交易日/持有天数口径） |
 | `FUND_HOT_SYNC_ENABLED` / `FUND_HOT_SYNC_INTERVAL_MINUTES` | 热基金周期扫描（默认关闭，仅入队，由 worker 执行） |
-| `VISION_*` | 持仓截图识别的视觉模型（默认 SiliconFlow Qwen-VL），未配置时批次置 `PARSE_FAILED` |
-| `HOLDING_IMPORT_MAX_IMAGES` / `_MAX_IMAGE_MB` / `_TEMP_DIR` / `_STALE_MINUTES` | 截图导入的文件数量/大小/临时目录/僵死批次回收 |
+| `HOLDING_IMPORT_MAX_IMAGES` / `_MAX_IMAGE_MB` / `_TEMP_DIR` / `_STALE_MINUTES` | 截图导入的文件数量/大小/临时目录/僵死批次回收。识别用本地 OCR，需 `uv sync --extra ocr`（rapidocr + onnxruntime），不依赖云端视觉模型 |
 | `TASKIQ_REDIS_URL` / `BACKGROUND_TASK_MAX_ATTEMPTS` | 后台任务队列与重试预算 |
 | `LANGFUSE_TRACING_ENABLED` | Langfuse 追踪开关，不需要时设为 `false` |
 
@@ -154,7 +154,7 @@ docs/ docs_zh/       # 项目文档（英/中）；docs/PROJECT_SPEC.md 为需�
 先看浏览器/设备的网络错误。CORS 未放行前端来源时后端返回 `400 Disallowed CORS origin`；把前端地址加进 `ALLOWED_ORIGINS` 并重启后端。真机请用局域网 IP。
 
 **持仓截图识别一直是「识别失败」？**
-检查 `VISION_*` 与 `SILICONFLOW_API_KEY`：账号未开通该模型时上游会返回 `403 Model disabled`，批次会落到 `PARSE_FAILED` 并带上错误信息，原图仍会被清理，不影响已有持仓。
+先确认装了 OCR 依赖（`uv sync --extra ocr`）：缺 rapidocr/onnxruntime 时批次直接 `PARSE_FAILED` 并写明 `ocr_runtime_not_installed`，不会静默返回空。装好后仍失败，看批次里的 `error_message`——它带的是每张图各自的原因。
 
 **持仓份额和三方 App 上显示的对不上？**
 用「同步持仓 · 按金额填」时，份额是按 `持有金额 ÷ 最新净值` 推出来的，而金额是截图那一天的数，净值一动推算份额就会跟着偏。要准就用「按份额填」直接报份额；一旦记过加减仓流水，份额与持仓成本就以账本投影为准，快照改不动它们。

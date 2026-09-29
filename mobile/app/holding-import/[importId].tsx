@@ -4,7 +4,7 @@ import { Text, View } from 'react-native';
 
 import { PurchaseDateField, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { Async, LoadingState, describeError } from '@/components/states';
-import { Badge, Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
+import { Badge, Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useConfirmImport, useDeleteImport, useImportDetail, useUpdateImportItem, type ImportItem } from '@/hooks/useImports';
 import { formatMoney, toInputNumber } from '@/utils/format';
@@ -17,6 +17,9 @@ const ISSUE_LABEL: Record<string, string> = {
   profit_loss_inconsistent_with_value: '收益与金额不匹配',
   profit_loss_rate_out_of_range: '收益率超出范围',
   duplicate_fund_different_values: '同一基金金额冲突',
+  fund_name_truncated: '名称被截断',
+  row_incomplete: '这行没拍全',
+  profit_and_rate_disagree: '收益与收益率一正一负',
 };
 
 /** Review + confirm an import batch. Nothing is written until confirm (spec 3.7). */
@@ -130,6 +133,14 @@ function ItemCard({
   const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
 
+  function pick(fundCode: string) {
+    setProblem(null);
+    updateItem.mutate(
+      { importId, itemId: item.id, fund_code: fundCode },
+      { onError: (error) => setProblem(describeError(error)) },
+    );
+  }
+
   return (
     <Card style={{ opacity: skipped ? 0.55 : 1 }}>
       <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>
@@ -145,6 +156,24 @@ function ItemCard({
               <Badge label={ISSUE_LABEL[issue] ?? issue} tone={item.validation_status === 'error' ? 'danger' : 'warning'} />
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {/* A screenshot rarely prints the code, and one name covers the A/C share
+          classes of the same fund — which of them he holds is his fact, so the
+          pick is offered rather than guessed. */}
+      {!item.matched_fund_code && (item.candidates ?? []).length > 0 ? (
+        <View style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 6 }}>选一只</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {(item.candidates ?? []).map((candidate) => (
+              <Chip
+                key={candidate.fund_code}
+                label={`${candidate.fund_code} ${candidate.fund_name ?? ''}`}
+                onPress={() => pick(candidate.fund_code ?? '')}
+              />
+            ))}
+          </View>
         </View>
       ) : null}
 

@@ -34,8 +34,8 @@
 | 13 | 可手工录入或修改持仓 | **通过** | 实测 `/position/edit`：预填原值 → 改金额 → 版本 v1→v2；后端 409 分支由单测外的接口冒烟覆盖 |
 | 14 | 可查看基础交易/调整记录 | **通过** | `/transactions` 实测显示 `手工修正`、`导入修正`（含批次 ID 前缀） |
 | 15 | 统一 `HoldingImportProvider` 接口 | **通过** | `app/integrations/holdings/base.py` Protocol，`parse(payload) -> draft` |
-| 16 | `ManualImportProvider` 与 `ScreenshotImportProvider` | **部分** | 手动路径全链路实测；截图路径**机制**实测（202 + 后台解析 + 失败落库 + 原图删除），但**识别正确性**因视觉模型 403 未取到正样本。**人工步骤**：配置可用的 `VISION_*` 或 `SILICONFLOW_API_KEY` 后上传一张真实持仓截图，确认 `items_detected > 0` |
-| 17 | 上传多张截图、查看结构化结果、修正后确认导入 | **部分** | 多图/去重/失败隔离在后端已实现并冒烟；确认页的差异预览（当前→识别→导入后）与逐条修正、跳过、确认已在**手动导入**路径实测；截图确认页因上一条只验证到 `PARSE_FAILED` 分支。Web 端图片选择器未做端到端点击验证（需系统文件对话框） |
+| 16 | `ManualImportProvider` 与 `ScreenshotImportProvider` | **通过** | 手动路径全链路实测；截图路径改成本地 OCR（PP-OCR + ONNX Runtime）后，用真实支付宝持仓页实测：`items_detected=5`，5 行的金额/持有收益/收益率与人工逐位核对一致，3 行按名称自动认到代码、1 行给出 4 个份额候选、1 行标 `row_incomplete` |
+| 17 | 上传多张截图、查看结构化结果、修正后确认导入 | **通过** | 多图/去重/失败隔离在后端已实现；确认页差异预览（当前→识别→导入后）、逐条修正、跳过、确认、候选点选均在截图路径实测（`applied=4 / skipped=1`）。Web 端图片选择器未做端到端点击验证（需系统文件对话框），该次走的是接口直传 |
 | 18 | 截图识别不得直接改持仓，确认后写入 | **通过** | `confirm_import` 是唯一写路径；后端与 UI 均验证「确认前持仓不变」 |
 | 19 | 导入具备状态、更新时间、错误记录、审计条目 | **通过** | `holding_imports`（状态/started/confirmed/applied/error_message/计数）+ `IMPORT_ADJUSTMENT` 审计行 |
 | 20 | 原图默认在识别/确认完成后自动删除 | **通过** | 实测 `.runtime/holding_imports/` 在 `PARSE_FAILED` 后为空目录；确认与取消路径同样清理 |
