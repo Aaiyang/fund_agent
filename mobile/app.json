@@ -41,7 +41,8 @@
           "photosPermission": "用于选择你要导入的持仓截图",
           "cameraPermission": "用于拍摄持仓截图"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

@@ -214,6 +214,16 @@ export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warn
   );
 }
 
+/** The label line above an input, shared by the text field and the date picker. */
+export function FieldLabel({ label, extra }: { label: string; extra?: ReactNode }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+      <Text style={{ fontSize: 13, color: theme.textMuted }}>{label}</Text>
+      {extra}
+    </View>
+  );
+}
+
 export function Field({
   label,
   labelExtra,
@@ -233,10 +243,7 @@ export function Field({
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-        <Text style={{ fontSize: 13, color: theme.textMuted }}>{label}</Text>
-        {labelExtra}
-      </View>
+      <FieldLabel label={label} extra={labelExtra} />
       <TextInput
         value={value}
         onChangeText={onChangeText}

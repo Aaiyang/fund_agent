@@ -106,7 +106,7 @@ export function formatDate(value: string | null | undefined): string {
 
 /** Today on the device, as the YYYY-MM-DD the API expects. */
 export function localToday(): string {
-  return formatDateTime(new Date().toISOString()).slice(0, 10);
+  return formatDay(new Date());
 }
 
 /** Whether a typed string is a real calendar day, not just a shaped number. */
@@ -117,6 +117,20 @@ export function isCalendarDate(value: string): boolean {
   // UTC math keeps a device west of Greenwich from rejecting its own dates.
   const parsed = new Date(Date.UTC(year, month - 1, day));
   return parsed.getUTCFullYear() === year && parsed.getUTCMonth() + 1 === month && parsed.getUTCDate() === day;
+}
+
+/** A YYYY-MM-DD string as a local Date, falling back to today for the pickers. */
+export function parseDay(value: string): Date {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!parts) return new Date();
+  const [year, month, day] = parts.slice(1).map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** A Date picked by the platform, as the YYYY-MM-DD the API expects. */
+export function formatDay(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export function formatDateTime(value: string | null | undefined): string {

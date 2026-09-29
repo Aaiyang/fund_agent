@@ -3,6 +3,7 @@ import { Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { Async, describeError } from '@/components/states';
+import { DateField } from '@/components/DateField';
 import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useAutoInvestPlans, useCreatePlan, useDeletePlan, useUpdatePlan, type AutoInvestPlan } from '@/hooks/useAutoInvest';
@@ -187,7 +188,7 @@ function CreatePlan({
           placeholder={frequency === 'monthly' ? '请输入 1-31' : '请输入 1-7'}
         />
       ) : null}
-      <Field label="开始日期" value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" />
+      <DateField label="开始日期" value={startDate} onChange={setStartDate} placeholder="请选择开始扣款的日期" />
       <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
         到期后打开这个页面就会补成买入流水；净值还没公布的那一期会留到下次。
       </Text>

@@ -11,7 +11,8 @@ import { useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
-import { Button, Chip, Field } from '@/components/ui';
+import { DateField } from '@/components/DateField';
+import { Button, Chip } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { formatDateTime, isCalendarDate, localToday } from '@/utils/format';
 
@@ -46,7 +47,7 @@ export function PurchaseDateField({
 
   return (
     <>
-      <Field
+      <DateField
         label={label}
         labelExtra={
           <Pressable
@@ -64,8 +65,8 @@ export function PurchaseDateField({
           </Pressable>
         }
         value={value}
-        onChangeText={onChangeText}
-        placeholder="请输入买入确认日期（YYYY-MM-DD）"
+        onChange={onChangeText}
+        placeholder="请选择买入确认日期"
       />
 
       <Modal visible={explaining} transparent animationType="fade" onRequestClose={() => setExplaining(false)}>
