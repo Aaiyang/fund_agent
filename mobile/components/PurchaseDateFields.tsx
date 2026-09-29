@@ -22,15 +22,25 @@ const RULES = [
   '这一单换成多少份额、成本按哪天算，都由确认日的净值决定。',
 ];
 
+/**
+ * The closing line differs by screen. An order cannot exist without a day —
+ * that day is what prices it — while a holdings snapshot may legitimately not
+ * know when the fund was first bought.
+ */
+const ORDER_NOTE = '这一单按哪一天的净值成交，必须填；不确定的话去三方 App 的交易记录里查。';
+const SNAPSHOT_NOTE = '不知道具体哪天就留空，系统不会替你猜一个买入日。';
+
 /** 买入确认日期 + 感叹号说明，加减仓与导入草稿都用它。 */
 export function PurchaseDateField({
   value,
   onChangeText,
   label = '买入确认日期',
+  required = false,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   label?: string;
+  required?: boolean;
 }) {
   const [explaining, setExplaining] = useState(false);
 
@@ -81,7 +91,7 @@ export function PurchaseDateField({
               </Text>
             ))}
             <Text style={{ fontSize: 13, color: theme.textMuted, lineHeight: 20, marginTop: 8 }}>
-              不知道具体哪天就留空，系统不会替你猜一个买入日。
+              {required ? ORDER_NOTE : SNAPSHOT_NOTE}
             </Text>
             <View style={{ marginTop: 14 }}>
               <Button label="知道了" variant="secondary" onPress={() => setExplaining(false)} />
@@ -99,15 +109,17 @@ export function PurchaseDateFields({
   onChangeText,
   afterCutoff,
   onAfterCutoff,
+  required = false,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   afterCutoff: boolean;
   onAfterCutoff: (value: boolean) => void;
+  required?: boolean;
 }) {
   return (
     <>
-      <PurchaseDateField value={value} onChangeText={onChangeText} />
+      <PurchaseDateField value={value} onChangeText={onChangeText} required={required} />
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
         <Chip label="15:00前" active={!afterCutoff} onPress={() => onAfterCutoff(false)} />
         <Chip label="15:00后" active={afterCutoff} onPress={() => onAfterCutoff(true)} />
@@ -122,7 +134,9 @@ export function initialPurchaseDate(stored: string | null | undefined, snapshotA
   return snapshotAt ? formatDateTime(snapshotAt).slice(0, 10) : localToday();
 }
 
-/** Reason the date cannot be saved, or null when it is usable or left blank. */
-export function purchaseDateProblem(value: string): string | null {
-  return value.trim() !== '' && !isCalendarDate(value) ? '买入确认日期格式应为 YYYY-MM-DD' : null;
+/** Reason the date cannot be saved: on an order it is mandatory, on a snapshot blank is fine. */
+export function purchaseDateProblem(value: string, required = false): string | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return required ? '请填写买入确认日期' : null;
+  return isCalendarDate(trimmed) ? null : '买入确认日期格式应为 YYYY-MM-DD';
 }

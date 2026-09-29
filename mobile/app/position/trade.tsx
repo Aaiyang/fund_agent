@@ -125,7 +125,7 @@ function TradeForm({
       setProblem('请先选择持仓账户');
       return;
     }
-    const dateProblem = purchaseDateProblem(tradeDate);
+    const dateProblem = purchaseDateProblem(tradeDate, true);
     if (dateProblem) {
       setProblem(dateProblem);
       return;
@@ -187,6 +187,7 @@ function TradeForm({
         <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>{entry.label}</Text>
         {entry.pickDate ? (
           <PurchaseDateFields
+            required
             value={tradeDate}
             onChangeText={setTradeDate}
             afterCutoff={afterCutoff}
