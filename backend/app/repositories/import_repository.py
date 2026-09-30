@@ -113,7 +113,6 @@ class ImportRepository:
                         average_cost_nav=item.average_cost_nav,
                         profit_loss=item.profit_loss,
                         profit_loss_rate=item.profit_loss_rate,
-                        purchase_date=item.purchase_date,
                         confidence=item.confidence,
                         validation_status=item.validation_status,
                         validation_issues=item.validation_issues,

@@ -1,11 +1,8 @@
 """Holding import contracts: payload, draft, provider protocol."""
 
-from datetime import date
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
-
-from app.utils.clock import business_today
 
 
 class ManualPositionInput(BaseModel):
@@ -28,7 +25,6 @@ class HoldingImportPayload(BaseModel):
     source_app: str | None = None
     manual_positions: list[ManualPositionInput] = Field(default_factory=list)
     image_paths: list[str] = Field(default_factory=list)
-    data_date: date | None = None
 
 
 class RawExtractedPosition(BaseModel):
@@ -47,7 +43,6 @@ class RawExtractedPosition(BaseModel):
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
     daily_profit_loss: float | None = None
-    data_date: date | None = None
     # The app clipped the name with an ellipsis: it will not match a fund
     # exactly, and the review page should show candidates rather than one guess.
     truncated: bool = False
@@ -69,10 +64,6 @@ class DraftPositionItem(BaseModel):
     average_cost_nav: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    # A holdings screen never shows when the fund was bought, so the draft
-    # starts on the import day and the review page lets the user move it; the
-    # position row only ever stores what he confirmed.
-    purchase_date: date | None = Field(default_factory=business_today)
     # Carried from the screenshot: the app clipped this name with an ellipsis,
     # so the row is only trustworthy once he has picked the fund himself.
     truncated: bool = False

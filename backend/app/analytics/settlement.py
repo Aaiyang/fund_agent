@@ -22,6 +22,18 @@ def holding_days(purchase_date: date, after_cutoff: bool, today: date) -> int:
     return max((today - settlement_date(purchase_date, after_cutoff)).days, 0)
 
 
+def latest_session(day: date) -> date:
+    """The most recent trading session on or before a calendar day.
+
+    A holding recorded without a date of its own starts here: the money is
+    already in the fund, so the day it becomes visible in the app is the day to
+    count from, not the day the import happened to run.
+    """
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
+
+
 def _next_session(day: date) -> date:
     while day.weekday() >= 5:
         day += timedelta(days=1)

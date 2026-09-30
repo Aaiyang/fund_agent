@@ -1,6 +1,6 @@
 """Holding import API schemas."""
 
-from datetime import date, datetime
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +37,6 @@ class ImportItemOut(BaseModel):
     average_cost_nav: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    purchase_date: date | None = None
     confidence: float | None = None
     validation_status: str
     validation_issues: list[str] = []
@@ -102,7 +101,6 @@ class ImportItemUpdateRequest(BaseModel):
     average_cost_nav: float | None = Field(default=None, ge=0)
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    purchase_date: date | None = None
 
 
 class ImportConfirmResponse(BaseResponse):

@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from PIL import Image
 
+from app.analytics.settlement import latest_session
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.metrics import holding_import_items_total, holding_imports_total, screenshot_parse_duration_seconds
@@ -245,11 +246,6 @@ class HoldingImportService:
         for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss", "profit_loss_rate"):
             if key in fields:
                 setattr(item, key, fields[key])
-        # The purchase date is what the confirmation will write, so it is
-        # corrected here rather than invented later.
-        if "purchase_date" in fields:
-            value = fields["purchase_date"]
-            item.purchase_date = value if isinstance(value, date) else None
         if user_action is not None:
             item.user_action = user_action
 
@@ -263,7 +259,6 @@ class HoldingImportService:
             average_cost_nav=item.average_cost_nav,
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
-            purchase_date=item.purchase_date,
             confidence=item.confidence or 0.5,
         )
         validated = validate_draft_item(draft_item)
@@ -310,12 +305,13 @@ class HoldingImportService:
                 for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss")
                 if getattr(item, key) is not None
             }
-            # The review page owns the purchase date: it arrives prefilled with
-            # the import day before the cutoff and the user moves it when he
-            # knows better. An existing row keeps the date it was set to —
-            # re-importing a snapshot must not reset someone's holding age.
+            # The date is not his to choose: a fund he already holds keeps the
+            # day already set (re-importing a snapshot must not reset his
+            # holding age), and one seen for the first time starts at the most
+            # recent session — the money is already in it, so the day the app
+            # shows it is the day to count from, not the day he imported.
             current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
-            keep = current is not None and current.purchase_date is not None
+            held_since = current.purchase_date if current is not None else None
             # Import overwrite is explicit user intent — bypass version check
             # (expected_version=None) but still bump the stored version.
             position = await portfolio_repository.upsert_position(
@@ -323,7 +319,7 @@ class HoldingImportService:
                 record.account_id,
                 item.matched_fund_code,
                 expected_version=None,
-                purchase_date=None if keep else item.purchase_date,
+                purchase_date=held_since or latest_session(business_today()),
                 **fields,
             )
             if position is None:
@@ -453,7 +449,6 @@ class HoldingImportService:
             average_cost_nav=item.average_cost_nav,
             profit_loss=item.profit_loss,
             profit_loss_rate=item.profit_loss_rate,
-            purchase_date=item.purchase_date,
             confidence=item.confidence,
             validation_status=item.validation_status,
             validation_issues=issues,
