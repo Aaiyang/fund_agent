@@ -405,16 +405,17 @@ class FundService:
     async def name_directory(self) -> list[tuple[str, str]]:
         """(code, name) pairs a screenshot name can be matched against.
 
-        The register is complete; the local table only holds funds this
-        deployment has touched. Local rows win on conflict because that is the
-        spelling the rest of the app shows.
+        Both spellings stay in the list on purpose: the register calls a fund
+        天弘恒生科技ETF联接C while the synced master row carries its long legal
+        name, and a screenshot prints the short one. Deduplicating by code would
+        let the long name crowd out the spelling that actually matches.
         """
         local = await fund_repository.all_names()
         if not AKSHARE_AVAILABLE:
             return local
         external = await akshare_fund_provider.get_name_directory()
-        local_codes = {code for code, _ in local}
-        return local + [pair for pair in external if pair[0] not in local_codes]
+        seen = set(local)
+        return local + [pair for pair in external if pair not in seen]
 
     async def match_fund_names(self, name: str, limit: int = 5) -> list[NameMatch]:
         """Rank the directory against one name, best first."""
