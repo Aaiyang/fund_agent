@@ -12,7 +12,6 @@ class ManualImportRequest(BaseModel):
     """POST /holding-imports/manual request."""
 
     account_id: int
-    source_app: str | None = Field(default=None, max_length=50)
     positions: list[ManualPositionInput]
 
 
@@ -56,7 +55,6 @@ class ImportDetail(BaseModel):
     id: str
     account_id: int
     import_type: str
-    source_app: str | None = None
     status: str
     image_count: int = 0
     items_detected: int = 0

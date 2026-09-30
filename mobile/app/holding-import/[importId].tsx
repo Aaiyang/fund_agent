@@ -50,7 +50,6 @@ export default function ImportReviewScreen() {
                 />
                 <Text style={{ fontSize: 12, color: theme.textMuted }}>
                   账户 #{batch.account_id} · 识别 {batch.items_detected} 条 · 图片 {batch.image_count} 张
-                  {batch.source_app ? ` · 来源 ${batch.source_app}` : ''}
                 </Text>
                 {batch.error_message ? (
                   <Text style={{ fontSize: 12, color: theme.danger, marginTop: 6 }}>{batch.error_message}</Text>

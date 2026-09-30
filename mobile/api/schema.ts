@@ -853,7 +853,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Position
-         * @description Delete one position and write an audit adjustment record.
+         * @description Erase one fund from an account: holding, ledger and 定投 plans.
          */
         delete: operations["delete_position_api_v1_portfolio_positions__fund_code__delete"];
         options?: never;
@@ -1114,6 +1114,94 @@ export interface paths {
          * @description Change the schedule. Installments already written are not restated.
          */
         patch: operations["update_plan_api_v1_auto_invest_plans__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/llm/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Llm Profiles
+         * @description List the configured LLM provider profiles and the active one.
+         */
+        get: operations["list_llm_profiles_api_v1_agent_llm_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/llm/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Llm Settings
+         * @description Replace the provider profile list from the settings UI.
+         *
+         *     Persists to the server-side profile file and hot-rebuilds the registry;
+         *     the active profile survives when it still exists. A blank ``api_key`` on
+         *     an existing profile keeps the stored key.
+         */
+        post: operations["update_llm_settings_api_v1_agent_llm_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/llm/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Llm Profile
+         * @description Switch the active LLM provider profile at runtime (global, no restart).
+         */
+        post: operations["switch_llm_profile_api_v1_agent_llm_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List Vendor Models
+         * @description Query a vendor's OpenAI-compatible ``/models`` endpoint.
+         *
+         *     Lets the settings UI offer the models this key can actually use instead
+         *     of a hardcoded guess. The caller-supplied base_url is forwarded as-is —
+         *     acceptable for the local single-user workbench, do not expose publicly.
+         */
+        post: operations["list_vendor_models_api_v1_agent_llm_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/agent/chat": {
@@ -1839,8 +1927,6 @@ export interface components {
             account_id: number;
             /** Import Type */
             import_type: string;
-            /** Source App */
-            source_app?: string | null;
             /** Status */
             status: string;
             /**
@@ -2065,14 +2151,138 @@ export interface components {
             total: number;
         };
         /**
+         * LlmModelsRequest
+         * @description POST /agent/llm/models request — probe a vendor's model list.
+         */
+        LlmModelsRequest: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Base Url */
+            base_url: string;
+            /** Api Key */
+            api_key: string;
+        };
+        /**
+         * LlmModelsResponse
+         * @description POST /agent/llm/models response — model ids the key can actually use.
+         */
+        LlmModelsResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /**
+             * Models
+             * @default []
+             */
+            models?: string[];
+        };
+        /**
+         * LlmProfileItem
+         * @description One switchable provider profile. API keys are masked, never returned.
+         */
+        LlmProfileItem: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Name */
+            name: string;
+            /** Model */
+            model: string;
+            /** Base Url */
+            base_url: string;
+            /**
+             * Key Hint
+             * @default
+             */
+            key_hint?: string;
+        };
+        /**
+         * LlmProfileUpdate
+         * @description One profile in a settings save. Blank api_key keeps the stored key.
+         */
+        LlmProfileUpdate: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Name */
+            name: string;
+            /** Model */
+            model: string;
+            /** Base Url */
+            base_url: string;
+            /**
+             * Api Key
+             * @default
+             */
+            api_key?: string;
+        };
+        /**
+         * LlmProfilesResponse
+         * @description GET /agent/llm/profiles response — profiles plus the active one.
+         */
+        LlmProfilesResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Active */
+            active: string;
+            /**
+             * Profiles
+             * @default []
+             */
+            profiles?: components["schemas"]["LlmProfileItem"][];
+        };
+        /**
+         * LlmSettingsUpdate
+         * @description POST /agent/llm/settings request — replaces the whole profile list.
+         */
+        LlmSettingsUpdate: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Profiles */
+            profiles: components["schemas"]["LlmProfileUpdate"][];
+        };
+        /**
+         * LlmSwitchRequest
+         * @description POST /agent/llm/switch request.
+         */
+        LlmSwitchRequest: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Name */
+            name: string;
+        };
+        /**
          * ManualImportRequest
          * @description POST /holding-imports/manual request.
          */
         ManualImportRequest: {
             /** Account Id */
             account_id: number;
-            /** Source App */
-            source_app?: string | null;
             /** Positions */
             positions: components["schemas"]["ManualPositionInput"][];
         };
@@ -4588,7 +4798,6 @@ export interface operations {
         parameters: {
             query: {
                 account_id: number;
-                source_app?: string | null;
             };
             header?: never;
             path?: never;
@@ -4873,6 +5082,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoInvestPlanItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_profiles_api_v1_agent_llm_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProfilesResponse"];
+                };
+            };
+        };
+    };
+    update_llm_settings_api_v1_agent_llm_settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProfilesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_llm_profile_api_v1_agent_llm_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProfilesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_vendor_models_api_v1_agent_llm_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmModelsResponse"];
                 };
             };
             /** @description Validation Error */

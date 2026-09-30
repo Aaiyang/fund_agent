@@ -31,7 +31,6 @@ class HoldingImport(BaseModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     account_id: int = Field(foreign_key="portfolio_account.id", index=True)
     import_type: str = Field(max_length=20)  # MANUAL / SCREENSHOT
-    source_app: str | None = Field(default=None, max_length=50)
     status: str = Field(default="UPLOADED", max_length=30, index=True)
 
     image_count: int = Field(default=0)

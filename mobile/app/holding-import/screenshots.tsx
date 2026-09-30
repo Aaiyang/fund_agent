@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 
-import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
+import { Button, Card, Chip, Screen, SectionTitle } from '@/components/ui';
 import { describeError } from '@/components/states';
 import { theme } from '@/constants/theme';
 import { useUploadScreenshots, type PickedImage } from '@/hooks/useImports';
@@ -20,7 +20,6 @@ export default function ScreenshotImportScreen() {
   const accounts = useAccounts();
   const upload = useUploadScreenshots();
   const [accountId, setAccountId] = useState<number | null>(null);
-  const [sourceApp, setSourceApp] = useState('');
   const [images, setImages] = useState<PickedImage[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -69,7 +68,7 @@ export default function ScreenshotImportScreen() {
       return;
     }
     upload.mutate(
-      { accountId: chosen, sourceApp: sourceApp.trim() || null, images },
+      { accountId: chosen, images },
       {
         onSuccess: (accepted) => router.replace(`/holding-import/${accepted.import_id}`),
         onError: (error) => setProblem(describeError(error)),
@@ -80,14 +79,13 @@ export default function ScreenshotImportScreen() {
   return (
     <Screen>
       <Card>
-        <SectionTitle title="识别账户与来源" />
+        <SectionTitle title="识别账户" />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {(accounts.data?.items ?? []).map((account) => (
             <Chip key={account.id} label={account.name} active={chosen === account.id} onPress={() => setAccountId(account.id)} />
           ))}
           <Chip label="+ 新增账户" onPress={() => router.push('/account/add')} />
         </View>
-        <Field label="来源应用标签" value={sourceApp} onChangeText={setSourceApp} placeholder="请输入来源应用名称" />
       </Card>
 
       <Card>

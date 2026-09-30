@@ -2167,7 +2167,7 @@
           "Portfolio"
         ],
         "summary": "Delete Position",
-        "description": "Delete one position and write an audit adjustment record.",
+        "description": "Erase one fund from an account: holding, ledger and 定投 plans.",
         "operationId": "delete_position_api_v1_portfolio_positions__fund_code__delete",
         "security": [
           {
@@ -2610,22 +2610,6 @@
             "schema": {
               "type": "integer",
               "title": "Account Id"
-            }
-          },
-          {
-            "name": "source_app",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Source App"
             }
           }
         ],
@@ -3094,6 +3078,174 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/agent/llm/profiles": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "List Llm Profiles",
+        "description": "List the configured LLM provider profiles and the active one.",
+        "operationId": "list_llm_profiles_api_v1_agent_llm_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProfilesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/llm/settings": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Update Llm Settings",
+        "description": "Replace the provider profile list from the settings UI.\n\nPersists to the server-side profile file and hot-rebuilds the registry;\nthe active profile survives when it still exists. A blank ``api_key`` on\nan existing profile keeps the stored key.",
+        "operationId": "update_llm_settings_api_v1_agent_llm_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProfilesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/llm/switch": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Switch Llm Profile",
+        "description": "Switch the active LLM provider profile at runtime (global, no restart).",
+        "operationId": "switch_llm_profile_api_v1_agent_llm_switch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProfilesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/llm/models": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "List Vendor Models",
+        "description": "Query a vendor's OpenAI-compatible ``/models`` endpoint.\n\nLets the settings UI offer the models this key can actually use instead\nof a hardcoded guess. The caller-supplied base_url is forwarded as-is —\nacceptable for the local single-user workbench, do not expose publicly.",
+        "operationId": "list_vendor_models_api_v1_agent_llm_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmModelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmModelsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/agent/chat": {
@@ -4754,17 +4906,6 @@
             "type": "string",
             "title": "Import Type"
           },
-          "source_app": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source App"
-          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -5399,23 +5540,198 @@
         "title": "IndexQuotesResponse",
         "description": "GET /indexes/quotes response."
       },
+      "LlmModelsRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_url",
+          "api_key"
+        ],
+        "title": "LlmModelsRequest",
+        "description": "POST /agent/llm/models request — probe a vendor's model list."
+      },
+      "LlmModelsResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "LlmModelsResponse",
+        "description": "POST /agent/llm/models response — model ids the key can actually use."
+      },
+      "LlmProfileItem": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "key_hint": {
+            "type": "string",
+            "title": "Key Hint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "model",
+          "base_url"
+        ],
+        "title": "LlmProfileItem",
+        "description": "One switchable provider profile. API keys are masked, never returned."
+      },
+      "LlmProfileUpdate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "model",
+          "base_url"
+        ],
+        "title": "LlmProfileUpdate",
+        "description": "One profile in a settings save. Blank api_key keeps the stored key."
+      },
+      "LlmProfilesResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "active": {
+            "type": "string",
+            "title": "Active"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProfileItem"
+            },
+            "type": "array",
+            "title": "Profiles",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "active"
+        ],
+        "title": "LlmProfilesResponse",
+        "description": "GET /agent/llm/profiles response — profiles plus the active one."
+      },
+      "LlmSettingsUpdate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProfileUpdate"
+            },
+            "type": "array",
+            "title": "Profiles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profiles"
+        ],
+        "title": "LlmSettingsUpdate",
+        "description": "POST /agent/llm/settings request — replaces the whole profile list."
+      },
+      "LlmSwitchRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "LlmSwitchRequest",
+        "description": "POST /agent/llm/switch request."
+      },
       "ManualImportRequest": {
         "properties": {
           "account_id": {
             "type": "integer",
             "title": "Account Id"
-          },
-          "source_app": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source App"
           },
           "positions": {
             "items": {

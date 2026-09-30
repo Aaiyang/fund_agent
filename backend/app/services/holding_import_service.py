@@ -61,7 +61,6 @@ class HoldingImportService:
         self,
         user_id: int,
         account_id: int,
-        source_app: str | None,
         positions: list[ManualPositionInput],
     ) -> ImportDetail:
         """Parse manual rows synchronously and park them for confirmation."""
@@ -69,9 +68,9 @@ class HoldingImportService:
             raise UploadValidationError("no_positions_provided")
         await portfolio_service.ensure_account(user_id, account_id)
 
-        record = await import_repository.create_import(user_id, account_id, "MANUAL", source_app, status="UPLOADED")
+        record = await import_repository.create_import(user_id, account_id, "MANUAL", status="UPLOADED")
         draft = await ManualImportProvider().parse(
-            HoldingImportPayload(account_id=account_id, source_app=source_app, manual_positions=positions)
+            HoldingImportPayload(account_id=account_id, manual_positions=positions)
         )
         await import_repository.replace_items(record.id, draft.items)
         await import_repository.update_import(record.id, status="REVIEW_REQUIRED", items_detected=len(draft.items))
@@ -89,7 +88,6 @@ class HoldingImportService:
         self,
         user_id: int,
         account_id: int,
-        source_app: str | None,
         files: list[UploadFile],
     ) -> HoldingImport:
         """Validate and store screenshots, enqueue async parsing.
@@ -104,7 +102,7 @@ class HoldingImportService:
         await portfolio_service.ensure_account(user_id, account_id)
 
         record = await import_repository.create_import(
-            user_id, account_id, "SCREENSHOT", source_app, status="UPLOADED", image_count=len(files)
+            user_id, account_id, "SCREENSHOT", status="UPLOADED", image_count=len(files)
         )
         try:
             paths = await self._save_images(record.id, files)
@@ -135,9 +133,7 @@ class HoldingImportService:
         image_paths = await asyncio.to_thread(self._existing_image_paths, import_id)
         try:
             draft = await ScreenshotImportProvider().parse(
-                HoldingImportPayload(
-                    account_id=record.account_id, source_app=record.source_app, image_paths=image_paths
-                )
+                HoldingImportPayload(account_id=record.account_id, image_paths=image_paths)
             )
         except Exception as e:
             await self.mark_failed(import_id, f"ocr_extraction_failed: {e}")
@@ -465,7 +461,6 @@ class HoldingImportService:
             id=record.id,
             account_id=record.account_id,
             import_type=record.import_type,
-            source_app=record.source_app,
             status=record.status,
             image_count=record.image_count,
             items_detected=record.items_detected,

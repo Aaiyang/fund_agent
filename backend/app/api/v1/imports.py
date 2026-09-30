@@ -68,7 +68,6 @@ async def create_manual_import(
         detail = await holding_import_service.create_manual_import(
             identity.user_id,
             payload.account_id,
-            payload.source_app,
             payload.positions,
         )
     except UploadValidationError as e:
@@ -84,7 +83,6 @@ async def create_screenshot_import(
     request: Request,
     account_id: int,
     files: list[UploadFile],
-    source_app: str | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> ScreenshotImportAccepted:
     """Upload 1..N holdings screenshots; parsing runs in the worker queue.
@@ -92,7 +90,7 @@ async def create_screenshot_import(
     Returns 202 + import_id immediately; poll GET /{import_id} for status.
     """
     try:
-        record = await holding_import_service.create_screenshot_import(identity.user_id, account_id, source_app, files)
+        record = await holding_import_service.create_screenshot_import(identity.user_id, account_id, files)
     except UploadValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except AccountNotFoundError as e:

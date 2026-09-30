@@ -58,7 +58,6 @@ export function useCreateManualImport() {
  */
 export async function uploadScreenshots(params: {
   accountId: number;
-  sourceApp?: string | null;
   images: PickedImage[];
 }): Promise<components['schemas']['ScreenshotImportAccepted']> {
   const form = new FormData();
@@ -72,7 +71,6 @@ export async function uploadScreenshots(params: {
   }
 
   const query = new URLSearchParams({ account_id: String(params.accountId) });
-  if (params.sourceApp) query.set('source_app', params.sourceApp);
   const { access } = await loadTokens();
 
   const response = await fetch(`${API_BASE_URL}/holding-imports/screenshots?${query}`, {

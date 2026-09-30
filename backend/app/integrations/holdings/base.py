@@ -22,7 +22,6 @@ class HoldingImportPayload(BaseModel):
     """Provider input: manual rows and/or screenshot image paths."""
 
     account_id: int
-    source_app: str | None = None
     manual_positions: list[ManualPositionInput] = Field(default_factory=list)
     image_paths: list[str] = Field(default_factory=list)
 

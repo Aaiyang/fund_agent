@@ -546,8 +546,6 @@ PostgreSQL
 - 持有收益。
 - 持有收益率。
 - 当日收益（可选）。
-- 截图中的数据日期（可识别时）。
-- 来源应用名称（可识别或由用户选择）。
 
 截图中的字段并不总是完整，因此以上字段均应允许为空，并由后续 Fund Resolver 和 Validator 判断可用性。
 
@@ -1996,7 +1994,6 @@ http://192.168.1.100:8000
 - user_id。
 - account_id。
 - import_type：MANUAL / SCREENSHOT。
-- source_app。
 - status。
 - image_count。
 - items_detected。
