@@ -7,7 +7,7 @@ them (MVP spec 7.10).
 
 from datetime import date
 
-from sqlalchemy import select, union_all
+from sqlalchemy import func, select, union_all
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col
 
@@ -61,6 +61,14 @@ class FundRepository:
             )
             result = await session.execute(statement)
             return list(result.scalars().all())
+
+    async def nav_count(self, fund_code: str) -> int:
+        """How many NAV points we hold for one fund."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                select(func.count()).select_from(FundNav).where(col(FundNav.fund_code) == fund_code)
+            )
+            return int(result.scalar_one())
 
     async def get_nav_history(
         self,

@@ -48,6 +48,12 @@ _SEARCH_CACHE_TTL_SECONDS = 300
 # the quotes on top of them are not.
 _HOLDINGS_CACHE_TTL_SECONDS = 3600
 _TOP_HOLDINGS = 10
+# The trend line needs two points; one latest NAV is what the search and rank
+# lists leave behind, so anything below this counts as "never really synced".
+_MIN_HISTORY_POINTS = 2
+# How long to back off after attempting the inline history sync for a fund that
+# still looks thin afterwards — a genuinely new fund has one NAV point.
+_FULL_SYNC_RETRY_TTL_SECONDS = 86400
 
 
 def _weight_change(weight: float | None, previous: float | None) -> float | None:
@@ -457,38 +463,49 @@ class FundService:
     async def ensure_fund_data(self, fund_code: str) -> None:
         """Guarantee local data exists; refresh stale NAVs via the queue.
 
-        Missing fund → inline sync (first view pays once). Stale NAV →
-        enqueue a background sync and still serve the stored data.
+        A fund first met through the search or rank list arrives with that list's
+        abbreviation as its name and one latest NAV — enough to list, not enough
+        to chart (the trend needs two points) or to read back at an import.
+        Neither gets upgraded on the normal path: the profile used to be fetched
+        only for funds we had never heard of, and a one-point history is never
+        "stale". So the first view that needs more pays for the full sync.
         """
         fund = await fund_repository.get_fund(fund_code)
         if fund is None:
-            try:
-                await asyncio.wait_for(
-                    fund_sync_service.sync_fund(fund_code),
-                    timeout=settings.AKSHARE_TIMEOUT_SECONDS * 2,
-                )
-            except Exception:
-                logger.exception("fund_inline_sync_failed", fund_code=fund_code)
+            await self._sync_now(fund_code)
             return
 
-        # A row that only ever came from the search/rank list carries that list's
-        # abbreviation and none of the profile-only columns: no 公司, no 经理, no
-        # 成立日期. Fetching the profile once replaces the abbreviation with the
-        # name the fund itself answers to — which is what every screen shows,
-        # including a screenshot import he expects to read back as the real fund.
-        if fund.company is None and fund.manager_name is None and fund.inception_date is None:
-            try:
-                profile = await akshare_fund_provider.get_fund_profile(fund_code)
-                if profile is not None:
-                    await fund_write_repository.upsert_fund_from_record(profile)
-            except Exception:
-                logger.exception("fund_profile_backfill_failed", fund_code=fund_code)
+        if await self._needs_full_sync(fund):
+            await cache_service.set(cache_key("fund_full_sync", fund_code), "1", ttl=_FULL_SYNC_RETRY_TTL_SECONDS)
+            await self._sync_now(fund_code)
 
         if await fund_sync_service.is_nav_stale(fund_code):
             try:
                 await fund_sync_service.enqueue_sync(fund_code)
             except Exception as e:
                 logger.warning("fund_sync_enqueue_failed", fund_code=fund_code, error=str(e))
+
+    async def _needs_full_sync(self, fund: Fund) -> bool:
+        """Whether this row was only ever filled by a cheap path.
+
+        The marker matters because a fund that published its first NAV today
+        legitimately has one point: without it every view of that fund would
+        re-ask AKShare for a history that does not exist yet.
+        """
+        profile_known = fund.company is not None or fund.manager_name is not None or fund.inception_date is not None
+        if profile_known and await fund_repository.nav_count(fund.fund_code) >= _MIN_HISTORY_POINTS:
+            return False
+        return await cache_service.get(cache_key("fund_full_sync", fund.fund_code)) is None
+
+    async def _sync_now(self, fund_code: str) -> None:
+        """One full sync inline: profile, master row and NAV history."""
+        try:
+            await asyncio.wait_for(
+                fund_sync_service.sync_fund(fund_code),
+                timeout=settings.AKSHARE_TIMEOUT_SECONDS * 2,
+            )
+        except Exception:
+            logger.exception("fund_inline_sync_failed", fund_code=fund_code)
 
     # ------------------------------------------------------------------
     # Internal helpers
