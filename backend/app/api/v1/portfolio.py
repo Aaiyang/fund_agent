@@ -203,7 +203,7 @@ async def delete_position(
     account_id: int,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionDeleteResponse:
-    """Delete one position and write an audit adjustment record."""
+    """Erase one fund from an account: holding, ledger and 定投 plans."""
     try:
         deleted = await portfolio_service.delete_position(identity.user_id, account_id, fund_code)
     except AccountNotFoundError as e:

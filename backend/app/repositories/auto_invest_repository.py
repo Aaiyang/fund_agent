@@ -121,5 +121,30 @@ class AutoInvestRepository:
             await session.delete(plan)
             return True
 
+    async def delete_plans_for_fund(self, user_id: int, account_id: int, fund_code: str) -> int:
+        """Remove every plan buying one fund, returning how many went.
+
+        A plan surviving the fund it feeds would settle its next installment and
+        recreate the holding the user just erased, so the two are deleted
+        together.
+        """
+        async with get_async_session() as session:
+            plans = (
+                (
+                    await session.execute(
+                        select(AutoInvestPlan).where(
+                            col(AutoInvestPlan.user_id) == user_id,
+                            col(AutoInvestPlan.account_id) == account_id,
+                            col(AutoInvestPlan.fund_code) == fund_code,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for plan in plans:
+                await session.delete(plan)
+            return len(plans)
+
 
 auto_invest_repository = AutoInvestRepository()

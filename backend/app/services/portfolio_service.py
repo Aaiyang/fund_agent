@@ -27,6 +27,7 @@ from app.analytics.settlement import settlement_date
 from app.core.logging import logger
 from app.models.fund import FundNav
 from app.models.portfolio import PortfolioAccount, PortfolioPosition
+from app.repositories.auto_invest_repository import auto_invest_repository
 from app.repositories.fund_repository import fund_repository
 from app.repositories.portfolio_repository import portfolio_repository
 from app.schemas.portfolio import (
@@ -558,18 +559,17 @@ class PortfolioService:
         return position
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
-        """Remove a position and write an audit adjustment."""
+        """Erase one fund from an account: the holding, its ledger, its plans.
+
+        Nothing is left that could write it back. No audit row is added — the
+        records go with the holding on purpose — and the fund's 定投 plans are
+        removed too, because a surviving plan would settle the next installment
+        and resurrect the row he just deleted.
+        """
         await self.ensure_account(user_id, account_id)
         deleted = await portfolio_repository.delete_position(user_id, account_id, fund_code)
         if deleted:
-            await portfolio_repository.add_transaction(
-                user_id=user_id,
-                account_id=account_id,
-                fund_code=fund_code,
-                transaction_type="MANUAL_ADJUSTMENT",
-                trade_date=business_today(),
-                source="manual",
-            )
+            await auto_invest_repository.delete_plans_for_fund(user_id, account_id, fund_code)
         return deleted
 
     # ------------------------------------------------------------------

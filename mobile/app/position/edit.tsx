@@ -9,8 +9,9 @@ import { LoadingState, describeError } from '@/components/states';
 import { Button, Card, Chip, Field, Row, Screen, SectionTitle, Stat } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useFundDetail } from '@/hooks/useFunds';
-import { useAccounts, usePosition, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
+import { useAccounts, useDeletePosition, usePosition, useUpsertPosition, type PositionItem } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
+import { confirmAction } from '@/utils/confirm';
 import { formatMoney, formatNumber, formatSignedMoney, formatSignedRate, isCalendarDate, toInputNumber } from '@/utils/format';
 
 /**
@@ -72,6 +73,7 @@ function PositionForm({
   existing: PositionItem | null;
 }) {
   const upsert = useUpsertPosition();
+  const remove = useDeletePosition();
   const code = initialCode.trim();
   const detail = useFundDetail(code.length === 6 ? code : null);
   const [purchaseDate, setPurchaseDate] = useState(
@@ -122,6 +124,24 @@ function PositionForm({
     figures.profit_loss,
     figures.profit_loss_rate,
   ].some((value) => value !== null);
+
+  function drop() {
+    if (accountId === null || !existing) {
+      return;
+    }
+    confirmAction(
+      '删除持仓',
+      `${code} 在本账户的持仓、全部流水和定投计划都会被删除，不可恢复。`,
+      () =>
+        remove.mutate(
+          { accountId, fundCode: code },
+          {
+            onSuccess: () => router.back(),
+            onError: (error) => setProblem(describeError(error)),
+          },
+        ),
+    );
+  }
 
   function submit() {
     setProblem(null);
@@ -252,7 +272,7 @@ function PositionForm({
 
       {hasMoney ? (
         <Card>
-          <SectionTitle title="持仓结果" />
+          <SectionTitle title="持仓结果" action={existing ? '删除持仓' : undefined} onAction={drop} />
           <Row>
             <Stat label="持有金额" value={formatMoney(figures.market_value)} />
             <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />

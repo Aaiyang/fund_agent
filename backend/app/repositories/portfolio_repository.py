@@ -305,6 +305,16 @@ class PortfolioRepository:
             if existing is None:
                 return False
             await session.delete(existing)
+            # The ledger goes with the row: leftover BUY/SELL/AUTO_INVEST rows
+            # would re-project the holding the moment anything trades on this
+            # code again, which reads as the delete never having happened.
+            await session.execute(
+                sa_delete(Transaction).where(
+                    col(Transaction.user_id) == user_id,
+                    col(Transaction.account_id) == account_id,
+                    col(Transaction.fund_code) == fund_code,
+                )
+            )
             return True
 
     # ------------------------------------------------------------------
