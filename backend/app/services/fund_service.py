@@ -471,6 +471,19 @@ class FundService:
                 logger.exception("fund_inline_sync_failed", fund_code=fund_code)
             return
 
+        # A row that only ever came from the search/rank list carries that list's
+        # abbreviation and none of the profile-only columns: no 公司, no 经理, no
+        # 成立日期. Fetching the profile once replaces the abbreviation with the
+        # name the fund itself answers to — which is what every screen shows,
+        # including a screenshot import he expects to read back as the real fund.
+        if fund.company is None and fund.manager_name is None and fund.inception_date is None:
+            try:
+                profile = await akshare_fund_provider.get_fund_profile(fund_code)
+                if profile is not None:
+                    await fund_write_repository.upsert_fund_from_record(profile)
+            except Exception:
+                logger.exception("fund_profile_backfill_failed", fund_code=fund_code)
+
         if await fund_sync_service.is_nav_stale(fund_code):
             try:
                 await fund_sync_service.enqueue_sync(fund_code)

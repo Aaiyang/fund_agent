@@ -146,6 +146,11 @@ function ItemCard({
       </Text>
       <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
         {item.matched_fund_code ?? '无代码'} · 置信度 {typeof item.confidence === 'number' ? `${Math.round(item.confidence * 100)}%` : '--'}
+        {/* The title is the fund's own name; this is what the screenshot printed,
+            kept so a fuzzy match can be checked without leaving the page. */}
+        {item.matched_fund_name && item.raw_fund_name && item.matched_fund_name !== item.raw_fund_name
+          ? ` · 截图 ${item.raw_fund_name}`
+          : ''}
       </Text>
       {(item.validation_issues ?? []).length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
