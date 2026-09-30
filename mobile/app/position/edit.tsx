@@ -136,7 +136,7 @@ function PositionForm({
         remove.mutate(
           { accountId, fundCode: code },
           {
-            onSuccess: () => router.back(),
+            onSuccess: () => router.replace('/(tabs)'),
             onError: (error) => setProblem(describeError(error)),
           },
         ),

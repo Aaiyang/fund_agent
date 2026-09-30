@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { queryClient } from '@/api/queryClient';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useAuthStore } from '@/stores/auth';
 import { theme } from '@/constants/theme';
 
@@ -35,8 +36,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       {status === 'anonymous' ? <Redirect href="/login" /> : null}
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack>        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ title: '登录' }} />
         <Stack.Screen name="search" options={{ title: '搜索基金' }} />
         <Stack.Screen name="watchlist-groups" options={{ title: '自选分组' }} />
@@ -57,6 +57,7 @@ export default function RootLayout() {
         <Stack.Screen name="holding-import/screenshots" options={{ title: '截图识别' }} />
         <Stack.Screen name="holding-import/[importId]" options={{ title: '确认导入结果' }} />
       </Stack>
+      <ConfirmDialog />
     </QueryClientProvider>
   );
 }
