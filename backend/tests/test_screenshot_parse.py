@@ -150,18 +150,17 @@ class TestFields:
         assert position.profit_loss == 37.47  # pyright: ignore[reportAttributeAccessIssue]
         assert position.profit_loss_rate == 4.68  # pyright: ignore[reportAttributeAccessIssue]
 
-    def test_a_row_cut_off_mid_figure_is_flagged_not_guessed(self) -> None:
-        position = _positions(
+    def test_a_row_cut_off_mid_figure_is_dropped_not_completed(self) -> None:
+        # Half a holding is worse than none: he re-shoots the page, instead of
+        # confirming a row whose 昨日收益 was never on the screen.
+        assert not _positions(
             [
                 _block("国泰中证动漫游戏", _NAME_X, 2368, 400),
                 _block("555.93", _VALUE_X, 2368),
                 _block("-34.69", _PROFIT_X, 2370),
                 _block("/ULO", _PROFIT_X + 55, 2440, 90),
             ]
-        )[0]
-        assert position.market_value == 555.93  # pyright: ignore[reportAttributeAccessIssue]
-        assert position.profit_loss_rate is None  # pyright: ignore[reportAttributeAccessIssue]
-        assert position.partial  # pyright: ignore[reportAttributeAccessIssue]
+        )
 
     def test_a_rate_without_its_percent_is_left_out_rather_than_rescaled(self) -> None:
         # 4.68 could be 4.68% or a fraction; only the app knows, so nothing is claimed.

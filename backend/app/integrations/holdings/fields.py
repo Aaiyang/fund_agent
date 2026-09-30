@@ -8,6 +8,7 @@ few pixels apart, which is the mistake that silently misprices a holding.
 
 import re
 
+from app.core.logging import logger
 from app.integrations.holdings.base import RawExtractedPosition
 from app.integrations.holdings.layout import PageLayout, Slot
 from app.integrations.holdings.ocr import TextBlock
@@ -59,6 +60,7 @@ def to_positions(rows: list[HoldingRow], layout: PageLayout) -> list[RawExtracte
     """Turn clustered rows into extracted positions, ready for resolution."""
     line_tolerance = layout.median_height * 0.6
     positions: list[RawExtractedPosition] = []
+    dropped = 0
     for row in rows:
         values: dict[Slot, float] = {}
         scores: list[float] = []
@@ -86,6 +88,13 @@ def to_positions(rows: list[HoldingRow], layout: PageLayout) -> list[RawExtracte
                     continue
                 values[slot] = number
 
+        if partial:
+            # A row the screen cut off mid-height is missing a figure nobody can
+            # recover, and importing half a holding is worse than leaving it to
+            # the next screenshot — so it never reaches the review page.
+            dropped += 1
+            continue
+
         confidence = min(scores) if scores else 0.0
         if row.truncated:
             confidence = min(confidence, 0.7)
@@ -100,8 +109,10 @@ def to_positions(rows: list[HoldingRow], layout: PageLayout) -> list[RawExtracte
                 profit_loss_rate=values.get("profit_loss_rate"),
                 daily_profit_loss=values.get("daily_profit_loss"),
                 truncated=row.truncated,
-                partial=partial,
                 confidence=round(confidence, 3),
             )
         )
+
+    if dropped:
+        logger.info("screenshot_rows_dropped", dropped=dropped, kept=len(positions))
     return positions

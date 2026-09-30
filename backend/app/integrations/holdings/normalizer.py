@@ -56,7 +56,6 @@ def normalize_raw_position(raw: RawExtractedPosition) -> DraftPositionItem:
         profit_loss=raw.profit_loss,
         profit_loss_rate=raw.profit_loss_rate,
         truncated=raw.truncated,
-        partial=raw.partial,
         confidence=raw.confidence,
     )
 
@@ -87,12 +86,11 @@ def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
         issues.append("profit_loss_rate_out_of_range")
     if item.confidence < LOW_CONFIDENCE_THRESHOLD:
         issues.append("low_confidence")
-    # Screenshot-specific: a clipped name is several funds until he picks one,
-    # and a row whose columns filled unevenly was cut off by the screen.
+    # Screenshot-specific: a clipped name is several funds until he picks one.
+    # A row the screen cut off mid-height never gets here at all — the parser
+    # drops it, because a missing figure is not his to fill in.
     if item.truncated:
         issues.append("fund_name_truncated")
-    if item.partial:
-        issues.append("row_incomplete")
     if item.profit_loss is not None and item.profit_loss_rate is not None:
         if _sign(item.profit_loss) != _sign(item.profit_loss_rate) and 0 not in (
             item.profit_loss,

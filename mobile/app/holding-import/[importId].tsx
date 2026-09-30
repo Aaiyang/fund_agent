@@ -17,7 +17,6 @@ const ISSUE_LABEL: Record<string, string> = {
   profit_loss_rate_out_of_range: '收益率超出范围',
   duplicate_fund_different_values: '同一基金金额冲突',
   fund_name_truncated: '名称被截断',
-  row_incomplete: '这行没拍全',
   profit_and_rate_disagree: '收益与收益率一正一负',
 };
 
