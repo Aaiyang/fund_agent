@@ -58,7 +58,13 @@ export default function ImportReviewScreen() {
               </Card>
 
               {(batch.items ?? []).map((item) => (
-                <ItemCard key={item.id} item={item} importId={importId} updateItem={updateItem} />
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  importId={importId}
+                  updateItem={updateItem}
+                  editable={batch.status === 'REVIEW_REQUIRED'}
+                />
               ))}
 
               {batch.status === 'REVIEW_REQUIRED' ? (
@@ -121,10 +127,12 @@ function ItemCard({
   item,
   importId,
   updateItem,
+  editable,
 }: {
   item: ImportItem;
   importId: string;
   updateItem: ReturnType<typeof useUpdateImportItem>;
+  editable: boolean;
 }) {
   const [marketValue, setMarketValue] = useState(toInputNumber(item.market_value));
   const [problem, setProblem] = useState<string | null>(null);
@@ -138,8 +146,8 @@ function ItemCard({
     );
   }
 
-  return (
-    <Card style={{ opacity: skipped ? 0.55 : 1 }}>
+  const header = (
+    <>
       <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>
         {item.matched_fund_name ?? item.raw_fund_name ?? '未识别基金'}
       </Text>
@@ -151,6 +159,26 @@ function ItemCard({
           ? ` · 截图 ${item.raw_fund_name}`
           : ''}
       </Text>
+    </>
+  );
+
+  // Once the batch is applied the server rejects any further edit, so the card
+  // stops pretending it can be one: what was written is shown, nothing else.
+  if (!editable) {
+    return (
+      <Card>
+        {header}
+        <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 8 }}>
+          持有金额 {formatMoney(item.market_value)} · 持有收益 {formatSignedMoney(item.profit_loss)} · 持有收益率{' '}
+          {formatReturnPoints(item.profit_loss_rate)}
+        </Text>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ opacity: skipped ? 0.55 : 1 }}>
+      {header}
       {(item.validation_issues ?? []).length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
           {(item.validation_issues ?? []).map((issue) => (
