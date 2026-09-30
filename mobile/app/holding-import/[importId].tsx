@@ -6,7 +6,7 @@ import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useConfirmImport, useDeleteImport, useImportDetail, useUpdateImportItem, type ImportItem } from '@/hooks/useImports';
-import { formatMoney, toInputNumber } from '@/utils/format';
+import { formatMoney, formatReturnPoints, formatSignedMoney, toInputNumber } from '@/utils/format';
 
 const ISSUE_LABEL: Record<string, string> = {
   fund_unresolved: '未匹配到基金',
@@ -193,6 +193,14 @@ function ItemCard({
           <Text style={{ fontSize: 14, color: theme.primary }}>{formatMoney(skipped ? item.current_market_value : item.market_value)}</Text>
         </View>
       </View>
+
+      {/* The screenshot's own right-hand column: 持有收益 and its rate. Both are
+          shown so a misread is visible here — the rate is the one figure the
+          import does not store (成本 = 金额 − 收益 afterwards), so a gap between
+          it and the app's number is a real difference, not a lost field. */}
+      <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 8 }}>
+        持有收益 {formatSignedMoney(item.profit_loss)} · 持有收益率 {formatReturnPoints(item.profit_loss_rate)}
+      </Text>
 
       <Field
         label="修正持有金额"
