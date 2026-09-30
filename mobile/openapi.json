@@ -5014,18 +5014,6 @@
             ],
             "title": "Profit Loss Rate"
           },
-          "purchase_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purchase Date"
-          },
           "confidence": {
             "anyOf": [
               {
@@ -5194,18 +5182,6 @@
               }
             ],
             "title": "Profit Loss Rate"
-          },
-          "purchase_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purchase Date"
           }
         },
         "type": "object",

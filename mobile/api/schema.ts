@@ -1928,8 +1928,6 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
-            /** Purchase Date */
-            purchase_date?: string | null;
             /** Confidence */
             confidence?: number | null;
             /** Validation Status */
@@ -1972,8 +1970,6 @@ export interface components {
             profit_loss?: number | null;
             /** Profit Loss Rate */
             profit_loss_rate?: number | null;
-            /** Purchase Date */
-            purchase_date?: string | null;
         };
         /**
          * IndexCatalogItem

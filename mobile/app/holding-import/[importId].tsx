@@ -2,7 +2,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { PurchaseDateField, purchaseDateProblem } from '@/components/PurchaseDateFields';
 import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -129,7 +128,6 @@ function ItemCard({
   updateItem: ReturnType<typeof useUpdateImportItem>;
 }) {
   const [marketValue, setMarketValue] = useState(toInputNumber(item.market_value));
-  const [purchaseDate, setPurchaseDate] = useState(item.purchase_date ?? '');
   const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
 
@@ -199,10 +197,6 @@ function ItemCard({
         keyboardType="numeric"
         placeholder="请输入修正后的持有金额"
       />
-      <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 8 }}>
-        截图里没有买入日期，默认按导入当天记；知道实际日期的话改这里，持有天数从这天算。
-      </Text>
-      <PurchaseDateField value={purchaseDate} onChangeText={setPurchaseDate} />
       <View style={{ flexDirection: 'row' }}>
         <View style={{ flex: 1, marginRight: 6 }}>
           <Button
@@ -210,18 +204,12 @@ function ItemCard({
             variant="secondary"
             loading={updateItem.isPending}
             onPress={() => {
-              const dateProblem = purchaseDateProblem(purchaseDate);
-              if (dateProblem) {
-                setProblem(dateProblem);
-                return;
-              }
               setProblem(null);
               updateItem.mutate(
                 {
                   importId,
                   itemId: item.id,
                   market_value: marketValue.trim() === '' ? null : Number(marketValue),
-                  purchase_date: purchaseDate.trim() || null,
                 },
                 { onError: (error) => setProblem(describeError(error)) },
               );
