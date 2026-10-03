@@ -167,6 +167,20 @@ class FundRepository:
             result = await session.execute(union_all(position_codes, watchlist_codes))
             return sorted({row[0] for row in result if row[0]})
 
+    async def list_user_fund_codes(self, user_id: int) -> list[str]:
+        """Distinct codes one user holds or watchlists: the on-demand refresh set.
+
+        Both flags feed the same NAV columns, so refreshing them together is what
+        lets the holdings screen show one consistent set of numbers.
+        """
+        position_codes = (
+            select(col(PortfolioPosition.fund_code)).where(col(PortfolioPosition.user_id) == user_id).distinct()
+        )
+        watchlist_codes = select(col(Watchlist.fund_code)).where(col(Watchlist.user_id) == user_id)
+        async with get_async_session() as session:
+            result = await session.execute(union_all(position_codes, watchlist_codes))
+            return sorted({row[0] for row in result if row[0]})
+
 
 class FundWriteRepository:
     """Write-side operations for fund data (upserts)."""
@@ -215,6 +229,7 @@ class FundWriteRepository:
                         fund_code=record.fund_code,
                         nav_date=record.nav_date,
                         unit_nav=record.latest_nav,
+                        accumulated_nav=record.latest_accumulated,
                         daily_return=record.daily_return,
                     )
                 ]
@@ -250,9 +265,13 @@ class FundWriteRepository:
                 statement = statement.on_conflict_do_update(
                     constraint="uq_fund_nav_code_date",
                     set_={
-                        "unit_nav": statement.excluded.unit_nav,
-                        "accumulated_nav": statement.excluded.accumulated_nav,
-                        "daily_return": statement.excluded.daily_return,
+                        # A NULL in the payload means the source did not say, not
+                        # that the stored value is wrong. The batched quote table
+                        # carries no 累计净值 for every fund, so an unconditional
+                        # overwrite here would blank a figure the detail page shows.
+                        "unit_nav": func.coalesce(statement.excluded.unit_nav, FundNav.unit_nav),
+                        "accumulated_nav": func.coalesce(statement.excluded.accumulated_nav, FundNav.accumulated_nav),
+                        "daily_return": func.coalesce(statement.excluded.daily_return, FundNav.daily_return),
                         "source": statement.excluded.source,
                         "fetched_at": statement.excluded.fetched_at,
                     },

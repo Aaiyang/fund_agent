@@ -18,6 +18,7 @@ from app.schemas.fund import (
     FundDetailResponse,
     FundHoldingsResponse,
     FundNavHistoryResponse,
+    FundNavRefreshResponse,
     FundPerformanceResponse,
     FundSearchResponse,
     FundSyncStatusResponse,
@@ -41,6 +42,29 @@ async def search_funds(
     logger.info("fund_search_requested", session_id=identity.session_id, user_id=identity.user_id)
     items = await fund_service.search(q, user_id=identity.user_id)
     return FundSearchResponse(items=items, total=len(items))
+
+
+@router.post("/refresh-latest", response_model=FundNavRefreshResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["funds_refresh"][0])
+async def refresh_latest_navs(
+    request: Request,
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> FundNavRefreshResponse:
+    """Refresh the latest NAV of every fund the caller holds or watchlists.
+
+    The set comes from the caller's identity rather than a list of codes: the
+    client would have to wait for both of its lists to load before it could ask,
+    and a client-supplied set would let any caller name arbitrary funds.
+    """
+    result = await fund_sync_service.refresh_user_latest_navs(identity.user_id)
+    logger.info(
+        "fund_nav_refresh_requested",
+        user_id=identity.user_id,
+        status=result.status,
+        requested=result.requested,
+        updated=result.updated,
+    )
+    return result
 
 
 @router.get("/{fund_code}", response_model=FundDetailResponse)

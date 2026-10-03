@@ -35,8 +35,13 @@ class FundDataProvider(Protocol):
         """Fetch the most recent NAV for a fund."""
         ...
 
-    async def get_latest_navs(self, fund_codes: list[str]) -> list[FundExternalNav]:
-        """Fetch the latest NAV for many funds at once, for list views."""
+    async def get_latest_navs(self, fund_codes: list[str], force: bool = False) -> list[FundExternalNav]:
+        """Fetch the latest NAV for many funds at once, for list views.
+
+        `force` ignores the cached source table and re-fetches it, which is what
+        an on-demand quote refresh needs; the default read stays cached because
+        the table is one large request over every fund.
+        """
         ...
 
     async def get_nav_history(

@@ -50,6 +50,9 @@ from app.utils.sanitization import sanitize_string
 
 # Cache the full open-fund rank table in-process for cheap search + latest NAV
 _RANK_CACHE_TTL_SECONDS = 6 * 3600
+# A forced rebuild (the on-demand quote refresh) ignores the TTL above, but two
+# refreshes a minute apart gain nothing: the table is published once a day.
+_RANK_MIN_REFRESH_SECONDS = 60
 # The master (code, name) list changes a few times a month; refreshing it daily
 # keeps a screenshot import from paying for it more than once a day.
 _NAME_DIRECTORY_TTL_SECONDS = 24 * 3600
@@ -76,6 +79,8 @@ class AKShareFundProvider:
         self._last_call_monotonic = 0.0
         self._rank_index: list[FundExternalRecord] = []
         self._rank_cached_at = 0.0
+        self._rank_attempted_at = 0.0
+        self._rank_lock = asyncio.Lock()
         self._name_directory: list[tuple[str, str]] = []
         self._name_cached_at = 0.0
 
@@ -108,6 +113,7 @@ class AKShareFundProvider:
                     fund_code=fund_code,
                     nav_date=record.nav_date,
                     unit_nav=record.latest_nav,
+                    accumulated_nav=record.latest_accumulated,
                     daily_return=record.daily_return,
                 )
         history = await self.get_nav_history(fund_code)
@@ -134,17 +140,22 @@ class AKShareFundProvider:
             navs = [nav for nav in navs if nav.nav_date >= start_date]
         return navs
 
-    async def get_latest_navs(self, fund_codes: list[str]) -> list[FundExternalNav]:
-        """Read the latest NAV for many funds from the cached rank table."""
+    async def get_latest_navs(self, fund_codes: list[str], force: bool = False) -> list[FundExternalNav]:
+        """Read the latest NAV for many funds from the rank table.
+
+        One upstream call answers any number of codes, which is why the
+        on-demand quote refresh batches instead of syncing fund by fund.
+        """
         if not fund_codes:
             return []
         wanted = set(fund_codes)
-        index = await self._get_rank_index()
+        index = await self._get_rank_index(force)
         return [
             FundExternalNav(
                 fund_code=record.fund_code,
                 nav_date=record.nav_date,
                 unit_nav=record.latest_nav,
+                accumulated_nav=record.latest_accumulated,
                 daily_return=record.daily_return,
             )
             for record in index
@@ -231,21 +242,39 @@ class AKShareFundProvider:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _get_rank_index(self) -> list[FundExternalRecord]:
+    async def _get_rank_index(self, force: bool = False) -> list[FundExternalRecord]:
         """Return the open-fund rank table as normalized records, cached.
 
         Normalization happens once per refresh: the raw rows carry Chinese
         column names, and matching on English keys would silently never hit.
         """
-        if self._rank_index and (time.monotonic() - self._rank_cached_at) < _RANK_CACHE_TTL_SECONDS:
+        if self._rank_is_reusable(force):
             return self._rank_index
-        rows = await self._call("fund_open_fund_rank_em", symbol="全部")
-        normalized = [item for row in rows or [] if (item := normalize_fund_record(row)) is not None]
-        if normalized:
-            self._rank_index = normalized
-            self._rank_cached_at = time.monotonic()
-            logger.info("akshare_rank_index_built", rows=len(normalized))
-        return normalized
+        async with self._rank_lock:
+            # The waiter that lost the race still has to re-check: whoever built
+            # the table while we queued has already answered this request.
+            if self._rank_is_reusable(force):
+                return self._rank_index
+            self._rank_attempted_at = time.monotonic()
+            rows = await self._call("fund_open_fund_rank_em", symbol="全部")
+            normalized = [item for row in rows or [] if (item := normalize_fund_record(row)) is not None]
+            if normalized:
+                self._rank_index = normalized
+                self._rank_cached_at = time.monotonic()
+                logger.info("akshare_rank_index_built", rows=len(normalized), forced=force)
+            return normalized
+
+    def _rank_is_reusable(self, force: bool) -> bool:
+        """Whether the in-process table may answer this read without a fetch.
+
+        The stampede guard is stamped before the call, so an outage costs one
+        attempt per minute rather than one per tab focus.
+        """
+        if not self._rank_index:
+            return False
+        if force:
+            return (time.monotonic() - self._rank_attempted_at) < _RANK_MIN_REFRESH_SECONDS
+        return (time.monotonic() - self._rank_cached_at) < _RANK_CACHE_TTL_SECONDS
 
     async def get_name_directory(self) -> list[tuple[str, str]]:
         """Every registered fund's (code, name) pair, cached.

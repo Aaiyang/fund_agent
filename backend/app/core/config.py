@@ -234,6 +234,12 @@ class Settings:
         self.AKSHARE_MAX_RETRIES = int(os.getenv("AKSHARE_MAX_RETRIES", "2"))
         self.AKSHARE_MIN_INTERVAL_SECONDS = float(os.getenv("AKSHARE_MIN_INTERVAL_SECONDS", "0.2"))
         self.FUND_NAV_STALE_HOURS = int(os.getenv("FUND_NAV_STALE_HOURS", "24"))
+        # On-demand quote refresh (opening 持仓): the source table is published once a
+        # day, so a shorter gap only buys duplicate upstream work.
+        self.FUND_NAV_REFRESH_COOLDOWN_SECONDS = int(os.getenv("FUND_NAV_REFRESH_COOLDOWN_SECONDS", "120"))
+        # The batched quote table is one request over every fund; measured at ~5 s, so
+        # this is headroom, not a promise to keep the request open that long.
+        self.FUND_NAV_REFRESH_TIMEOUT_SECONDS = float(os.getenv("FUND_NAV_REFRESH_TIMEOUT_SECONDS", "15"))
         # Hot Fund sweep (spec 7.13): the API only enqueues; a worker executes
         self.FUND_HOT_SYNC_ENABLED = os.getenv("FUND_HOT_SYNC_ENABLED", "false").lower() in ("true", "1", "t", "yes")
         self.FUND_HOT_SYNC_INTERVAL_MINUTES = int(os.getenv("FUND_HOT_SYNC_INTERVAL_MINUTES", "360"))
@@ -266,6 +272,7 @@ class Settings:
             "health": ["20 per minute"],
             "funds": ["120 per minute"],
             "funds_search": ["60 per minute"],
+            "funds_refresh": ["30 per minute"],
             "indexes": ["120 per minute"],
             "markets": ["120 per minute"],
             "watchlist": ["60 per minute"],

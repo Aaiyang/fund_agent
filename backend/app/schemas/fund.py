@@ -142,3 +142,19 @@ class FundSyncStatusResponse(BaseResponse):
     fund_code: str
     queued: bool
     job_id: str | None = None
+
+
+class FundNavRefreshResponse(BaseResponse):
+    """POST /funds/refresh-latest response.
+
+    `status` is the only field a client has to branch on, and every value short
+    of `unavailable` is a normal outcome rather than an error: a fund the source
+    table does not carry gets queued individually, and a refresh already running
+    for this user is reported as `throttled`. The counts are for the read-out.
+    """
+
+    status: Literal["ok", "partial", "throttled", "deferred", "unavailable"] = "ok"
+    requested: int = 0
+    updated: int = 0
+    missing: list[str] = []
+    nav_date: date | None = None

@@ -17,6 +17,7 @@ class FundExternalRecord(BaseModel):
     fund_name: str
     fund_type: str | None = None
     latest_nav: float | None = None
+    latest_accumulated: float | None = None
     nav_date: date | None = None
     daily_return: float | None = None
 

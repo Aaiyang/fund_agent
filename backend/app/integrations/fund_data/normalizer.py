@@ -103,6 +103,7 @@ def normalize_fund_record(record: dict[str, Any]) -> FundExternalRecord | None:
         fund_name=str(fund_name or "").strip(),
         fund_type=str(_pick(record, "基金类型", "fund_type")).strip() or None if _pick(record, "基金类型") else None,
         latest_nav=to_float(_pick(record, "单位净值", "最新净值", "nav")),
+        latest_accumulated=to_float(_pick(record, "累计净值", "累计单位净值")),
         nav_date=to_date(_pick(record, "日期", "净值日期", "nav_date")),
         daily_return=to_float(_pick(record, "日增长率", "日涨跌幅", "daily_return")),
     )
