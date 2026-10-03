@@ -90,6 +90,7 @@ npm run dev        # http://localhost:3000
 | `ALLOWED_ORIGINS` | CORS 白名单，需包含前端来源（如 `http://localhost:8081`） |
 | `AKSHARE_MAX_CONCURRENCY` / `_TIMEOUT_SECONDS` / `_MAX_RETRIES` / `_MIN_INTERVAL_SECONDS` | 外部基金数据采集的并发、超时、重试与节流 |
 | `FUND_NAV_STALE_HOURS` / `FUND_BUSINESS_TZ` | 净值新鲜度窗口与业务日历（交易日/持有天数口径） |
+| `FUND_NAV_REFRESH_COOLDOWN_SECONDS` / `_TIMEOUT_SECONDS` | 打开持仓时按身份批量刷新最新净值的去重间隔与等待上限 |
 | `FUND_HOT_SYNC_ENABLED` / `FUND_HOT_SYNC_INTERVAL_MINUTES` | 热基金周期扫描（默认关闭，仅入队，由 worker 执行） |
 | `HOLDING_IMPORT_MAX_IMAGES` / `_MAX_IMAGE_MB` / `_TEMP_DIR` / `_STALE_MINUTES` | 截图导入的文件数量/大小/临时目录/僵死批次回收。识别用本地 OCR，需 `uv sync --extra ocr`（rapidocr + onnxruntime），不依赖云端视觉模型 |
 | `TASKIQ_REDIS_URL` / `BACKGROUND_TASK_MAX_ATTEMPTS` | 后台任务队列与重试预算 |

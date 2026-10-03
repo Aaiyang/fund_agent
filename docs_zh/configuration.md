@@ -145,6 +145,8 @@ cp .env.example .env.development
 | `AKSHARE_MAX_RETRIES` | `2` | tenacity 重试次数 |
 | `AKSHARE_MIN_INTERVAL_SECONDS` | `0.2` | 调用间最小间隔（节流） |
 | `FUND_NAV_STALE_HOURS` | `24` | 净值超过该小时数视为过期 |
+| `FUND_NAV_REFRESH_COOLDOWN_SECONDS` | `120` | 同一用户两次「按需刷新净值」的最小间隔（打开持仓时触发） |
+| `FUND_NAV_REFRESH_TIMEOUT_SECONDS` | `15` | 那次刷新等待批量净值表的上限，超时即返回上次数据 |
 | `FUND_BUSINESS_TZ` | `Asia/Shanghai` | `trade_date` 与持有天数使用的日历 |
 | `FUND_HOT_SYNC_ENABLED` | `false` | 由 API 进程周期入队热基金扫描 |
 | `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | 扫描间隔 |

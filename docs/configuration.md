@@ -147,6 +147,8 @@ through `os.getenv`, so third-party limits stay tunable without code changes
 | `AKSHARE_MAX_RETRIES` | `2` | tenacity retries per call |
 | `AKSHARE_MIN_INTERVAL_SECONDS` | `0.2` | Minimum spacing between calls (throttle) |
 | `FUND_NAV_STALE_HOURS` | `24` | Age after which a stored NAV counts as stale |
+| `FUND_NAV_REFRESH_COOLDOWN_SECONDS` | `120` | Per-user gap between on-demand NAV refreshes (opening 持仓) |
+| `FUND_NAV_REFRESH_TIMEOUT_SECONDS` | `15` | How long such a refresh may wait on the batched quote table |
 | `FUND_BUSINESS_TZ` | `Asia/Shanghai` | Calendar used for `trade_date` and holding days |
 | `FUND_HOT_SYNC_ENABLED` | `false` | Periodically enqueue a Hot Fund sweep from the API process |
 | `FUND_HOT_SYNC_INTERVAL_MINUTES` | `360` | Interval of that sweep |
