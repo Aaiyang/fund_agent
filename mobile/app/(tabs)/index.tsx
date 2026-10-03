@@ -7,6 +7,7 @@ import { Card, NavTab, Screen, SectionTitle } from '@/components/ui';
 import { HoldingsTable } from '@/components/HoldingsTable';
 import { theme } from '@/constants/theme';
 import { useIndexQuotes } from '@/hooks/useIndexes';
+import { navRefreshNotice, useNavRefreshOnFocus } from '@/hooks/useFunds';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
@@ -27,6 +28,8 @@ export default function HoldingsScreen() {
   const positions = usePositions(accountId);
   const accounts = useAccounts();
   const quotes = useIndexQuotes();
+  const nav = useNavRefreshOnFocus();
+  const navNotice = navRefreshNotice(nav.isPending, nav.result);
   const tapeRef = useRef<ScrollView>(null);
   useDragScroll(tapeRef);
   const tape = (quotes.data?.items ?? []).map((index) => ({
@@ -95,6 +98,7 @@ export default function HoldingsScreen() {
               </View>
               <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
                 数据更新：{formatDateTime(stats.data_updated_at)}
+                {navNotice ? ` · ${navNotice}` : ''}
               </Text>
             </Card>
           );

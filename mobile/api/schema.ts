@@ -396,6 +396,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/funds/refresh-latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Latest Navs
+         * @description Refresh the latest NAV of every fund the caller holds or watchlists.
+         *
+         *     The set comes from the caller's identity rather than a list of codes: the
+         *     client would have to wait for both of its lists to load before it could ask,
+         *     and a client-supplied set would let any caller name arbitrary funds.
+         */
+        post: operations["refresh_latest_navs_api_v1_funds_refresh_latest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/funds/{fund_code}": {
         parameters: {
             query?: never;
@@ -1781,6 +1805,46 @@ export interface components {
             accumulated_nav?: number | null;
             /** Daily Return */
             daily_return?: number | null;
+        };
+        /**
+         * FundNavRefreshResponse
+         * @description POST /funds/refresh-latest response.
+         *
+         *     `status` is the only field a client has to branch on, and every value short
+         *     of `unavailable` is a normal outcome rather than an error: a fund the source
+         *     table does not carry gets queued individually, and a refresh already running
+         *     for this user is reported as `throttled`. The counts are for the read-out.
+         */
+        FundNavRefreshResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /**
+             * Status
+             * @default ok
+             * @enum {string}
+             */
+            status?: "ok" | "partial" | "throttled" | "deferred" | "unavailable";
+            /**
+             * Requested
+             * @default 0
+             */
+            requested?: number;
+            /**
+             * Updated
+             * @default 0
+             */
+            updated?: number;
+            /**
+             * Missing
+             * @default []
+             */
+            missing?: string[];
+            /** Nav Date */
+            nav_date?: string | null;
         };
         /**
          * FundPerformance
@@ -3656,6 +3720,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_latest_navs_api_v1_funds_refresh_latest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundNavRefreshResponse"];
                 };
             };
         };

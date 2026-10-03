@@ -1,5 +1,7 @@
 /** Fund search, detail, NAV history and refresh triggers (spec 3.4 / 3.5). */
 
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, request } from '@/api/client';
@@ -11,6 +13,7 @@ export type FundDetail = components['schemas']['FundDetailResponse'];
 export type FundHoldingItem = components['schemas']['FundHoldingItem'];
 export type FundHoldings = components['schemas']['FundHoldingsResponse'];
 export type NavHistory = components['schemas']['FundNavHistoryResponse'];
+export type FundNavRefresh = components['schemas']['FundNavRefreshResponse'];
 export type NavRange = '1m' | '3m' | '6m' | '1y' | '3y' | 'all';
 
 export const NAV_RANGES: { key: NavRange; label: string }[] = [
@@ -99,4 +102,59 @@ export function useRefreshFund(code: string | null) {
       ]);
     },
   });
+}
+
+/** Refresh every held + watchlisted fund's latest NAV in one batched request. */
+export function useRefreshLatestNavs() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      request<components['schemas']['FundNavRefreshResponse']>('/funds/refresh-latest', { method: 'POST' }),
+    onSuccess: async () => {
+      // The endpoint stores the new NAVs before it answers, so this re-read is
+      // the result the refresh was for rather than another attempt at it.
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        client.invalidateQueries({ queryKey: queryKeys.watchlist }),
+        client.invalidateQueries({ queryKey: queryKeys.funds }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Ask for fresh NAVs whenever the calling screen gains focus.
+ *
+ * Nothing else fires here: react-query's refetch-on-focus binds a browser
+ * `visibilitychange` event that does not exist on native, and a tab stays
+ * mounted after its first visit, so switching tabs is not a remount either.
+ */
+export function useNavRefreshOnFocus() {
+  // Only `mutate` belongs in the dependency list. It is memoized against a
+  // stable observer, while the rest of the result object is rebuilt on every
+  // state change — depending on that would re-run this effect from its own
+  // invalidation and refresh forever.
+  const { mutate, isPending, data } = useRefreshLatestNavs();
+  useFocusEffect(
+    useCallback(() => {
+      mutate();
+    }, [mutate]),
+  );
+  return { isPending, result: data };
+}
+
+/**
+ * One honest line about the batch refresh; silence is the normal outcome.
+ *
+ * A cooldown (`throttled`) response ran no request at all and changed nothing,
+ * and `ok` with zero updates would read as a failure — so both say nothing.
+ */
+export function navRefreshNotice(pending: boolean, result?: FundNavRefresh): string | null {
+  if (pending) return '正在刷新净值…';
+  if (!result || result.status === 'ok' || result.status === 'throttled') return null;
+  if (result.status === 'partial') {
+    return `已更新 ${result.updated ?? 0} 只，${result.missing?.length ?? 0} 只已单独排队`;
+  }
+  if (result.status === 'deferred') return '净值抓取超时，显示的是上次数据';
+  return '净值数据源不可用，显示的是上次数据';
 }
