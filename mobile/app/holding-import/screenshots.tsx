@@ -8,6 +8,7 @@ import { describeError } from '@/components/states';
 import { theme } from '@/constants/theme';
 import { useUploadScreenshots, type PickedImage } from '@/hooks/useImports';
 import { useAccounts } from '@/hooks/usePortfolio';
+import { useUiStore } from '@/stores/ui';
 
 const MAX_IMAGES = 5;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -19,11 +20,14 @@ const MAX_BYTES = 8 * 1024 * 1024;
 export default function ScreenshotImportScreen() {
   const accounts = useAccounts();
   const upload = useUploadScreenshots();
+  const viewAccount = useUiStore((state) => state.accountId);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [images, setImages] = useState<PickedImage[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const chosen = accountId ?? accounts.data?.items[0]?.id ?? null;
+  // The account selected in the top nav is the import target; a pick made here
+  // only rewrites this form, and 全部账户 has no target of its own.
+  const chosen = accountId ?? viewAccount ?? accounts.data?.items[0]?.id ?? null;
 
   async function pick() {
     setProblem(null);

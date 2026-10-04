@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { queryKeys } from '@/api/queries';
 import type { components } from '@/api/schema';
+import { useUiStore } from '@/stores/ui';
 
 export type PositionItem = components['schemas']['PositionItem'];
 export type PortfolioSummary = components['schemas']['PortfolioSummary'];
@@ -132,7 +133,14 @@ export function useDeleteAccount() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (accountId: number) => api.del(`/accounts/${accountId}`),
-    onSuccess: () => invalidateAccounts(client),
+    onSuccess: (_data, accountId) => {
+      // The navigation keeps a selected account, and screens now default to it.
+      // Leaving the choice pointing at a deleted id would make those screens ask
+      // the server for an account it answers 404 for.
+      const ui = useUiStore.getState();
+      if (ui.accountId === accountId) ui.setAccountId(null);
+      return invalidateAccounts(client);
+    },
   });
 }
 
