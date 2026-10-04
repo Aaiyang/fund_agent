@@ -24,6 +24,9 @@ const COLUMNS: DataColumn<PositionItem>[] = [
       subColor: item.is_updated ? theme.textFaint : theme.warning,
     }),
   },
+  // The same reserved slot 自选 keeps: 盘中估值 has no backend, so the column
+  // holds its place next to 最新涨幅 and says so.
+  { key: 'estimate', title: '预估涨幅', width: 84, cell: () => ({ text: '--', sub: '未接入' }) },
   {
     key: 'weeklyProfit',
     title: '本周收益',

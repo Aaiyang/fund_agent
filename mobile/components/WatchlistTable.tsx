@@ -35,7 +35,7 @@ const COLUMNS: DataColumn<WatchlistFund>[] = [
   },
   // Reserved for the intraday estimate (估值): the provider has no estimate
   // endpoint yet, so the column keeps its place in the grid and says so.
-  { key: 'estimate', title: '当日涨幅', width: 84, cell: () => ({ text: '--', sub: '未接入' }) },
+  { key: 'estimate', title: '预估涨幅', width: 84, cell: () => ({ text: '--', sub: '未接入' }) },
   periodColumn('weekly', '近1周', (item) => item.weekly_return),
   periodColumn('monthly', '近1月', (item) => item.monthly_return),
   periodColumn('quarterly', '近3月', (item) => item.quarterly_return),
