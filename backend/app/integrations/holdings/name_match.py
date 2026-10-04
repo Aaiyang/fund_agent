@@ -15,10 +15,19 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-# Tags that decorate a name without distinguishing the product the user holds.
-_STRIP_TAGS = re.compile(r"(qdii|qd2|人民币|美元|现汇|现钞|份额)")
-# The trailing letter that marks a share class: 混合C, 联接A, 指数E.
-_SHARE_CLASS = re.compile(r"([a-f])$")
+# Words a platform's display name may add or drop without changing which fund
+# it means: 支付宝 writes 「嘉实信息产业股票C」 and 「华泰柏瑞质量成长混合C」 for
+# funds the register calls 「…发起式C」 and 「…质量成长C」. The exchanges went the
+# other way in 2025 and now require ETF short names to carry the manager's name,
+# which is the same lesson: a name is a label, the code is the identity.
+_STRIP_TAGS = re.compile(
+    r"(qdii|qd2|人民币|美元|现汇|现钞|份额|发起式|混合型|混合|股票型|股票|债券型|债券|指数|证券投资基金)"
+)
+# The trailing letter that marks a share class: 混合C, 联接A, 指数E. It must not be
+# the last letter of an acronym — 「招商快线ETF」 has no share class — and trailing
+# brackets are skipped first so 「华夏大盘精选混合A(后端)」 still reads as A.
+_SHARE_CLASS = re.compile(r"(?<![a-z])([a-f])$")
+_TRAILING_BRACKET = re.compile(r"[()（）\s]+$|[（(][^（）()]*[)）]$")
 _PUNCTUATION = re.compile(r"[\s·•.,，、:：;；'’“”\"()（）\-—_]+")
 
 
@@ -36,16 +45,26 @@ class NameMatch:
         return share_class_of(self.fund_name)
 
 
+def fold(text: str) -> str:
+    """Lower-case a name and drop the display tags, keeping punctuation.
+
+    The share-class rule needs the punctuation boundary back to tell 「(LOF)C」
+    (a C class) from 「ETF」 (no class), so it reads this rather than `normalize`.
+    """
+    return _STRIP_TAGS.sub("", unicodedata.normalize("NFKC", text).lower())
+
+
 def normalize(text: str) -> str:
     """Fold a name down to the form comparisons happen on."""
-    folded = unicodedata.normalize("NFKC", text).lower()
-    folded = _STRIP_TAGS.sub("", folded)
-    return _PUNCTUATION.sub("", folded)
+    return _PUNCTUATION.sub("", fold(text))
 
 
 def share_class_of(text: str) -> str | None:
     """The share class letter a name ends with, lower-cased."""
-    match = _SHARE_CLASS.search(normalize(text))
+    folded = fold(text)
+    while (trimmed := _TRAILING_BRACKET.sub("", folded)) != folded:
+        folded = trimmed
+    match = _SHARE_CLASS.search(folded)
     return match.group(1) if match else None
 
 
@@ -116,15 +135,24 @@ def rank_names(
 def decide(matches: list[NameMatch], auto_accept: float = 0.95) -> NameMatch | None:
     """The single fund a name resolves to, or None when it must be chosen.
 
-    Auto-accept needs one winner and no runner-up within 0.05 of it — two names
-    that close together are almost always the same fund's share classes, and
-    the difference between them is real money in the wrong place.
+    Candidates are compared per fund, not per spelling: the directory carries the
+    register's short name and the synced legal name for the same code on purpose,
+    and once both fold to the same form a fund would otherwise be its own runner-up
+    and stop matching the day its master row appears. Only a *different* code within
+    0.05 is ambiguity — those are share classes, and the difference is real money in
+    the wrong place.
     """
-    if not matches:
+    best_by_code: dict[str, NameMatch] = {}
+    for match in matches:
+        current = best_by_code.get(match.fund_code)
+        if current is None or match.score > current.score:
+            best_by_code[match.fund_code] = match
+    ranked = sorted(best_by_code.values(), key=lambda match: -match.score)
+    if not ranked:
         return None
-    best = matches[0]
+    best = ranked[0]
     if best.score < auto_accept:
         return None
-    if len(matches) > 1 and matches[1].score >= best.score - 0.05:
+    if len(ranked) > 1 and ranked[1].score >= best.score - 0.05:
         return None
     return best

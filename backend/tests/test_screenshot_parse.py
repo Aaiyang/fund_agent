@@ -6,6 +6,7 @@ becoming a fund, a 金选 chip glued onto the name, a clipped row importing as i
 complete. Blocks here are laid out like the real 支付宝 page they came from.
 """
 
+from app.integrations.holdings.base import RawExtractedPosition
 from app.integrations.holdings.fields import parse_figure, to_positions
 from app.integrations.holdings.layout import build_layout, find_header, parse_caption
 from app.integrations.holdings.name_match import decide, rank_names, score_name, share_class_of
@@ -51,7 +52,7 @@ def _page(*rows: list[TextBlock]) -> OcrPage:
     return OcrPage(path="shot.jpg", width=WIDTH, height=HEIGHT, blocks=[*_header(), *blocks])
 
 
-def _positions(*rows: list[TextBlock]) -> list[object]:
+def _positions(*rows: list[TextBlock]) -> list[RawExtractedPosition]:
     page = _page(*rows)
     return to_positions(read_rows(page, build_layout(page)), build_layout(page))
 
@@ -208,3 +209,47 @@ class TestNameMatch:
     def test_the_class_letter_comes_from_the_end_of_the_name(self) -> None:
         assert share_class_of("德邦鑫星价值灵活配置混合C") == "c"
         assert share_class_of("华泰柏瑞质量成长混合") is None
+
+    def test_a_dropped_seed_qualifier_still_matches(self) -> None:
+        """支付宝 prints 「嘉实信息产业股票C」 for a fund the register names with 发起式.
+
+        The register has no fund by the printed name at all, so refusing to fold
+        the word left a holding the user owns unresolvable.
+        """
+        directory = [("017489", "嘉实信息产业股票发起式C"), ("017488", "嘉实信息产业股票发起式A")]
+        won = decide(rank_names("嘉实信息产业股票C", directory))
+        assert won is not None and won.fund_code == "017489"
+
+    def test_a_type_word_the_screenshot_adds_still_matches(self) -> None:
+        """The other direction: 支付宝 appends 混合 the short name leaves out."""
+        directory = [("011452", "华泰柏瑞质量成长C"), ("008528", "华泰柏瑞质量成长A")]
+        won = decide(rank_names("华泰柏瑞质量成长混合C", directory))
+        assert won is not None and won.fund_code == "011452"
+
+    def test_two_spellings_of_one_fund_are_not_rivals(self) -> None:
+        """The directory keeps the register name and the legal name for one code.
+
+        Both fold to the same form once the boilerplate is dropped, and a fund
+        that competes with itself is refused — which would silently stop matching
+        the day its master row is synced.
+        """
+        directory = [("001042", "华夏领先股票型证券投资基金"), ("001042", "华夏领先股票")]
+        won = decide(rank_names("华夏领先股票", directory))
+        assert won is not None and won.fund_code == "001042"
+
+    def test_a_currency_sibling_still_has_to_be_chosen(self) -> None:
+        """Folding the boilerplate must not turn 人民币 vs 美元现汇 into a guess."""
+        directory = [
+            ("000055", "广发纳斯达克100ETF联接人民币(QDII)A"),
+            ("270042", "广发纳斯达克100ETF联接美元(QDII)A"),
+        ]
+        assert decide(rank_names("广发纳斯达克100ETF联接A", directory)) is None
+
+    def test_an_acronym_tail_is_not_a_share_class(self) -> None:
+        """The F of ETF/FOF/LOF is part of the product name, not a class letter."""
+        assert share_class_of("招商快线ETF") is None
+        assert share_class_of("汇添富核心精选混合(LOF)") is None
+        assert share_class_of("融通四季添利债券(LOF)C") == "c"
+
+    def test_a_class_before_a_trailing_bracket_is_still_read(self) -> None:
+        assert share_class_of("华夏大盘精选混合A(后端)") == "a"
