@@ -15,7 +15,7 @@ def test_full_width_operators_still_parse() -> None:
     assert plan.parseable
     assert [(part.index_name, part.weight) for part in plan.parts] == [("沪深300", 95.0)]
     assert plan.cash_weight == 5.0
-    assert not plan.overseas
+    assert not plan.has_offshore_index
 
 
 def test_every_named_index_survives_with_its_own_weight() -> None:
@@ -28,7 +28,7 @@ def test_every_named_index_survives_with_its_own_weight() -> None:
         ("恒生", 20.0),
         ("上证国债", 20.0),
     ]
-    assert plan.overseas and plan.fx_adjusted
+    assert plan.has_offshore_index and plan.fx_adjusted
     assert plan.equity_weight == 100.0
 
 
@@ -38,7 +38,7 @@ def test_an_overseas_benchmark_is_flagged_not_estimatable() -> None:
 
     assert plan.parseable
     assert [(part.index_name, part.weight) for part in plan.parts] == [("纳斯达克100", 95.0)]
-    assert plan.overseas and plan.fx_adjusted
+    assert plan.has_offshore_index and plan.fx_adjusted
 
 
 def test_a_lone_index_without_a_weight_means_the_whole_benchmark() -> None:
@@ -69,6 +69,27 @@ def test_an_unnamed_index_is_not_a_benchmark_we_can_use() -> None:
 
 def test_a_cash_only_benchmark_has_nothing_to_quote() -> None:
     assert not parse_benchmark("同期银行活期存款利率").parseable
+
+
+def test_a_leading_weight_is_read_the_same_way_as_a_trailing_one() -> None:
+    """恒生科技那类基准把权重写在前面：`95%×恒生科技指数收益率`（012349 原文）.
+
+    只认尾部写法的话，这条基准会安静地变成"读不懂"，而不报任何错。
+    """
+    plan = parse_benchmark("95%×恒生科技指数收益率（使用估值汇率折算）+5%×人民币活期存款收益率（税后）")
+
+    assert plan.parseable
+    assert [(part.index_name, part.weight) for part in plan.parts] == [("恒生科技", 95.0)]
+    assert plan.cash_weight == 5.0
+    assert plan.has_offshore_index and plan.fx_adjusted
+
+
+def test_a_deposit_only_benchmark_has_no_index_to_quote() -> None:
+    """002112 的基准就是"一年期银行定期存款利率（税后）"：没有任何指数成分."""
+    plan = parse_benchmark("一年期银行定期存款利率（税后）")
+
+    assert not plan.parseable
+    assert plan.parts == ()
 
 
 def test_an_empty_benchmark_is_not_a_plan() -> None:

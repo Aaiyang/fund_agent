@@ -31,9 +31,11 @@ _NORMALIZE = str.maketrans(
 # 现金/存款类段落：没有行情可取，加权计算时按 0 收益处理（见 analytics 里的说明）。
 _CASH_TOKENS = ("活期存款", "银行存款", "定期存款", "同期存款", "利息收入", "货币市场", "储蓄存款")
 
-# 出现即认为基准含境外资产：QDII 的净值按境外日历出，盘中给"预估"等于预测今晚
-# 的收盘，口径上就是错的（他已定：QDII 不做实时预测）。商品与债券指数不在这里
-# 判，它们只是我们行情目录里没有，交给上层按目录匹配自然落空。
+# 基准文本里出现这些词，说明含 A 股以外的指数成分。**这个标记只用于说明基准构成，
+# 不能用来否决整只基金**：A 股主动基金常带 10%~20% 的港股基准（实测 011452、
+# 017489、022287 都是），它们的持仓照样能穿透估。真正"不能估"的判据是基金本身的
+# 类型（QDII 的净值按境外日历公布），那由服务层按 fund_type 判。
+# 基准里的境外指数最终会不会被用，取决于行情目录里有没有它——取不到价自然落空。
 _OVERSEAS_TOKENS = (
     "恒生",
     "港股",
@@ -62,8 +64,11 @@ _OVERSEAS_TOKENS = (
 # 文本里声明了汇率折算：说明该基准的收益已经含了人民币口径的汇率影响。
 _FX_TOKENS = ("经汇率调整", "汇率折算", "使用估值汇率", "人民币计")
 
-# 权重总是挂在段落末尾：`*95%`。
-_WEIGHT = re.compile(r"[*]\s*(\d+(?:[.]\d+)?)\s*%")
+# 权重可以挂在段尾（`沪深300指数收益率*95%`），也可以挂在段首
+# （`95%×恒生科技指数收益率`）：两种写法在档案里都真实存在，少认一种整条基准就
+# 会被判为读不懂，而读不懂是不给估值，不是报错——错得很安静。
+_TRAILING_WEIGHT = re.compile(r"[*]\s*(\d+(?:[.]\d+)?)\s*%\s*$")
+_LEADING_WEIGHT = re.compile(r"^(\d+(?:[.]\d+)?)\s*%\s*[*]?\s*")
 # 指数段的固定写法是「<指数名>指数收益率」；其余表述（"标的指数"之类）认不出名字。
 _INDEX = re.compile(r"^(.*?)指数收益率")
 # 基准里指代"自己跟的那条指数"而不给名字的写法，加上前缀后仍然不是可查的指数名。
@@ -84,7 +89,7 @@ class BenchmarkPlan:
 
     parts: tuple[BenchmarkPart, ...] = ()
     cash_weight: float = 0.0
-    overseas: bool = False
+    has_offshore_index: bool = False
     fx_adjusted: bool = False
     parseable: bool = False
 
@@ -106,18 +111,17 @@ def parse_benchmark(text: str | None) -> BenchmarkPlan:
         return BenchmarkPlan()
 
     normalized = raw.translate(_NORMALIZE)
-    plan_overseas = any(token in normalized for token in _OVERSEAS_TOKENS)
-    plan_fx = any(token in normalized for token in _FX_TOKENS)
-    unusable = BenchmarkPlan(overseas=plan_overseas, fx_adjusted=plan_fx, parseable=False)
+    offshore = any(token in normalized for token in _OVERSEAS_TOKENS)
+    fx = any(token in normalized for token in _FX_TOKENS)
+    unusable = BenchmarkPlan(has_offshore_index=offshore, fx_adjusted=fx, parseable=False)
 
     names: list[str] = []
     weights: list[float | None] = []
     cash_weights: list[float] = []
-    for segment in (piece.strip() for piece in normalized.split("+")):
-        body = _WEIGHT.sub("", segment).strip()
+    for piece in normalized.split("+"):
+        weight, body = _split_weight(piece)
         if not body:
             continue
-        weight = _weight_of(segment)
         if any(token in body for token in _CASH_TOKENS):
             cash_weights.append(weight if weight is not None else 0.0)
             continue
@@ -128,6 +132,8 @@ def parse_benchmark(text: str | None) -> BenchmarkPlan:
         weights.append(weight)
 
     if not names:
+        # 一段指数都没有（"一年期银行定期存款利率（税后）"这种纯存款基准）：
+        # 没有任何行情能解释它的日内变化，只能走持仓穿透。
         return unusable
 
     if any(weight is None for weight in weights):
@@ -149,8 +155,8 @@ def parse_benchmark(text: str | None) -> BenchmarkPlan:
     return BenchmarkPlan(
         parts=parts,
         cash_weight=sum(cash_weights) + max(0.0, 100.0 - accounted),
-        overseas=plan_overseas,
-        fx_adjusted=plan_fx,
+        has_offshore_index=offshore,
+        fx_adjusted=fx,
         parseable=True,
     )
 
@@ -168,7 +174,15 @@ def _index_name_of(body: str) -> str | None:
     return name if name and name not in _GENERIC_INDEX_NAMES else None
 
 
-def _weight_of(segment: str) -> float | None:
-    """段落末尾的 `*NN%`；没有就返回 None（不猜权重）."""
-    match = _WEIGHT.search(segment)
-    return float(match.group(1)) if match else None
+def _split_weight(segment: str) -> tuple[float | None, str]:
+    """把一段拆成（权重, 去掉权重后的正文）；没写权重返回 None，不猜.
+
+    段尾与段首两种写法都认：`沪深300指数收益率*95%` 和 `95%×恒生科技指数收益率`
+    在真实档案里都存在，只认一种会让后一种基准安静地变成"读不懂"。
+    """
+    text = segment.strip()
+    if (tail := _TRAILING_WEIGHT.search(text)) is not None:
+        return float(tail.group(1)), text[: tail.start()].strip()
+    if (head := _LEADING_WEIGHT.match(text)) is not None:
+        return float(head.group(1)), text[head.end() :].strip()
+    return None, text
