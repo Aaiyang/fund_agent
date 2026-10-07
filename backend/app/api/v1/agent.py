@@ -87,16 +87,14 @@ class LlmModelsResponse(BaseResponse):
 
 
 def _llm_profiles_response() -> LlmProfilesResponse:
-    name, model, base_url, api_key = zip(
-        LLMRegistry.get_all_names(),
-        LLMRegistry.get_all_models(),
-        [str(e["base_url"]) for e in LLMRegistry.LLMS],
-        [str(e["api_key"]) for e in LLMRegistry.LLMS],
-        strict=True,
-    )
     profiles = [
-        LlmProfileItem(name=name, model=model, base_url=base_url, key_hint=profile_store.key_hint(api_key))
-        for name, model, base_url, api_key in zip(name, model, base_url, api_key, strict=True)
+        LlmProfileItem(
+            name=str(entry["name"]),
+            model=str(entry["model"]),
+            base_url=str(entry["base_url"]),
+            key_hint=profile_store.key_hint(str(entry["api_key"])),
+        )
+        for entry in LLMRegistry.LLMS
     ]
     return LlmProfilesResponse(active=llm_service.active_model_name(), profiles=profiles)
 
