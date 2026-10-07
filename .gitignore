@@ -28,3 +28,5 @@ pyright_report.json
 # Local runtime state
 .runtime/
 logs/
+.llm_profiles.local.json
+*.tsbuildinfo
