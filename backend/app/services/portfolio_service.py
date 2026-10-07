@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
-from app.analytics import period_return, window_return
+from app.analytics import disclosed_change, period_return, window_return
 from app.analytics.positions import (
     Direction,
     LedgerRow,
@@ -704,10 +704,18 @@ class PortfolioService:
             unit_nav=unit_nav,
         )
 
+        nav_rows = history or []
         daily_profit_loss = None
-        daily_return = latest.daily_return if latest else None
-        if latest and latest.daily_return is not None and position.market_value:
-            daily_profit_loss = latest.daily_return * position.market_value / 100.0
+        # 与自选同一口径：披露 0.00% 而净值动了的那天是"没有行情"（QDII 境外休市），
+        # 不是"没涨没跌"。昨日收益必须跟着同一个判断走，否则百分比是空的、钱却有一笔。
+        previous = (
+            nav_rows[-2].unit_nav
+            if latest is not None and len(nav_rows) >= 2 and nav_rows[-1].nav_date == latest.nav_date
+            else None
+        )
+        daily_return = disclosed_change(previous, latest.unit_nav, latest.daily_return) if latest else None
+        if daily_return is not None and position.market_value:
+            daily_profit_loss = daily_return * position.market_value / 100.0
 
         weekly_profit_loss = monthly_profit_loss = None
         if latest is not None and history:

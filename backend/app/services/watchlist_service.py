@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timedelta
 
-from app.analytics import period_return, window_return
+from app.analytics import disclosed_change, period_return, window_return
 from app.analytics.returns import NavPoint
 from app.core.cache import cache_key, cache_service
 from app.core.logging import logger
@@ -61,6 +61,13 @@ class WatchlistService:
             rows = history.get(entry.fund_code, [])
             if latest is not None and self._series_is_thin(rows, latest.nav_date, fund):
                 thin_codes.append(entry.fund_code)
+            # 披露 0.00% 而净值其实动了 = 那天没有行情（QDII 的境外休市日），
+            # 不是"今天没涨没跌"。读的时候判，不把派生结果写回库里。
+            previous = (
+                rows[-2].unit_nav
+                if latest is not None and len(rows) >= 2 and rows[-1].nav_date == latest.nav_date
+                else None
+            )
             items.append(
                 WatchlistFundItem(
                     fund_code=entry.fund_code,
@@ -68,7 +75,7 @@ class WatchlistService:
                     fund_type=fund.fund_type if fund else None,
                     latest_nav=latest.unit_nav if latest else None,
                     nav_date=latest.nav_date if latest else None,
-                    daily_return=latest.daily_return if latest else None,
+                    daily_return=disclosed_change(previous, latest.unit_nav, latest.daily_return) if latest else None,
                     **self._period_metrics(rows, latest),
                     is_held=entry.fund_code in held_codes,
                     is_updated=self._nav_is_fresh(latest.fetched_at, latest.nav_date) if latest else False,

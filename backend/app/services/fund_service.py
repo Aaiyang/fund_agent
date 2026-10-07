@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlmodel import col
 
-from app.analytics import max_drawdown, period_return, range_return, annualized_volatility
+from app.analytics import annualized_volatility, disclosed_change, max_drawdown, period_return, range_return
 from app.analytics.returns import NavPoint
 from app.core.cache import cache_key, cache_service
 from app.core.config import settings
@@ -230,6 +230,13 @@ class FundService:
         is_watchlisted, is_held = await self._user_flags(fund_code, user_id)
 
         end = latest.nav_date if latest else business_today()
+        # 与两张列表同一口径：披露 0.00% 而净值步进对不上，那是"那天没有行情"
+        # （QDII 的境外休市日），不是"今天没涨没跌"。
+        previous = (
+            history[-2].unit_nav
+            if latest is not None and len(history) >= 2 and history[-1].nav_date == latest.nav_date
+            else None
+        )
         return FundDetailResponse(
             fund_code=fund.fund_code,
             fund_name=fund.fund_name,
@@ -241,7 +248,7 @@ class FundService:
             latest_nav=latest.unit_nav if latest else None,
             accumulated_nav=latest.accumulated_nav if latest else None,
             nav_date=latest.nav_date if latest else None,
-            daily_return=latest.daily_return if latest else None,
+            daily_return=disclosed_change(previous, latest.unit_nav, latest.daily_return) if latest else None,
             performance=self._compute_performance(points, end),
             is_watchlisted=is_watchlisted,
             is_held=is_held,
