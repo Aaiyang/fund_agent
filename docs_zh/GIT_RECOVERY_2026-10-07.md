@@ -48,3 +48,11 @@
 前端此前复现的流式消息跨会话写入、历史加载覆盖新消息、中文输入法 Enter 提前发送、流式提前结束和错误识别问题，亦未在本轮恢复中修复。当前 lint 验证范围不包含所有既有 UI 组件。
 
 数据库迁移文件已保存，但未执行。真实数据库、缓存、模型供应商、截图 OCR 和多用户场景尚未联调。当前分支没有上游配置，提交保存在本地，未推送。
+
+## 后续：原虚拟环境启动故障修复
+
+用户使用 `backend/.venv/Scripts/python.exe scripts/run_local.py --host 0.0.0.0 --port 8000` 时，因 `curl_cffi` 读取包元数据失败而退出。检查确认：上次依赖同步中断后，`curl_cffi-0.16.3.dist-info` 与 `asyncpg-0.31.0.dist-info` 只剩许可证目录，缺少 `METADATA` 和 `RECORD`；`asyncpg` 二进制协议模块亦无法导入。此前 `pip check` 和模块存在性检查没有发现这些损坏，独立环境验证不能代表原环境可启动。
+
+已按锁文件覆盖重装 `curl-cffi==0.16.3`、`asyncpg==0.32.0`，将残留的旧版空元数据目录移入 `.runtime/recovery_20261007_before_commits/invalid_asyncpg_0_31_dist_info`。没有修改业务代码或环境密钥。实际二进制导入、版本识别和 `pip check` 均通过。
+
+使用用户原命令完成开发环境真实启动，看到 `Application startup complete`。`GET /` 与 `GET /health` 均返回 HTTP 200，API、数据库、缓存状态均健康。验证后关闭测试启动进程，释放 8000 端口，便于用户自行启动。
