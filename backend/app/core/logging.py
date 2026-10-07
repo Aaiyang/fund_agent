@@ -67,9 +67,6 @@ def add_context_to_event_dict(logger: Any, method_name: str, event_dict: Dict[st
         logger: logger 实例
         method_name: 日志方法名
         event_dict: 待修改的事件字典
-
-    Returns:
-        Dict[str, Any]: 并入了上下文变量的事件字典
     """
     context = get_context()
     if context:
@@ -84,9 +81,6 @@ def add_request_id_to_event_dict(logger: Any, method_name: str, event_dict: Dict
         logger: logger 实例
         method_name: 日志方法名
         event_dict: 待修改的事件字典
-
-    Returns:
-        Dict[str, Any]: 带上了 request_id 的事件字典
     """
     request_id = correlation_id.get()
     if request_id:
@@ -219,6 +213,22 @@ def setup_logging() -> None:
         level=log_level,
         handlers=[file_handler, console_handler],
     )
+
+    # 第三方库的 DEBUG 噪音统一压到 WARNING：HTTP 追踪（httpx/httpcore/
+    # hpack/urllib3/openai 客户端）、搜索库的 Cookie 引擎（primp/cookie_store）、
+    # Langfuse 回调——单日可刷出数万行，把业务日志淹没。
+    for noisy_logger in (
+        "langfuse",
+        "httpx",
+        "httpcore",
+        "openai",
+        "hpack",
+        "urllib3",
+        "primp",
+        "cookie_store",
+        "ddgs",
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     # 按环境配置 structlog
     if settings.LOG_FORMAT == "console":

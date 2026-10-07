@@ -50,6 +50,28 @@ def business_close_utc(trade_date: date) -> datetime:
     return close.astimezone(UTC).replace(tzinfo=None)
 
 
+def trading_session_label(now: datetime | None = None) -> str:
+    """A股交易时段标签：盘前/盘中（上午）/午间休市/盘中（下午）/已收盘/休市.
+
+    用于上下文 Dynamic Tail（KV Cache 友好：一天只变化数次，且比秒级
+    时间对模型更有用）。法定节假日未接入日历，会显示为正常交易日，
+    模型可结合行情数据自行修正。
+    """
+    moment = now or datetime.now(ZoneInfo(settings.FUND_BUSINESS_TZ))
+    if moment.weekday() >= 5:
+        return "休市（周末）"
+    current = moment.time()
+    if current < time(9, 30):
+        return "盘前"
+    if current < time(11, 30):
+        return "盘中（上午）"
+    if current < time(13, 0):
+        return "午间休市"
+    if current < time(15, 0):
+        return "盘中（下午）"
+    return "已收盘"
+
+
 def range_start(range_key: str, today: date) -> date | None:
     """First date of a named chart range, with month-end clamping.
 

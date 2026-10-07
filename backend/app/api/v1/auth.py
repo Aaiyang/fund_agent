@@ -20,6 +20,8 @@ from fastapi.security import (
     HTTPBearer,
 )
 
+from app.agent.context import state_store
+from app.agent.context.manager import context_manager
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import (
@@ -554,7 +556,17 @@ async def delete_session(request: Request, session_id: str, current_session: Ses
         # 删除会话
         await db_service.delete_session(sanitized_session_id)
 
-        logger.info("session_deleted", session_id=session_id, user_id=current_session.user_id)
+        # 摘要状态随会话行一起消失；再把 LangGraph checkpoint 一并清掉
+        # （best-effort：清理失败不回滚删除，只记日志）
+        checkpoints_removed = await state_store.delete_thread_checkpoints(sanitized_session_id)
+        context_manager.forget_thread(sanitized_session_id)
+
+        logger.info(
+            "session_deleted",
+            session_id=session_id,
+            user_id=current_session.user_id,
+            checkpoints_removed=checkpoints_removed,
+        )
     except ValueError as ve:
         logger.exception("session_deletion_validation_failed", error=str(ve), session_id=session_id)
         raise HTTPException(status_code=422, detail=str(ve))

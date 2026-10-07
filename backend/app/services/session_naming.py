@@ -20,7 +20,7 @@ from sqlmodel import (
 
 from app.core.logging import logger
 from app.core.metrics import session_names_generated_total
-from app.core.prompts import SESSION_TITLE_PROMPT
+from app.agent.prompts import SESSION_TITLE_PROMPT
 from app.models.session import Session as ChatSession
 from app.schemas.chat import SessionTitle
 from app.services.database import database_service
@@ -60,9 +60,7 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
                 SystemMessage(content=SESSION_TITLE_PROMPT),
                 HumanMessage(content=user_message[:500]),
             ],
-            model_name="gpt-5.4-nano",
             response_format=SessionTitle,
-            reasoning={"effort": "low"},
             max_tokens=32,
             temperature=0.3,
         )

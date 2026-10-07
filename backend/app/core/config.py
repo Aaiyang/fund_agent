@@ -162,11 +162,53 @@ class Settings:
         )
         self.OPENAI_API_KEY = os.getenv("FUND_LLM_API_KEY", os.getenv("OPENAI_API_KEY", ""))
         self.DEFAULT_LLM_MODEL = os.getenv("FUND_LLM_MODEL", os.getenv("DEFAULT_LLM_MODEL", "gpt-5.6-luna"))
+        # 可选的可切换模型档位 JSON 数组，例如
+        # FUND_LLM_PROFILES='[{"name":"智谱","model":"glm-5.3-flash","base_url":"...","api_key":"..."}]'。
+        # 未设置时，registry 直接用上面那组扁平的 FUND_LLM_* 变量合成一个档位。
+        self.LLM_PROFILES_JSON = os.getenv("FUND_LLM_PROFILES", "")
+        # 设置页编辑后的档位落盘到这个文件；它优先于 FUND_LLM_PROFILES，
+        # 因此改动能在重启后保留。该文件已被 gitignore。
+        _backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.LLM_PROFILES_FILE = os.getenv(
+            "FUND_LLM_PROFILES_FILE", os.path.join(_backend_root, ".llm_profiles.local.json")
+        )
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
         self.DEFAULT_LLM_TEMPERATURE = float(
             os.getenv("FUND_LLM_TEMPERATURE", os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         )
         self.MAX_TOKENS = int(os.getenv("FUND_LLM_MAX_TOKENS", os.getenv("MAX_TOKENS", "2000")))
+        # 上下文组装（历史 + 工具结果）的修剪预算，独立于回复输出上限：
+        # 调大窗口不会同时放大回复长度。
+        self.CONTEXT_TOKEN_BUDGET = int(
+            os.getenv("FUND_CONTEXT_TOKEN_BUDGET", os.getenv("CONTEXT_TOKEN_BUDGET", "16384"))
+        )
+        # 上下文组装策略：legacy（trim_messages 旧路径）/ structured（ContextManager v1）
+        self.CONTEXT_STRATEGY = os.getenv("CONTEXT_STRATEGY", "structured")
+
+        # ---- ContextManager Phase 2 开关（独立控制，按上线顺序逐个打开）----
+        def _flag(name: str, default: str) -> bool:
+            return os.getenv(name, default).lower() == "true"
+
+        # AgentStatus Dynamic Tail（每轮统计工具调用，附在上下文最末）
+        self.AGENT_STATUS_ENABLED = _flag("AGENT_STATUS_ENABLED", "true")
+        # Duplicate Tool Guard（同工具同参数重复调用拦截）
+        self.DUPLICATE_TOOL_GUARD_ENABLED = _flag("DUPLICATE_TOOL_GUARD_ENABLED", "true")
+        # Conversation Summary（已完成旧 Turn 的批量压缩）
+        self.CONVERSATION_SUMMARY_ENABLED = _flag("CONVERSATION_SUMMARY_ENABLED", "false")
+        # Batch Compaction（达到水位阈值时整批压缩旧 Turn）
+        self.BATCH_COMPACTION_ENABLED = _flag("BATCH_COMPACTION_ENABLED", "false")
+        # Guard：同一工具同参数的前 N 次执行放行，之后拦截
+        self.DUPLICATE_TOOL_MAX_SAME_CALLS = int(os.getenv("DUPLICATE_TOOL_MAX_SAME_CALLS", "2"))
+        # Batch Compaction：至少积攒多少个已完成旧 Turn 才触发压缩
+        self.CONTEXT_COMPACTION_MIN_TURNS = int(os.getenv("CONTEXT_COMPACTION_MIN_TURNS", "4"))
+        # 单条 ToolMessage 的硬上限（token），超长工具结果在组装时被截断
+        self.TOOL_MESSAGE_HARD_LIMIT_TOKENS = int(os.getenv("TOOL_MESSAGE_HARD_LIMIT_TOKENS", "4000"))
+        # 摘要区总 token 占预算的比例上限，超过则对最旧的段做两两合并
+        self.SUMMARY_REGION_MAX_RATIO = float(os.getenv("SUMMARY_REGION_MAX_RATIO", "0.30"))
+        # 摘要段数硬上限，超过同样触发合并
+        self.SUMMARY_SEGMENT_MERGE_COUNT = int(os.getenv("SUMMARY_SEGMENT_MERGE_COUNT", "8"))
+        # 每轮合并取最旧的多少比例（size-tiered：约一半，段数对数增长）
+        self.SUMMARY_MERGE_FRACTION = float(os.getenv("SUMMARY_MERGE_FRACTION", "0.5"))
         self.MAX_LLM_CALL_RETRIES = int(os.getenv("MAX_LLM_CALL_RETRIES", "3"))
         self.LLM_TOTAL_TIMEOUT = int(os.getenv("FUND_LLM_TIMEOUT_SECONDS", os.getenv("LLM_TOTAL_TIMEOUT", "60")))
         self.LLM_REQUEST_TIMEOUT = float(

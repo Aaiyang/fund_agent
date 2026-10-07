@@ -9,6 +9,7 @@ import time
 import uuid
 from typing import (
     TYPE_CHECKING,
+    Any,
     Awaitable,
     Optional,
     cast,
@@ -265,7 +266,7 @@ class ValkeyCacheService:
         try:
             # Compare-and-delete: a plain DELETE would free whoever holds the
             # lock after ours timed out.
-            await self._client.eval(_RELEASE_LOCK_SCRIPT, 1, key, token)
+            await cast(Awaitable[Any], self._client.eval(_RELEASE_LOCK_SCRIPT, 1, key, token))
         except Exception as e:
             logger.warning("cache_lock_release_failed", key=key, error=str(e))
 

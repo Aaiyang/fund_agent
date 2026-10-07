@@ -5,8 +5,25 @@ Redis 那条路径由 compare-and-delete 脚本保证原子性，得连上真实
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
-from app.core.cache import InMemoryCacheService
+import pytest
+
+from app.core.cache import InMemoryCacheService, ValkeyCacheService
+
+
+@pytest.mark.asyncio
+async def test_valkey_release_passes_owner_token_to_compare_and_delete() -> None:
+    cache = ValkeyCacheService()
+    client = AsyncMock()
+    cache._client = client
+    cache._lock_tokens["lock:test"] = "owner-token"
+
+    await cache.release_lock("lock:test")
+
+    client.eval.assert_awaited_once()
+    assert client.eval.call_args.args[1:] == (1, "lock:test", "owner-token")
+    assert "lock:test" not in cache._lock_tokens
 
 
 def test_lock_excludes_a_second_acquirer_until_released() -> None:

@@ -51,16 +51,16 @@ class LLMService:
       concurrent default-path calls are never affected.
     """
 
-    def __init__(self):
-        """Initialize the LLM service with the configured default model."""
+    def __init__(self) -> None:
+        """按配置里的默认模型初始化 LLM 服务."""
         self._llm: Any = None  # BaseChatModel pre-bind_tools, Runnable after
         self._current_model_index: int = 0
         self._bound_tools: List = []
 
         all_names = LLMRegistry.get_all_names()
         try:
-            self._current_model_index = all_names.index(settings.DEFAULT_LLM_MODEL)
-            self._llm = LLMRegistry.get(settings.DEFAULT_LLM_MODEL)
+            self._current_model_index = LLMRegistry.default_index()
+            self._llm = LLMRegistry.get_model_at_index(self._current_model_index)["llm"]
             logger.info(
                 "llm_service_initialized",
                 default_model=settings.DEFAULT_LLM_MODEL,
@@ -148,6 +148,57 @@ class LLMService:
             Current ``BaseChatModel`` instance or ``None`` if not initialised.
         """
         return self._llm
+
+    def active_model_name(self) -> str:
+        """返回当前默认模型在注册表里的名称."""
+        names = LLMRegistry.get_all_names()
+        if 0 <= self._current_model_index < len(names):
+            return names[self._current_model_index]
+        return names[0] if names else ""
+
+    def activate_model(self, model_name: str) -> None:
+        """运行时切换默认的绑工具模型（用于切换厂商）.
+
+        Args:
+            model_name: 要激活的注册表 profile 名称。
+
+        Raises:
+            ValueError: 该名称没有注册。
+        """
+        all_names = LLMRegistry.get_all_names()
+        if model_name not in all_names:
+            raise ValueError(f"model '{model_name}' not found in registry. available models: {', '.join(all_names)}")
+        self._current_model_index = all_names.index(model_name)
+        self._llm = LLMRegistry.get(model_name)
+        if self._bound_tools:
+            self._llm = self._llm.bind_tools(self._bound_tools)
+        logger.info("llm_model_activated", model=model_name)
+
+    def refresh_profiles(self, active_name: str | None = None) -> List[str]:
+        """注册表被重建后，把默认模型重新指向新的条目.
+
+        当前激活的 profile 如果还在，就继续用它（换成新构建的模型条目）；
+        不在了就退回配置里的默认条目，默认也没有就取第一条。
+        工具绑定会重新应用到新实例上。
+
+        Returns:
+            重建后的全部 profile 名称。
+        """
+        names = LLMRegistry.get_all_names()
+        current = active_name if active_name is not None else self.active_model_name()
+        if current in names:
+            self._current_model_index = names.index(current)
+        else:
+            self._current_model_index = LLMRegistry.default_index()
+            logger.info(
+                "llm_active_profile_removed",
+                removed=current or "none",
+                fallback=names[self._current_model_index] if names else "none",
+            )
+        self._llm = LLMRegistry.get_model_at_index(self._current_model_index)["llm"]
+        if self._bound_tools:
+            self._llm = self._llm.bind_tools(self._bound_tools)
+        return names
 
     def bind_tools(self, tools: List) -> "LLMService":
         """Bind tools to the default LLM instance.

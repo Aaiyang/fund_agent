@@ -12,6 +12,7 @@ from sqlmodel import (
     Session,
     col,
     create_engine,
+    delete,
     select,
 )
 
@@ -21,8 +22,22 @@ from app.core.config import (
 )
 from app.core.logging import logger
 from app.core.metrics import component_up
+from app.agent.context import state_store
+from app.agent.context.manager import context_manager
+from app.models.holding_import import HoldingImport, HoldingImportItem
+from app.models.portfolio import (
+    AutoInvestPlan,
+    PortfolioAccount,
+    PortfolioPosition,
+    Transaction as PortfolioTransaction,
+)
 from app.models.session import Session as ChatSession
 from app.models.user import User
+from app.models.watchlist import (
+    Watchlist,
+    WatchlistGroup,
+    WatchlistGroupItem,
+)
 from app.utils.clock import utc_now
 
 
@@ -161,7 +176,11 @@ class DatabaseService:
             return True
 
     async def delete_user_by_email(self, email: str) -> bool:
-        """Delete a user by email.
+        """按邮箱删除用户，连带清理其全部业务数据与 LangGraph checkpoints.
+
+        删除顺序按外键依赖排（先子表后父表）；会话行删除后，再把每个
+        会话线程的 checkpoint 表记录一并清掉（best-effort），避免对话
+        内容成为孤儿。
 
         Args:
             email: The email of the user to delete
@@ -174,10 +193,45 @@ class DatabaseService:
             if not user:
                 return False
 
+            thread_ids = list(session.exec(select(ChatSession.id).where(col(ChatSession.user_id) == user.id)).all())
+            user_id = user.id
+
+            # ---- 业务数据：按 FK 依赖从子表到父表 ----
+            session.exec(
+                delete(WatchlistGroupItem).where(
+                    col(WatchlistGroupItem.group_id).in_(
+                        select(WatchlistGroup.id).where(col(WatchlistGroup.user_id) == user_id)
+                    )
+                )
+            )
+            session.exec(delete(WatchlistGroup).where(col(WatchlistGroup.user_id) == user_id))
+            session.exec(delete(Watchlist).where(col(Watchlist.user_id) == user_id))
+
+            session.exec(delete(PortfolioTransaction).where(col(PortfolioTransaction.user_id) == user_id))
+            session.exec(delete(PortfolioPosition).where(col(PortfolioPosition.user_id) == user_id))
+            session.exec(delete(AutoInvestPlan).where(col(AutoInvestPlan.user_id) == user_id))
+
+            session.exec(
+                delete(HoldingImportItem).where(
+                    col(HoldingImportItem.import_id).in_(
+                        select(HoldingImport.id).where(col(HoldingImport.user_id) == user_id)
+                    )
+                )
+            )
+            session.exec(delete(HoldingImport).where(col(HoldingImport.user_id) == user_id))
+            session.exec(delete(PortfolioAccount).where(col(PortfolioAccount.user_id) == user_id))
+
+            session.exec(delete(ChatSession).where(col(ChatSession.user_id) == user_id))
             session.delete(user)
             session.commit()
-            logger.info("user_deleted", email=email)
-            return True
+
+        # ---- LangGraph checkpoint 与进程内摘要缓存（best-effort）----
+        for thread_id in thread_ids:
+            await state_store.delete_thread_checkpoints(thread_id)
+            context_manager.forget_thread(thread_id)
+
+        logger.info("user_deleted", email=email, sessions=len(thread_ids))
+        return True
 
     async def create_session(
         self, session_id: str, user_id: int, name: str = "", username: str | None = None
