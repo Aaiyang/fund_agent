@@ -157,48 +157,50 @@ function AuthScreen({
 
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(460px,0.95fr)]">
-      <section className="relative hidden min-h-screen overflow-hidden border-r border-white/8 bg-[#0b1210] p-12 lg:flex lg:flex-col lg:justify-between xl:p-16">
+      <section className="relative hidden min-h-screen overflow-hidden border-r border-border bg-card p-12 lg:flex lg:flex-col lg:justify-between xl:p-16">
         <div
           aria-hidden="true"
-          className="absolute inset-0 opacity-70 [background:radial-gradient(circle_at_18%_16%,rgba(55,213,138,.16),transparent_32%),radial-gradient(circle_at_80%_82%,rgba(55,213,138,.08),transparent_30%)]"
+          className="absolute inset-0 opacity-70 [background:radial-gradient(circle_at_18%_16%,rgba(37,99,235,.08),transparent_32%),radial-gradient(circle_at_80%_82%,rgba(37,99,235,.04),transparent_30%)]"
         />
         <div className="relative flex items-center gap-3">
-          <div className="grid size-10 place-items-center border border-emerald-300/30 bg-emerald-300/10 text-emerald-300">
+          <div className="grid size-10 place-items-center border border-primary/30 bg-primary/10 text-primary">
             <Sparkles className="size-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold tracking-[0.18em] text-emerald-300">
+            <p className="text-sm font-semibold tracking-[0.18em] text-primary">
               FUND AGENT
             </p>
-            <p className="text-xs text-zinc-500">LOCAL RESEARCH WORKBENCH</p>
+            <p className="text-xs text-muted-foreground">
+              LOCAL RESEARCH WORKBENCH
+            </p>
           </div>
         </div>
 
         <div className="relative max-w-2xl">
-          <p className="mb-5 font-mono text-xs tracking-[0.18em] text-emerald-300/80">
+          <p className="mb-5 font-mono text-xs tracking-[0.18em] text-primary/80">
             {'// INTELLIGENCE, COMPOUNDED'}
           </p>
-          <h1 className="max-w-xl text-5xl font-semibold leading-[1.08] tracking-[-0.045em] text-zinc-50 xl:text-6xl">
+          <h1 className="max-w-xl text-5xl font-semibold leading-[1.08] tracking-[-0.045em] text-foreground xl:text-6xl">
             把复杂投研，变成一场清晰对话。
           </h1>
-          <p className="mt-7 max-w-lg text-base leading-7 text-zinc-400">
+          <p className="mt-7 max-w-lg text-base leading-7 text-muted-foreground">
             基于 LangGraph
             的本地智能工作台。保持上下文、沉淀长期记忆，并通过流式响应把推理过程快速送到你面前。
           </p>
         </div>
 
-        <div className="relative grid max-w-xl grid-cols-3 border-y border-white/8 py-5 text-xs">
+        <div className="relative grid max-w-xl grid-cols-3 border-y border-border py-5 text-xs">
           <div>
-            <p className="font-mono text-emerald-300">DEEPSEEK</p>
-            <p className="mt-1 text-zinc-500">推理模型</p>
+            <p className="font-mono text-primary">DEEPSEEK</p>
+            <p className="mt-1 text-muted-foreground">推理模型</p>
           </div>
-          <div className="border-l border-white/8 pl-6">
-            <p className="font-mono text-emerald-300">LANGGRAPH</p>
-            <p className="mt-1 text-zinc-500">状态编排</p>
+          <div className="border-l border-border pl-6">
+            <p className="font-mono text-primary">LANGGRAPH</p>
+            <p className="mt-1 text-muted-foreground">状态编排</p>
           </div>
-          <div className="border-l border-white/8 pl-6">
-            <p className="font-mono text-emerald-300">PGVECTOR</p>
-            <p className="mt-1 text-zinc-500">长期记忆</p>
+          <div className="border-l border-border pl-6">
+            <p className="font-mono text-primary">PGVECTOR</p>
+            <p className="mt-1 text-muted-foreground">长期记忆</p>
           </div>
         </div>
       </section>
@@ -206,21 +208,21 @@ function AuthScreen({
       <section className="flex min-h-screen items-center justify-center px-5 py-12 sm:px-10">
         <div className="w-full max-w-[420px]">
           <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="grid size-9 place-items-center border border-emerald-300/30 bg-emerald-300/10 text-emerald-300">
+            <div className="grid size-9 place-items-center border border-primary/30 bg-primary/10 text-primary">
               <Sparkles className="size-4" />
             </div>
-            <p className="font-mono text-sm font-semibold tracking-[0.15em] text-emerald-300">
+            <p className="font-mono text-sm font-semibold tracking-[0.15em] text-primary">
               FUND AGENT
             </p>
           </div>
 
-          <p className="font-mono text-xs tracking-[0.16em] text-emerald-300">
+          <p className="font-mono text-xs tracking-[0.16em] text-primary">
             SECURE ACCESS
           </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-50">
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
             进入投研工作台
           </h2>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-muted-foreground">
             账户与对话数据仅连接到你的本地后端。
           </p>
 
@@ -232,7 +234,7 @@ function AuthScreen({
               setError('');
             }}
           >
-            <TabsList className="grid h-10 w-full grid-cols-2 bg-white/5 p-1">
+            <TabsList className="grid h-10 w-full grid-cols-2 bg-muted p-1">
               <TabsTrigger value="login">登录</TabsTrigger>
               <TabsTrigger value="register">创建账户</TabsTrigger>
             </TabsList>
@@ -247,7 +249,7 @@ function AuthScreen({
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder="请输入显示名称"
-                    className="h-11 bg-white/[0.035]"
+                    className="h-11 bg-muted"
                   />
                 </div>
               )}
@@ -261,7 +263,7 @@ function AuthScreen({
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="请输入邮箱"
-                  className="h-11 bg-white/[0.035]"
+                  className="h-11 bg-muted"
                 />
               </div>
               <div className="mt-5 space-y-2">
@@ -277,10 +279,10 @@ function AuthScreen({
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="请输入密码（至少 8 位）"
-                  className="h-11 bg-white/[0.035]"
+                  className="h-11 bg-muted"
                 />
                 {mode === 'register' && (
-                  <p className="text-xs leading-5 text-zinc-600">
+                  <p className="text-xs leading-5 text-muted-foreground">
                     需包含大小写字母、数字与特殊字符。
                   </p>
                 )}
@@ -289,7 +291,7 @@ function AuthScreen({
               {error && (
                 <div
                   role="alert"
-                  className="mt-5 flex gap-2 border border-red-400/20 bg-red-400/8 px-3 py-2.5 text-sm text-red-300"
+                  className="mt-5 flex gap-2 border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700"
                 >
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
                   <span>{error}</span>
@@ -318,7 +320,7 @@ function AuthScreen({
             <TabsContent value="register" />
           </Tabs>
 
-          <p className="mt-8 flex items-center justify-center gap-2 text-xs text-zinc-600">
+          <p className="mt-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5" /> JWT 会话保护 · 本地开发环境
           </p>
         </div>
@@ -602,7 +604,7 @@ function ChatWorkspace({
   const activeName = activeSession?.name?.trim() || '新对话';
 
   return (
-    <main className="flex h-screen overflow-hidden bg-[#0c1210]">
+    <main className="flex h-screen overflow-hidden bg-background">
       {sidebarOpen && (
         <button
           aria-label="关闭侧栏"
@@ -612,18 +614,18 @@ function ChatWorkspace({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[288px] flex-col border-r border-white/8 bg-[#101815] transition-transform lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-[288px] flex-col border-r border-border bg-sidebar transition-transform lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="flex h-16 items-center justify-between border-b border-white/8 px-5">
+        <div className="flex h-16 items-center justify-between border-b border-border px-5">
           <div className="flex items-center gap-2.5">
-            <div className="grid size-8 place-items-center border border-emerald-300/30 bg-emerald-300/10 text-emerald-300">
+            <div className="grid size-8 place-items-center border border-primary/30 bg-primary/10 text-primary">
               <Sparkles className="size-4" />
             </div>
             <div>
-              <p className="font-mono text-xs font-semibold tracking-[0.14em] text-emerald-300">
+              <p className="font-mono text-xs font-semibold tracking-[0.14em] text-primary">
                 FUND AGENT
               </p>
-              <p className="text-[10px] text-zinc-600">RESEARCH DESK</p>
+              <p className="text-[10px] text-muted-foreground">RESEARCH DESK</p>
             </div>
           </div>
           <Button
@@ -640,7 +642,7 @@ function ChatWorkspace({
         <div className="p-3">
           <Button
             variant="outline"
-            className="h-10 w-full justify-start rounded-md border-emerald-300/20 bg-emerald-300/5 text-emerald-200 hover:bg-emerald-300/10"
+            className="h-10 w-full justify-start rounded-md border-primary/20 bg-primary/5 text-primary hover:bg-primary/10"
             onClick={() => void handleNewSession()}
           >
             <Plus /> 新建对话
@@ -648,10 +650,10 @@ function ChatWorkspace({
         </div>
 
         <div className="flex items-center justify-between px-4 pb-2 pt-2">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-zinc-600">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground">
             RECENT THREADS
           </p>
-          <span className="font-mono text-[10px] text-zinc-700">
+          <span className="font-mono text-[10px] text-muted-foreground">
             {sessions.length.toString().padStart(2, '0')}
           </span>
         </div>
@@ -663,16 +665,13 @@ function ChatWorkspace({
           {loadingSessions ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="h-12 animate-pulse bg-white/[0.035]"
-                />
+                <div key={item} className="h-12 animate-pulse bg-muted" />
               ))}
             </div>
           ) : sessions.length === 0 ? (
-            <div className="mx-2 mt-3 border border-dashed border-white/10 px-4 py-6 text-center">
-              <MessageSquare className="mx-auto size-5 text-zinc-600" />
-              <p className="mt-2 text-xs text-zinc-600">还没有对话</p>
+            <div className="mx-2 mt-3 border border-dashed border-border px-4 py-6 text-center">
+              <MessageSquare className="mx-auto size-5 text-muted-foreground" />
+              <p className="mt-2 text-xs text-muted-foreground">还没有对话</p>
             </div>
           ) : (
             sessions.map((session) => {
@@ -680,7 +679,7 @@ function ChatWorkspace({
               return (
                 <div
                   key={session.session_id}
-                  className={`group mb-1 flex items-center border-l-2 ${isActive ? 'border-emerald-300 bg-emerald-300/[0.07]' : 'border-transparent hover:bg-white/[0.035]'}`}
+                  className={`group mb-1 flex items-center border-l-2 ${isActive ? 'border-primary bg-primary/[0.07]' : 'border-transparent hover:bg-muted'}`}
                 >
                   <button
                     className="min-w-0 flex-1 px-3 py-3 text-left"
@@ -690,18 +689,18 @@ function ChatWorkspace({
                     }}
                   >
                     <p
-                      className={`truncate text-sm ${isActive ? 'text-zinc-100' : 'text-zinc-400'}`}
+                      className={`truncate text-sm ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}
                     >
                       {session.name?.trim() || '新对话'}
                     </p>
-                    <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+                    <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
                       {session.session_id.slice(0, 12)}
                     </p>
                   </button>
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       aria-label="会话操作"
-                      className="mr-2 grid size-7 place-items-center text-zinc-600 opacity-0 outline-none hover:text-zinc-200 group-hover:opacity-100 focus:opacity-100"
+                      className="mr-2 grid size-7 place-items-center text-muted-foreground opacity-0 outline-none hover:text-foreground group-hover:opacity-100 focus:opacity-100"
                     >
                       <MoreHorizontal />
                     </DropdownMenuTrigger>
@@ -720,21 +719,21 @@ function ChatWorkspace({
           )}
         </nav>
 
-        <div className="border-t border-white/8 p-3">
+        <div className="border-t border-border p-3">
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-none hover:bg-white/[0.04]">
-              <div className="grid size-9 shrink-0 place-items-center bg-emerald-300/10 text-sm font-semibold text-emerald-300">
+            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-none hover:bg-muted">
+              <div className="grid size-9 shrink-0 place-items-center bg-primary/10 text-sm font-semibold text-primary">
                 {displayName.slice(0, 1).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-200">
+                <p className="truncate text-sm font-medium text-foreground">
                   {displayName}
                 </p>
-                <p className="truncate text-xs text-zinc-600">
+                <p className="truncate text-xs text-muted-foreground">
                   {auth.user.email}
                 </p>
               </div>
-              <MoreHorizontal className="size-4 text-zinc-600" />
+              <MoreHorizontal className="size-4 text-muted-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-64">
               <DropdownMenuLabel>{auth.user.email}</DropdownMenuLabel>
@@ -770,7 +769,7 @@ function ChatWorkspace({
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/8 bg-[#0c1210]/90 px-4 backdrop-blur-md sm:px-6">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
@@ -781,14 +780,14 @@ function ChatWorkspace({
             >
               <Menu />
             </Button>
-            <PanelLeftClose className="hidden size-4 text-zinc-700 lg:block" />
+            <PanelLeftClose className="hidden size-4 text-muted-foreground lg:block" />
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-medium text-zinc-200">
+              <h1 className="truncate text-sm font-medium text-foreground">
                 {activeName}
               </h1>
-              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-zinc-600">
+              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-muted-foreground">
                 <span
-                  className={`size-1.5 ${online ? 'bg-emerald-400' : online === false ? 'bg-red-400' : 'bg-zinc-600'}`}
+                  className={`size-1.5 ${online ? 'bg-emerald-600' : online === false ? 'bg-red-400' : 'bg-muted-foreground'}`}
                 />
                 {online
                   ? 'API ONLINE'
@@ -800,7 +799,7 @@ function ChatWorkspace({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 border border-white/8 px-2.5 py-1.5 font-mono text-[10px] text-zinc-500 sm:flex">
+            <span className="hidden items-center gap-1.5 border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground sm:flex">
               <Clock3 className="size-3" /> STREAM
             </span>
             <AlertDialog>
@@ -840,14 +839,14 @@ function ChatWorkspace({
         {error && (
           <div
             role="alert"
-            className="flex shrink-0 items-center justify-between border-b border-red-400/15 bg-red-400/[0.06] px-4 py-2 text-xs text-red-300 sm:px-6"
+            className="flex shrink-0 items-center justify-between border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6"
           >
             <span className="flex min-w-0 items-center gap-2">
               <AlertCircle className="size-3.5 shrink-0" />
               <span className="truncate">{error}</span>
             </span>
             <button
-              className="ml-3 text-red-300/60 hover:text-red-200"
+              className="ml-3 text-red-600 hover:text-red-800"
               onClick={() => setError('')}
               aria-label="关闭错误提示"
             >
@@ -863,24 +862,24 @@ function ChatWorkspace({
           <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 sm:px-8">
             {loadingMessages ? (
               <div className="flex flex-1 items-center justify-center">
-                <RefreshCw className="size-5 animate-spin text-emerald-300" />
+                <RefreshCw className="size-5 animate-spin text-primary" />
               </div>
             ) : messages.length === 0 ? (
               <div className="flex flex-1 items-center py-12">
                 <div className="w-full">
                   <div className="flex items-center gap-3">
-                    <div className="grid size-11 place-items-center border border-emerald-300/25 bg-emerald-300/10 text-emerald-300">
+                    <div className="grid size-11 place-items-center border border-primary/25 bg-primary/10 text-primary">
                       <Bot className="size-5" />
                     </div>
-                    <div className="h-px flex-1 bg-gradient-to-r from-emerald-300/20 to-transparent" />
+                    <div className="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />
                   </div>
-                  <p className="mt-7 font-mono text-xs tracking-[0.16em] text-emerald-300">
+                  <p className="mt-7 font-mono text-xs tracking-[0.16em] text-primary">
                     READY FOR ANALYSIS
                   </p>
-                  <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-[-0.035em] text-zinc-100 sm:text-4xl">
+                  <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-[-0.035em] text-foreground sm:text-4xl">
                     今天想研究什么？
                   </h2>
-                  <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
                     我会结合当前会话上下文与长期记忆，协助你拆解问题、整理线索并形成清晰结论。
                   </p>
                   <div className="mt-8 grid gap-2 sm:grid-cols-3">
@@ -892,9 +891,9 @@ function ChatWorkspace({
                       <button
                         key={suggestion}
                         onClick={() => setDraft(suggestion)}
-                        className="border border-white/8 bg-white/[0.025] p-4 text-left text-sm leading-5 text-zinc-400 transition-colors hover:border-emerald-300/25 hover:bg-emerald-300/[0.04] hover:text-zinc-200"
+                        className="border border-border bg-card p-4 text-left text-sm leading-5 text-muted-foreground transition-colors hover:border-primary/25 hover:bg-primary/[0.04] hover:text-foreground"
                       >
-                        <ArrowUp className="mb-3 size-3.5 rotate-45 text-emerald-300/70" />
+                        <ArrowUp className="mb-3 size-3.5 rotate-45 text-primary/70" />
                         {suggestion}
                       </button>
                     ))}
@@ -913,7 +912,7 @@ function ChatWorkspace({
                         align={isUser ? 'end' : 'start'}
                       >
                         <MessageAvatar
-                          className={`size-8 rounded-none ${isUser ? 'bg-zinc-700 text-zinc-300' : 'border border-emerald-300/20 bg-emerald-300/10 text-emerald-300'}`}
+                          className={`size-8 rounded-none ${isUser ? 'bg-secondary text-foreground' : 'border border-primary/20 bg-primary/10 text-primary'}`}
                         >
                           {isUser ? (
                             <UserRound className="size-4" />
@@ -933,13 +932,13 @@ function ChatWorkspace({
                               className={
                                 isUser
                                   ? 'rounded-md px-4 py-3'
-                                  : 'max-w-3xl whitespace-pre-wrap text-[15px] leading-7 text-zinc-300'
+                                  : 'max-w-3xl whitespace-pre-wrap text-[15px] leading-7 text-foreground'
                               }
                             >
                               {message.content ||
                                 (sending && index === messages.length - 1 ? (
-                                  <span className="inline-flex items-center gap-1.5 text-zinc-500">
-                                    <span className="size-1.5 animate-pulse bg-emerald-300" />
+                                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                    <span className="size-1.5 animate-pulse bg-primary" />
                                     正在思考…
                                   </span>
                                 ) : (
@@ -956,9 +955,9 @@ function ChatWorkspace({
           </div>
         </div>
 
-        <footer className="shrink-0 border-t border-white/8 bg-[#0c1210] px-4 pb-4 pt-3 sm:px-8 sm:pb-6">
+        <footer className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-3 sm:px-8 sm:pb-6">
           <div className="mx-auto max-w-4xl">
-            <div className="border border-white/10 bg-[#111a17] p-2 shadow-[0_-18px_70px_rgba(0,0,0,.18)] focus-within:border-emerald-300/30">
+            <div className="border border-border bg-card p-2 shadow-sm focus-within:border-primary/30">
               <Textarea
                 value={draft}
                 onChange={(event) =>
@@ -974,7 +973,7 @@ function ChatWorkspace({
                 className="max-h-44 min-h-20 resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-6 shadow-none focus-visible:ring-0"
               />
               <div className="flex items-center justify-between px-2 pb-1 pt-2">
-                <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-600">
+                <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
                   <span>ENTER 发送</span>
                   <span className="hidden sm:inline">SHIFT + ENTER 换行</span>
                   <span>{draft.length}/3000</span>
@@ -994,7 +993,7 @@ function ChatWorkspace({
                 </Button>
               </div>
             </div>
-            <p className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-zinc-700">
+            <p className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
               <CheckCircle2 className="size-3" />
               AI 生成内容可能存在偏差，请核验关键投资信息。
             </p>
@@ -1052,8 +1051,8 @@ export default function Home() {
 
   if (!hydrated) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#0c1210]">
-        <div className="flex items-center gap-3 font-mono text-xs tracking-[0.15em] text-emerald-300">
+      <main className="grid min-h-screen place-items-center bg-background">
+        <div className="flex items-center gap-3 font-mono text-xs tracking-[0.15em] text-primary">
           <RefreshCw className="size-4 animate-spin" />
           INITIALIZING
         </div>
