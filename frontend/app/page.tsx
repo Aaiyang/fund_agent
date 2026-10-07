@@ -21,6 +21,7 @@ import {
   PanelLeftClose,
   Plus,
   RefreshCw,
+  Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -40,6 +41,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { AccountDialog } from '@/components/account-dialog';
+import { LlmSettingsDialog } from '@/components/llm-settings';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -61,17 +64,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   type ChatMessage,
+  type LlmProfiles,
   type Session,
   type UserProfile,
   clearMessages,
   createSession,
   deleteSession,
   getMessages,
+  getLlmProfiles,
   healthCheck,
   listSessions,
   login,
   register,
   streamMessage,
+  switchLlmProfile,
 } from '@/lib/api';
 
 type StoredAuth = {
@@ -324,9 +330,11 @@ function AuthScreen({
 function ChatWorkspace({
   auth,
   onLogout,
+  onUserUpdated,
 }: {
   auth: StoredAuth;
   onLogout: () => void;
+  onUserUpdated: (user: UserProfile) => void;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -339,6 +347,33 @@ function ChatWorkspace({
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [llmOpen, setLlmOpen] = useState(false);
+  const [llm, setLlm] = useState<LlmProfiles | null>(null);
+  const [loadingLlm, setLoadingLlm] = useState(false);
+
+  async function openLlmSettings() {
+    setLoadingLlm(true);
+    try {
+      setLlm(await getLlmProfiles(auth.token));
+      setLlmOpen(true);
+    } catch (loadError) {
+      setError(getErrorMessage(loadError));
+    } finally {
+      setLoadingLlm(false);
+    }
+  }
+
+  async function selectLlm(name: string) {
+    setLoadingLlm(true);
+    try {
+      setLlm(await switchLlmProfile(auth.token, name));
+    } catch (switchError) {
+      setError(getErrorMessage(switchError));
+    } finally {
+      setLoadingLlm(false);
+    }
+  }
 
   const refreshSessions = useCallback(async () => {
     setLoadingSessions(true);
@@ -704,6 +739,28 @@ function ChatWorkspace({
             <DropdownMenuContent side="top" align="start" className="w-64">
               <DropdownMenuLabel>{auth.user.email}</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setAccountOpen(true)}>
+                <UserRound /> 账号管理
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={loadingLlm || sending}
+                onClick={() => void openLlmSettings()}
+              >
+                <Settings /> 模型供应商设置
+              </DropdownMenuItem>
+              {llm?.profiles.map((profile) => (
+                <DropdownMenuItem
+                  key={profile.name}
+                  disabled={
+                    loadingLlm || sending || profile.name === llm.active
+                  }
+                  onClick={() => void selectLlm(profile.name)}
+                >
+                  <Bot /> {profile.name}
+                  {profile.name === llm.active ? '（当前）' : ''}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onLogout}>
                 <LogOut /> 退出登录
               </DropdownMenuItem>
@@ -944,6 +1001,23 @@ function ChatWorkspace({
           </div>
         </footer>
       </section>
+      {accountOpen && (
+        <AccountDialog
+          open={accountOpen}
+          onOpenChange={setAccountOpen}
+          token={auth.token}
+          onSaved={onUserUpdated}
+        />
+      )}
+      {llmOpen && (
+        <LlmSettingsDialog
+          open={llmOpen}
+          onOpenChange={setLlmOpen}
+          token={auth.token}
+          llm={llm}
+          onSaved={setLlm}
+        />
+      )}
     </main>
   );
 }
@@ -988,7 +1062,11 @@ export default function Home() {
   }
 
   return auth ? (
-    <ChatWorkspace auth={auth} onLogout={handleLogout} />
+    <ChatWorkspace
+      auth={auth}
+      onLogout={handleLogout}
+      onUserUpdated={(user) => handleAuthenticated({ ...auth, user })}
+    />
   ) : (
     <AuthScreen onAuthenticated={handleAuthenticated} />
   );

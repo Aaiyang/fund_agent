@@ -21,6 +21,23 @@ export type UserResponse = UserProfile & {
   token: Token;
 };
 
+export type CurrentUser = UserProfile & {
+  id: number;
+  created_at: string | null;
+};
+
+export type LlmProfileInput = {
+  name: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+};
+
+export type LlmProfiles = {
+  active: string;
+  profiles: Array<Omit<LlmProfileInput, 'api_key'> & { key_hint: string }>;
+};
+
 export type Session = {
   session_id: string;
   name: string;
@@ -101,6 +118,72 @@ export function login(email: string, password: string): Promise<Token> {
 
 export function listSessions(userToken: string): Promise<Session[]> {
   return request<Session[]>('/auth/sessions', {}, userToken);
+}
+
+export function getCurrentUser(token: string): Promise<CurrentUser> {
+  return request<CurrentUser>('/auth/me', {}, token);
+}
+
+export function updateProfile(
+  token: string,
+  profile: { email?: string; username?: string },
+): Promise<CurrentUser> {
+  return request<CurrentUser>(
+    '/auth/me',
+    {
+      method: 'PATCH',
+      body: JSON.stringify(profile),
+    },
+    token,
+  );
+}
+
+export function getLlmProfiles(token: string): Promise<LlmProfiles> {
+  return request<LlmProfiles>('/agent/llm/profiles', {}, token);
+}
+
+export function saveLlmSettings(
+  token: string,
+  profiles: LlmProfileInput[],
+): Promise<LlmProfiles> {
+  return request<LlmProfiles>(
+    '/agent/llm/settings',
+    {
+      method: 'POST',
+      body: JSON.stringify({ profiles }),
+    },
+    token,
+  );
+}
+
+export function switchLlmProfile(
+  token: string,
+  name: string,
+): Promise<LlmProfiles> {
+  return request<LlmProfiles>(
+    '/agent/llm/switch',
+    {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    },
+    token,
+  );
+}
+
+export async function fetchVendorModels(
+  token: string,
+  base_url: string,
+  api_key: string,
+): Promise<string[]> {
+  const result = await request<{ models: string[] }>(
+    '/agent/llm/models',
+    {
+      method: 'POST',
+      body: JSON.stringify({ base_url, api_key }),
+    },
+    token,
+  );
+  return result.models;
 }
 
 export function createSession(userToken: string): Promise<Session> {
