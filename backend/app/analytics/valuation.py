@@ -80,7 +80,7 @@ def penetration_change(
 
 def choose_method(
     *,
-    qdii_fund: bool,
+    offshore_calendar: bool,
     benchmark_ready: bool,
     disclosed_coverage_pp: float,
     min_coverage_pp: float = MIN_PENETRATION_COVERAGE_PP,
@@ -90,11 +90,12 @@ def choose_method(
     顺序是有意的：基准法实测误差在 0.07pp 量级，穿透法在 0.4~0.5pp 量级，前者
     可用时没有理由用后者。
 
-    `qdii_fund` 必须由**基金类型**推出，不能由基准文本里出现"恒生"推出：A 股主动
-    基金常带 10%~20% 的港股基准，它们照样可以穿透估，而 QDII 的净值按境外日历公
-    布，盘中给数是在预测今晚的收盘，时间口径就不是同一个，精度再高也不能用。
+    `offshore_calendar` 表示"这只基金的净值跟着境外收盘出"，盘中给数等于预测今晚
+    的收盘，时间口径就不是同一个，精度再高也不能用。它的判据由服务层给：基金类型、
+    名称里的 QDII、以及基准里权重最大的那条指数是否在境外——**不能只看基准里出现
+    了恒生**，A 股主动基金常带 10%~20% 的港股基准，那些照样可以穿透估。
     """
-    if qdii_fund:
+    if offshore_calendar:
         return "unavailable"
     if benchmark_ready:
         return "index"

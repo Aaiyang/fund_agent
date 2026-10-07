@@ -98,6 +98,21 @@ class BenchmarkPlan:
         """指数段的合计权重（百分点），用来判断这只基金有多少资产能被行情解释."""
         return sum(part.weight for part in self.parts)
 
+    @property
+    def dominant_offshore(self) -> bool:
+        """权重最大的那条指数在境外，因此这只基金的净值按境外时段结算.
+
+        这是判"能不能盘中估"最可靠的信号：`fund.fund_type` 在多数行里是 NULL
+        （库里 539001 建信纳斯达克100(QDII)A人民币 就没有类型），靠类型判会
+        静默失效。而基准里"带一句恒生"不算——A 股主动基金常配 10%~20% 港股，
+        它的主口径仍在 A 股。只有**占大头的那条指数**在境外，净值才是跟着
+        境外收盘出的。
+        """
+        if not self.parts:
+            return False
+        dominant = max(self.parts, key=lambda part: part.weight)
+        return any(token in dominant.index_name for token in _OVERSEAS_TOKENS)
+
 
 def parse_benchmark(text: str | None) -> BenchmarkPlan:
     """把业绩比较基准拆成指数段与现金段.

@@ -61,19 +61,23 @@ class TestPenetrationChange:
 
 
 class TestChooseMethod:
-    def test_qdii_funds_are_never_estimated(self) -> None:
+    def test_offshore_calendar_funds_are_never_estimated(self) -> None:
         """口径先于精度：QDII 的盘中数是在预测境外今晚的收盘."""
-        assert choose_method(qdii_fund=True, benchmark_ready=True, disclosed_coverage_pp=95.0) == "unavailable"
+        assert choose_method(offshore_calendar=True, benchmark_ready=True, disclosed_coverage_pp=95.0) == "unavailable"
 
     def test_a_usable_benchmark_wins_over_penetration(self) -> None:
         """基准法实测 0.07pp 量级，穿透 0.4~0.5pp，能前者就不用后者."""
-        assert choose_method(qdii_fund=False, benchmark_ready=True, disclosed_coverage_pp=92.5) == "index"
+        assert choose_method(offshore_calendar=False, benchmark_ready=True, disclosed_coverage_pp=92.5) == "index"
 
     def test_penetration_is_the_fallback_for_active_holdings(self) -> None:
-        assert choose_method(qdii_fund=False, benchmark_ready=False, disclosed_coverage_pp=92.5) == "penetration"
+        assert (
+            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=92.5) == "penetration"
+        )
 
     def test_thin_or_absent_data_stays_blank(self) -> None:
-        assert choose_method(qdii_fund=False, benchmark_ready=False, disclosed_coverage_pp=1.8) == "unavailable"
+        assert (
+            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=1.8) == "unavailable"
+        )
 
     def test_an_a_share_fund_with_an_offshore_benchmark_part_still_gets_penetration(self) -> None:
         """基准里带 10%~20% 港股不等于境外基金：那只是让基准法取不到价.
@@ -81,4 +85,6 @@ class TestChooseMethod:
         实测 011452/017489/022287 三只 A 股主动基金都是这种基准，前十大覆盖
         84%~95%，把它们一并否决是错的。
         """
-        assert choose_method(qdii_fund=False, benchmark_ready=False, disclosed_coverage_pp=94.6) == "penetration"
+        assert (
+            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=94.6) == "penetration"
+        )
