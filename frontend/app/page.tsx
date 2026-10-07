@@ -47,6 +47,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -736,33 +737,35 @@ function ChatWorkspace({
               <MoreHorizontal className="size-4 text-muted-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-64">
-              <DropdownMenuLabel>{auth.user.email}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setAccountOpen(true)}>
-                <UserRound /> 账号管理
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={loadingLlm || sending}
-                onClick={() => void openLlmSettings()}
-              >
-                <Settings /> 模型供应商设置
-              </DropdownMenuItem>
-              {llm?.profiles.map((profile) => (
-                <DropdownMenuItem
-                  key={profile.name}
-                  disabled={
-                    loadingLlm || sending || profile.name === llm.active
-                  }
-                  onClick={() => void selectLlm(profile.name)}
-                >
-                  <Bot /> {profile.name}
-                  {profile.name === llm.active ? '（当前）' : ''}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{auth.user.email}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setAccountOpen(true)}>
+                  <UserRound /> 账号管理
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onLogout}>
-                <LogOut /> 退出登录
-              </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={loadingLlm || sending}
+                  onClick={() => void openLlmSettings()}
+                >
+                  <Settings /> 模型供应商设置
+                </DropdownMenuItem>
+                {llm?.profiles.map((profile) => (
+                  <DropdownMenuItem
+                    key={profile.name}
+                    disabled={
+                      loadingLlm || sending || profile.name === llm.active
+                    }
+                    onClick={() => void selectLlm(profile.name)}
+                  >
+                    <Bot /> {profile.name}
+                    {profile.name === llm.active ? '（当前）' : ''}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onLogout}>
+                  <LogOut /> 退出登录
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
