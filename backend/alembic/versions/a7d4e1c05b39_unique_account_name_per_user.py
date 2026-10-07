@@ -1,8 +1,7 @@
-"""Make account names unique per user.
+"""让账户名在同一用户下唯一.
 
-The account picker shows names only, so two accounts called 支付宝 are
-unreadable; the service already rejects near-duplicates and this constraint
-closes the race between two concurrent creates.
+账户选择器只显示名字，两个都叫 支付宝 的账户根本分不清；服务层已经在拒绝近似重复
+的名字，这条约束补上了两个并发创建之间的竞态。
 """
 
 from typing import Sequence, Union
@@ -16,10 +15,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add the per-user unique name constraint."""
+    """加上同一用户下账户名唯一的约束."""
     op.create_unique_constraint("uq_account_user_name", "portfolio_account", ["user_id", "name"])
 
 
 def downgrade() -> None:
-    """Drop the per-user unique name constraint."""
+    """删掉同一用户下账户名唯一的约束."""
     op.drop_constraint("uq_account_user_name", "portfolio_account", type_="unique")

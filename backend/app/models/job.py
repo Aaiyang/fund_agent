@@ -1,8 +1,7 @@
-"""Background job ledger: the PostgreSQL-side record of every queued task.
+"""后台任务流水账：每个入队任务在 PostgreSQL 一侧的台账.
 
-Taskiq's own broker state is not authoritative here (MVP spec 7.8): the API
-writes the row before enqueue and the worker updates it, so retries, failures
-and timing survive a lost or restarted queue.
+Taskiq 自己 broker 里的状态不作数（MVP spec 7.8）：API 在入队之前先把这行写好，
+之后由 worker 更新它，所以任务队列丢失或重启之后，重试次数、失败信息和耗时依然查得到。
 """
 
 from datetime import datetime
@@ -19,14 +18,14 @@ def _new_job_id() -> str:
 
 
 class BackgroundJob(BaseModel, table=True):
-    """One background task attempt series (fund sync, screenshot parsing, …)."""
+    """一个后台任务的多次尝试记录（基金同步、截图解析……）."""
 
     __tablename__ = "background_job"  # pyright: ignore[reportAssignmentType]
 
     id: str = Field(default_factory=_new_job_id, primary_key=True, max_length=32)
     job_type: str = Field(max_length=40, index=True)
     status: str = Field(default="PENDING", max_length=20, index=True)
-    # The business object the job acts on: a fund code or an import batch id
+    # 任务作用的业务对象：一个基金代码，或一个导入批次的 id
     subject: str | None = Field(default=None, max_length=64, index=True)
 
     retry_count: int = Field(default=0)

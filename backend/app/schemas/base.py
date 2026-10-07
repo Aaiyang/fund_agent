@@ -1,4 +1,4 @@
-"""Base response schemas shared across all endpoints."""
+"""所有端点共用的响应基类 schema."""
 
 from uuid import UUID, uuid4
 
@@ -7,26 +7,26 @@ from pydantic import BaseModel, Field
 
 
 def _get_request_id() -> UUID:
-    """Return the current request's correlation ID, or a fresh UUID as fallback."""
+    """取当前请求的 correlation ID，拿不到就现生成一个 UUID 兜底."""
     value = correlation_id.get()
     return UUID(value) if value else uuid4()
 
 
 class BaseResponse(BaseModel):
-    """Base response model that all endpoint responses inherit from.
+    """所有端点响应都继承的基类模型.
 
-    request_id is auto-populated from the CorrelationIdMiddleware ContextVar —
-    no endpoint needs to pass it explicitly.
+    request_id 由 CorrelationIdMiddleware 的 ContextVar 自动填好——
+    端点不需要自己显式传。
     """
 
     request_id: UUID = Field(default_factory=_get_request_id, description="Unique identifier for this request")
 
 
 def clean_required_text(value: str | None) -> str | None:
-    """Trim user text and reject anything blank once trimmed.
+    """去掉用户文本的首尾空白，trim 后为空则拒绝.
 
-    `min_length=1` happily accepts "   ", which then renders as an unnamed row.
-    None stays None so PATCH bodies can keep meaning "leave this alone".
+    光靠 `min_length=1` 会放过 "   "，这类值落库后就渲染成一行没有名字的记录。
+    None 原样返回，PATCH 请求体里它依旧表示“这个字段不动”。
     """
     if value is None:
         return None

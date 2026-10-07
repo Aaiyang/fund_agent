@@ -1,4 +1,4 @@
-/** Watchlist funds and groups (spec 3.3). */
+/** 自选基金与自选分组（spec 3.3）。 */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -10,7 +10,7 @@ import type { components } from '@/api/schema';
 export type WatchlistFund = components['schemas']['WatchlistFundItem'];
 export type WatchlistGroup = components['schemas']['WatchlistGroupItem'];
 
-/** Adding or removing a fund also changes the is_watchlisted flag in search. */
+/** 加自选、删自选会连带改变搜索结果里的 is_watchlisted 标记。 */
 function invalidateWatchlist(client: QueryClient) {
   return Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.watchlist }),
@@ -48,7 +48,7 @@ export function useRemoveWatchlistFund() {
   });
 }
 
-/** `group_ids` replaces membership, so an empty array ungroups the fund. */
+/** `group_ids` 是整体覆盖成员关系，传空数组就是把基金移出所有分组。 */
 export function useUpdateWatchlistFund() {
   const client = useQueryClient();
   return useMutation({
@@ -67,7 +67,7 @@ export function useCreateWatchlistGroup() {
   });
 }
 
-/** Passing `fund_codes` also sets the in-group order (spec 3.3 排序). */
+/** 带上 `fund_codes` 的同时也会把组内顺序定下来（spec 3.3 排序）。 */
 export function useUpdateWatchlistGroup() {
   const client = useQueryClient();
   return useMutation({

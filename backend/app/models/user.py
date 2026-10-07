@@ -1,4 +1,4 @@
-"""This file contains the user model for the application."""
+"""本文件定义应用的用户模型."""
 
 from datetime import datetime
 from typing import (
@@ -20,16 +20,16 @@ if TYPE_CHECKING:
 
 
 class User(BaseModel, table=True):
-    """User model for storing user accounts.
+    """用户模型，保存可登录的账号.
 
     Attributes:
-        id: The primary key
-        email: User's email (unique)
-        hashed_password: Bcrypt hashed password
-        username: Optional display name for the user
-        refresh_revoked_at: Logout stamp — refresh tokens issued earlier are rejected
-        created_at: When the user was created
-        sessions: Relationship to user's chat sessions
+        id: 主键。
+        email: 用户邮箱（唯一）。
+        hashed_password: bcrypt 哈希后的密码。
+        username: 可选的用户展示名。
+        refresh_revoked_at: 退出登录的时刻，比它更早签发的 refresh token 一律拒绝。
+        created_at: 用户创建时间。
+        sessions: 与该用户聊天会话的关联关系。
     """
 
     id: int = Field(default=None, primary_key=True)
@@ -40,15 +40,15 @@ class User(BaseModel, table=True):
     sessions: List["Session"] = Relationship(back_populates="user")
 
     def verify_password(self, password: str) -> bool:
-        """Verify if the provided password matches the hash."""
+        """校验传入的密码与存下的哈希是否匹配."""
         return bcrypt.checkpw(password.encode("utf-8"), self.hashed_password.encode("utf-8"))
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash a password using bcrypt."""
+        """用 bcrypt 给密码做哈希."""
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
-# Avoid circular imports
+# 绕开循环 import
 from app.models.session import Session  # noqa: E402

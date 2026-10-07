@@ -1,4 +1,4 @@
-"""Manual import provider: converts hand-entered rows into a draft."""
+"""手动录入导入 provider：把手填的持仓行转成草稿."""
 
 from app.core.logging import logger
 from app.integrations.holdings.base import (
@@ -10,15 +10,14 @@ from app.services.fund_service import fund_service
 
 
 class ManualImportProvider:
-    """Parses manual holding entries (no OCR involved).
+    """解析手动录入的持仓（完全不碰 OCR）.
 
-    Manual input is structurally trusted (confidence 1.0) but still flows
-    through fund resolution and validation like any other import — manual
-    rows also land in the same confirm-before-write flow (MVP spec 3.7.1).
+    手动输入在结构上默认可信（confidence 1.0），但仍要和别的导入一样走基金解析
+    与校验——手动行同样进的是那条"先确认、后落库"的流程（MVP spec 3.7.1）。
     """
 
     async def parse(self, payload: HoldingImportPayload) -> HoldingImportDraft:
-        """Resolve each manual row to a standard fund and validate it."""
+        """把每条手动行解析成标准基金，并做校验."""
         from app.integrations.holdings.base import DraftPositionItem
 
         draft = HoldingImportDraft()

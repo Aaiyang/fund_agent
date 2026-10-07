@@ -1,4 +1,4 @@
-"""Import normalization/validation is pure and must stay unit-tested (spec 3.7)."""
+"""导入链路的归一化与校验是纯函数，必须保持在可单测的状态（spec 3.7）."""
 
 from app.integrations.holdings.base import DraftPositionItem, RawExtractedPosition
 from app.integrations.holdings.normalizer import (
@@ -12,7 +12,7 @@ from app.integrations.holdings.normalizer import (
 
 
 def _item(**overrides: object) -> DraftPositionItem:
-    """A valid draft row with optional field overrides."""
+    """造一条字段齐全的草稿行，按需覆盖其中的字段."""
     payload: dict = {
         "raw_fund_name": "华泰柏瑞质量成长混合C",
         "matched_fund_code": "011452",
@@ -65,7 +65,7 @@ class TestValidateDraftItem:
         assert "missing_market_value_and_shares" in validated.validation_issues
 
     def test_only_shares_is_acceptable_partial_snapshot(self) -> None:
-        """Spec 3.7.1: partial snapshots are allowed, not invented away."""
+        """按 spec 3.7.1：只填出一半的快照是合法的，不能靠编数把它补齐."""
         validated = validate_draft_item(_item(market_value=None, shares=295.1))
         assert validated.validation_status == "valid"
 

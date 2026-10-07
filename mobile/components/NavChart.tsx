@@ -1,11 +1,10 @@
 /**
- * Cumulative-return line chart: the fund plus an optional benchmark, both
- * indexed to +0% at the window start so one axis serves both.
+ * 累计收益折线图：本基金加可选的业绩比较基准，两条曲线都以窗口起点为
+ * +0% 定基，同一根坐标轴就能直接对比。
  *
- * react-native-svg only — no charting dependency: the series is a few hundred
- * points at most and each shape is a single polyline. Points are placed on a
- * time axis, not by array index, because fund NAV days and index trading days
- * do not line up one for one.
+ * 只用 react-native-svg、不引图表库：序列至多几百个点，每条形状就是一根
+ * polyline。点按时间轴落位而不用数组下标，因为基金的净值日期和指数的
+ * 交易日本来就不是一一对齐的。
  */
 
 import { type ReactNode, useState } from 'react';
@@ -27,7 +26,7 @@ function toSeries<T>(points: T[], dateOf: (point: T) => string, valueOf: (point:
     .filter((entry): entry is { time: number; label: string; value: number } => Number.isFinite(entry.time) && entry.value !== null && entry.value !== undefined);
 }
 
-/** Closest entry to `target` on the time axis. */
+/** 时间轴上离 `target` 最近的那个点。 */
 function nearestByTime<T extends { time: number }>(series: T[], target: number): T {
   return series.reduce((best, item) => (Math.abs(item.time - target) < Math.abs(best.time - target) ? item : best));
 }
@@ -49,12 +48,12 @@ export function NavChart({
   points: FundPoint[];
   benchmark?: { name: string; points: BenchmarkPoint[] } | null;
   costNav?: number | null;
-  /** When set, the legend's benchmark entry becomes the switcher's trigger. */
+  /** 传入后，图例里的基准项就变成切换下拉的触发按钮。 */
   benchmarkPicker?: BenchmarkPicker | null;
 }) {
   const [width, setWidth] = useState(0);
-  // The pinned day carries the window it was picked in: after a range switch
-  // the stored date belongs to another series, so the crosshair drops itself.
+  // 钉住的日期记着它是在哪个窗口里选中的：切换区间后，存下的日期已属
+  // 另一条序列，十字光标便自行作废。
   const [pinned, setPinned] = useState<{ window: string; label: string } | null>(null);
   const fund = toSeries(points, (point) => point.nav_date, (point) => point.unit_nav);
   const windowKey = `${points[0]?.nav_date ?? ''}:${points[points.length - 1]?.nav_date ?? ''}`;
@@ -72,9 +71,9 @@ export function NavChart({
   const windowStart = fund[0].time;
   const windowEnd = fund[fund.length - 1].time;
 
-  // Trim the benchmark to the fund's own window and index it from the first
-  // close inside it: a longer-lived index would otherwise start left of the
-  // axis (clipped) and quote a change over a different period than the fund.
+  // 把基准裁剪到基金自己的窗口，并以窗口内第一根收盘定基：历史更长的
+  // 指数否则会从头轴左侧开始（被裁掉），
+  // 涨跌幅还算成了与基金不同的区间。
   const benchmarkWindow = toSeries(benchmark?.points ?? [], (point) => point.trade_date, (point) => point.close).filter(
     (point) => point.time >= windowStart && point.time <= windowEnd,
   );
@@ -100,8 +99,8 @@ export function NavChart({
   const lastChange = last.change;
   const benchmarkChange = benchmarkSeries.length ? benchmarkSeries[benchmarkSeries.length - 1].change : null;
 
-  // A pressed day keeps the crosshair and the readout on that date; the legend
-  // above mirrors it, so the pair stays in sync while the finger slides.
+  // 按下某天就把十字光标和读数定在那一天；上方图例同步镜像它，
+  // 手指滑动过程中两边始终对得上。
   const marker = pinned && pinned.window === windowKey ? fundSeries.find((point) => point.label === pinned.label) ?? null : null;
   const markerBenchmark = marker && benchmarkSeries.length ? nearestByTime(benchmarkSeries, marker.time) : null;
   const shownFundChange = marker ? marker.change : lastChange;
@@ -115,8 +114,8 @@ export function NavChart({
     setPinned({ window: windowKey, label: nearest.label });
   };
 
-  // The date chip is a fixed-width box, so it is pulled back inside the plot
-  // at both ends of the series instead of overrunning the card.
+  // 日期贴片是固定宽度的框，序列两端处要把它收回绘图区内，
+  // 否则会溢出卡片外面。
   const CHIP_W = 78;
   const markerX = marker ? x(marker.time) : 0;
   const chipLeft = marker ? Math.min(Math.max(markerX - CHIP_W / 2, 0), Math.max(width - CHIP_W, 0)) : 0;
@@ -133,10 +132,9 @@ export function NavChart({
 
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-      {/* Every RN-web View is its own stacking context (position:relative +
-          z-index:0), so the open menu needs a rank on both levels: the row one
-          to clear the chart painted later in the tree, the trigger one to keep
-          the panel anchored directly under the benchmark name. */}
+      {/* RN-web 的每个 View 都是独立层叠上下文（position:relative + z-index:0），
+          展开的下拉菜单因此要在两层同时提权：整行提一层，压过后面渲染的图表；
+          触发器再提一层，让面板稳稳贴在基准名称正下方。 */}
       <View style={{ marginBottom: 6, zIndex: benchmarkPicker?.open ? 20 : 0 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
           <Legend color={theme.primary} label="本基金" value={shownFundChange} />
@@ -291,7 +289,7 @@ function Legend({
   color: string;
   label: string;
   value: number | null;
-  /** Sits between the name and the figure, e.g. the picker's arrow. */
+  /** 插在名称与数字之间，比如下拉的箭头。 */
   trailing?: ReactNode;
 }) {
   return (

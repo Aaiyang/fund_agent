@@ -1,9 +1,8 @@
-"""Holding import orchestration: parse → review → confirm → apply.
+"""持仓导入的流程编排：解析 → 复核 → 确认 → 落库.
 
-The only path that writes to portfolio_position is confirm_import(). All
-import writes follow "overwrite current snapshot" semantics and append an
-IMPORT_ADJUSTMENT audit transaction (MVP spec 3.7). Screenshot images live
-only as temporary files and are deleted after confirm/fail/cancel.
+只有 confirm_import() 会写 portfolio_position。导入带来的写入一律按"覆盖当前
+快照"的语义处理，并给每个生效的基金追加一条 IMPORT_ADJUSTMENT 审计流水
+（MVP spec 3.7）。截图只以临时文件存在，确认、失败或取消之后就会被删掉。
 """
 
 import asyncio
@@ -43,18 +42,18 @@ _ALLOWED_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
 
 
 class ImportStateError(Exception):
-    """Operation not allowed in the import's current state."""
+    """导入当前状态不允许执行该操作."""
 
 
 class UploadValidationError(Exception):
-    """Uploaded files violate count/size/type limits."""
+    """上传的文件违反数量/大小/类型限制."""
 
 
 class HoldingImportService:
-    """Async holdings import orchestration."""
+    """异步的持仓导入编排."""
 
     # ------------------------------------------------------------------
-    # Creation
+    # 创建批次
     # ------------------------------------------------------------------
 
     async def create_manual_import(
@@ -63,7 +62,7 @@ class HoldingImportService:
         account_id: int,
         positions: list[ManualPositionInput],
     ) -> ImportDetail:
-        """Parse manual rows synchronously and park them for confirmation."""
+        """同步解析手动录入的各行，存下来等待用户确认."""
         if not positions:
             raise UploadValidationError("no_positions_provided")
         await portfolio_service.ensure_account(user_id, account_id)
@@ -90,10 +89,10 @@ class HoldingImportService:
         account_id: int,
         files: list[UploadFile],
     ) -> HoldingImport:
-        """Validate and store screenshots, enqueue async parsing.
+        """校验并保存截图，把解析任务入队交给后台执行.
 
-        Returns immediately with an UPLOADED batch — parsing happens in the
-        worker queue (HTTP 202 pattern, spec 7.9).
+        立刻返回一个 UPLOADED 状态的批次——真正的解析发生在后台 worker 队列里
+        （HTTP 202 模式，spec 7.9）。
         """
         if not files:
             raise UploadValidationError("no_images_provided")
@@ -107,7 +106,7 @@ class HoldingImportService:
         try:
             paths = await self._save_images(record.id, files)
         except Exception:
-            # A rejected upload must not leave temp images or a stuck batch behind
+            # 上传被拒后不能留下临时图片，也不能留下卡住的批次
             await self._cleanup_images(record.id)
             await import_repository.update_import(record.id, status="PARSE_FAILED", error_message="upload_rejected")
             raise
@@ -119,11 +118,11 @@ class HoldingImportService:
         return record
 
     # ------------------------------------------------------------------
-    # Worker entry
+    # worker 入口
     # ------------------------------------------------------------------
 
     async def process_screenshot_import(self, import_id: str, user_id: int) -> None:
-        """Parse screenshots and move the batch to REVIEW_REQUIRED."""
+        """解析截图，把批次推进到 REVIEW_REQUIRED."""
         record = await import_repository.get_import(user_id, import_id)
         if record is None or record.status not in {"UPLOADED", "PARSING"}:
             logger.warning("screenshot_import_unexpected_state", import_id=import_id)
@@ -159,8 +158,8 @@ class HoldingImportService:
         holding_imports_total.labels(import_type="SCREENSHOT", status="REVIEW_REQUIRED").inc()
 
     async def mark_failed(self, import_id: str, message: str) -> None:
-        """Terminal failure state + image cleanup."""
-        record = await import_repository.get_import(None, import_id)  # internal path
+        """置为失败终态，并清理图片."""
+        record = await import_repository.get_import(None, import_id)  # 内部调用路径
         import_type = record.import_type if record else "SCREENSHOT"
         await import_repository.update_import(import_id, status="PARSE_FAILED", error_message=message)
         holding_imports_total.labels(import_type=import_type, status="PARSE_FAILED").inc()
@@ -168,16 +167,16 @@ class HoldingImportService:
         logger.warning("import_marked_failed", import_id=import_id, message=message[:200])
 
     # ------------------------------------------------------------------
-    # Read / review
+    # 读取 / 复核
     # ------------------------------------------------------------------
 
     async def get_import_detail(self, user_id: int, import_id: str) -> ImportDetail | None:
-        """Import + items enriched with current-position diff data."""
+        """导入批次加明细，并为每条补上与当前持仓的对比数据."""
         record = await import_repository.get_import(user_id, import_id)
         if record is None:
             return None
 
-        # Reaper: batches stuck in PARSING past the budget are dead workers
+        # 兜底回收：停在 PARSING 超过时限的批次，说明处理它的 worker 已经没了
         if record.status == "PARSING":
             stale = await import_repository.find_stale_parsing()
             if any(batch.id == import_id for batch in stale):
@@ -201,11 +200,10 @@ class HoldingImportService:
         return self._detail(record, item_outs)
 
     async def _candidates_for(self, item: HoldingImportItem) -> list[ImportCandidate]:
-        """The funds a name the parse could not settle on might still be.
+        """解析时没能定下名称的那条，给出它可能对应的候选基金.
 
-        A screenshot row whose name is truncated is usually several share
-        classes of one fund; listing them turns the fix into one tap instead of
-        making him look up and type a 6-digit code.
+        截图里名称被截断的那一行，通常对应同一只基金的几个份额类别；把候选列出来，
+        用户点一下就修正了，不用他自己去查、再手动敲进 6 位代码。
         """
         if item.matched_fund_code or not item.raw_fund_name:
             return []
@@ -222,7 +220,7 @@ class HoldingImportService:
         user_action: str | None = None,
         **fields: float | str | date | bool | None,
     ) -> ImportItemOut:
-        """User edit/decision on one item; corrections are re-validated."""
+        """用户对单条明细的修改与处置；改过的值会重新走一遍校验."""
         record = await import_repository.get_import(user_id, import_id)
         if record is None:
             raise ImportStateError("import_not_found")
@@ -261,8 +259,8 @@ class HoldingImportService:
         item.validation_status = validated.validation_status
         item.validation_issues = validated.validation_issues
         await import_repository.update_item(item)
-        # Carry the same diff fields the detail view shows; without them the
-        # review page loses "当前持仓 / 版本" after every edit.
+        # 带上详情视图里那组同样的对比字段；少了它们，复核页每改一次就会
+        # 丢掉"当前持仓 / 版本"。
         current = None
         if item.matched_fund_code:
             current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
@@ -273,14 +271,14 @@ class HoldingImportService:
         )
 
     # ------------------------------------------------------------------
-    # Confirm / cancel
+    # 确认 / 取消
     # ------------------------------------------------------------------
 
     async def confirm_import(self, user_id: int, import_id: str) -> dict[str, int]:
-        """Apply confirmed items to positions — the only holdings write path.
+        """把已确认的明细落到持仓上——这是持仓唯一的写入入口.
 
-        Semantics per spec 3.7: overwrite current snapshot per fund; no BUY/
-        SELL synthesis; one IMPORT_ADJUSTMENT audit row per applied fund.
+        语义按 spec 3.7：按基金覆盖当前快照；不合成 BUY/SELL 流水；
+        每个生效的基金补一条 IMPORT_ADJUSTMENT 审计流水。
         """
         record = await import_repository.get_import(user_id, import_id)
         if record is None:
@@ -301,15 +299,15 @@ class HoldingImportService:
                 for key in ("market_value", "shares", "cost_amount", "average_cost_nav", "profit_loss")
                 if getattr(item, key) is not None
             }
-            # The date is not his to choose: a fund he already holds keeps the
-            # day already set (re-importing a snapshot must not reset his
-            # holding age), and one seen for the first time starts at the most
-            # recent session — the money is already in it, so the day the app
-            # shows it is the day to count from, not the day he imported.
+            # 这一天不由用户来挑：已经持有的基金沿用原先设好的日期
+            # （重新导入一份快照不能把他的持有天数清零），第一次见到的
+            # 基金则从最近一个交易日起算——钱本来就已经在场内了，
+            # 所以该从应用能看到它的那天算起，而不是从他
+            # 执行导入的那天算起。
             current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
             held_since = current.purchase_date if current is not None else None
-            # Import overwrite is explicit user intent — bypass version check
-            # (expected_version=None) but still bump the stored version.
+            # 导入覆盖是用户的明确意图——跳过乐观锁版本校验
+            # （expected_version=None），但存进去的版本号照样自增。
             position = await portfolio_repository.upsert_position(
                 user_id,
                 record.account_id,
@@ -349,7 +347,7 @@ class HoldingImportService:
         return {"applied": applied, "skipped": skipped}
 
     async def delete_import(self, user_id: int, import_id: str) -> bool:
-        """Cancel a non-applied import and delete its temp images."""
+        """取消还没落库的导入，并删掉它的临时图片."""
         record = await import_repository.get_import(user_id, import_id)
         if record is None:
             return False
@@ -363,16 +361,16 @@ class HoldingImportService:
         return True
 
     async def list_history(self, user_id: int, limit: int = 50) -> list[ImportDetail]:
-        """Import batch history without item payloads."""
+        """导入批次的历史列表，不带每条明细的数据."""
         records = await import_repository.list_history(user_id, limit)
         return [self._detail(record, []) for record in records]
 
     # ------------------------------------------------------------------
-    # Image handling
+    # 图片处理
     # ------------------------------------------------------------------
 
     async def _save_images(self, import_id: str, files: list[UploadFile]) -> list[str]:
-        """Validate and persist uploaded images to the temp directory."""
+        """校验上传的图片，并落到临时目录."""
         max_bytes = settings.HOLDING_IMPORT_MAX_IMAGE_MB * 1024 * 1024
         temp_dir = Path(settings.HOLDING_IMPORT_TEMP_DIR)
         saved: list[str] = []
@@ -396,14 +394,14 @@ class HoldingImportService:
         return saved
 
     def _existing_image_paths(self, import_id: str) -> list[str]:
-        """Temp image paths for an import, ordered."""
+        """按顺序给出该导入在临时目录里的图片路径."""
         temp_dir = Path(settings.HOLDING_IMPORT_TEMP_DIR)
         if not temp_dir.exists():
             return []
         return [str(path) for path in sorted(temp_dir.glob(f"{import_id}_*"))]
 
     async def _cleanup_images(self, import_id: str) -> None:
-        """Delete temp images for an import (privacy: originals never persist)."""
+        """删掉该导入的临时图片（隐私：原图绝不做持久化）."""
 
         def _remove() -> int:
             temp_dir = Path(settings.HOLDING_IMPORT_TEMP_DIR)
@@ -421,7 +419,7 @@ class HoldingImportService:
             logger.warning("import_image_cleanup_failed", import_id=import_id, error=str(e))
 
     # ------------------------------------------------------------------
-    # Mapping helpers
+    # 输出映射
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -431,7 +429,7 @@ class HoldingImportService:
         current_version: int | None,
         candidates: Sequence[ImportCandidate] = (),
     ) -> ImportItemOut:
-        """Map an item row to its output schema with diff fields."""
+        """把明细行映射成输出 schema，一并带上对比字段."""
         raw_issues = item.validation_issues
         issues = [str(issue) for issue in raw_issues] if isinstance(raw_issues, list) else []
         return ImportItemOut(
@@ -456,7 +454,7 @@ class HoldingImportService:
 
     @staticmethod
     def _detail(record: HoldingImport, items: list[ImportItemOut]) -> ImportDetail:
-        """Map an import row to its output schema."""
+        """把导入批次行映射成输出 schema."""
         return ImportDetail(
             id=record.id,
             account_id=record.account_id,

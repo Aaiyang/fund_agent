@@ -1,8 +1,7 @@
-"""API v1 router configuration.
+"""API v1 路由装配.
 
-This module sets up the main API router and includes all sub-routers for
-auth, chatbot, funds, watchlist, portfolio, accounts, transactions,
-holding imports and the agent placeholder.
+本模块创建主 API 路由，并挂载 auth、chatbot、funds、watchlist、portfolio、
+accounts、transactions、持仓导入以及 agent 占位这些子路由。
 """
 
 from fastapi import APIRouter
@@ -23,7 +22,7 @@ from app.core.logging import logger
 
 api_router = APIRouter()
 
-# Include routers
+# 挂载子路由
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(chatbot_router, prefix="/chatbot", tags=["Chatbot"])
 api_router.include_router(funds_router, prefix="/funds", tags=["Funds"])
@@ -40,10 +39,10 @@ api_router.include_router(agent_router, prefix="/agent", tags=["Agent"])
 
 @api_router.get("/health")
 async def health_check():
-    """Health check endpoint.
+    """健康检查端点.
 
     Returns:
-        dict: Health status information.
+        dict: 健康状态信息。
     """
     logger.info("health_check_called")
     return {"status": "healthy", "version": "1.0.0"}

@@ -1,4 +1,4 @@
-"""Holding import API schemas."""
+"""持仓导入 API 的 schema."""
 
 from datetime import datetime
 
@@ -9,14 +9,14 @@ from app.schemas.base import BaseResponse
 
 
 class ManualImportRequest(BaseModel):
-    """POST /holding-imports/manual request."""
+    """POST /holding-imports/manual 请求体."""
 
     account_id: int
     positions: list[ManualPositionInput]
 
 
 class ImportCandidate(BaseModel):
-    """One fund a screenshot name could still be, offered for one-tap choice."""
+    """截图名称仍可能指到的某一只基金，供确认页一键选择."""
 
     fund_code: str
     fund_name: str
@@ -24,7 +24,7 @@ class ImportCandidate(BaseModel):
 
 
 class ImportItemOut(BaseModel):
-    """One pending import row with diff fields for the confirm page."""
+    """一条待确认的导入明细，带确认页要用的差异字段."""
 
     id: int
     raw_fund_name: str | None = None
@@ -40,17 +40,16 @@ class ImportItemOut(BaseModel):
     validation_status: str
     validation_issues: list[str] = []
     user_action: str | None = None
-    # Diff preview: current holdings vs recognized vs after import
+    # 差异预览：当前持仓、识别结果、导入之后三者对照
     current_market_value: float | None = None
     current_version: int | None = None
-    # Recomputed when a row is read, never stored: an unresolved name is
-    # usually several share classes of one fund, and the list has to reflect
-    # the register as it is now rather than as it was when the parse ran.
+    # 读这一行时才现算、从不落库：没匹配上的名字往往是同一只基金的几个份额
+    # 类别，候选列表得跟着名册此刻的样子走，而不是解析当时名册的样子。
     candidates: list[ImportCandidate] = []
 
 
 class ImportDetail(BaseModel):
-    """One import batch with optional item payloads."""
+    """一个导入批次，可带上明细条目."""
 
     id: str
     account_id: int
@@ -68,20 +67,20 @@ class ImportDetail(BaseModel):
 
 
 class ImportDetailResponse(BaseResponse):
-    """GET /holding-imports/{import_id} and manual-import responses."""
+    """GET /holding-imports/{import_id} 以及手动导入的响应体."""
 
     import_batch: ImportDetail
 
 
 class ImportHistoryResponse(BaseResponse):
-    """GET /holding-imports/history response."""
+    """GET /holding-imports/history 响应体."""
 
     items: list[ImportDetail]
     total: int
 
 
 class ScreenshotImportAccepted(BaseResponse):
-    """POST /holding-imports/screenshots response (HTTP 202)."""
+    """POST /holding-imports/screenshots 响应体（HTTP 202）."""
 
     import_id: str
     status: str
@@ -89,7 +88,7 @@ class ScreenshotImportAccepted(BaseResponse):
 
 
 class ImportItemUpdateRequest(BaseModel):
-    """PATCH /holding-imports/{import_id}/items/{item_id} request."""
+    """PATCH /holding-imports/{import_id}/items/{item_id} 请求体."""
 
     user_action: str | None = Field(default=None, pattern="^(UPDATE|SKIP|EDIT)$")
     fund_code: str | None = Field(default=None, max_length=12)
@@ -102,7 +101,7 @@ class ImportItemUpdateRequest(BaseModel):
 
 
 class ImportConfirmResponse(BaseResponse):
-    """POST /holding-imports/{import_id}/confirm response."""
+    """POST /holding-imports/{import_id}/confirm 响应体."""
 
     import_id: str
     applied: int

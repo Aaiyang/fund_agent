@@ -1,12 +1,12 @@
-"""Max drawdown over a NAV series."""
+"""净值序列上的最大回撤."""
 
 from app.analytics.returns import NavPoint
 
 
 def max_drawdown(points: list[NavPoint]) -> float | None:
-    """Return the maximum peak-to-trough decline as a negative fraction.
+    """返回峰到谷的最大跌幅，用负数比例表示.
 
-    None when fewer than two points exist or all NAVs are non-positive.
+    点数不足两个、或所有净值都非正时返回 None。
     """
     if len(points) < 2:
         return None

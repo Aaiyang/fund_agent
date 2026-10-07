@@ -1,4 +1,4 @@
-"""Transactions API endpoints (read-only view of records/adjustments)."""
+"""流水 API 端点（记账流水与人工调整的只读视图）."""
 
 from fastapi import (
     APIRouter,
@@ -24,7 +24,7 @@ async def list_transactions(
     fund_code: str | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> TransactionsResponse:
-    """List transactions/adjustments, newest first (spec 3.8)."""
+    """按时间倒序列出流水与调整记录（spec 3.8）."""
     try:
         items = await portfolio_service.list_transactions(identity.user_id, account_id, fund_code)
     except AccountNotFoundError as e:

@@ -1,4 +1,4 @@
-"""Which days a 定投 plan is due, including the short-month and catch-up edges."""
+"""定投计划落在哪几天扣款，包括短月和补扣这两类边界."""
 
 from datetime import date
 
@@ -7,7 +7,7 @@ from app.analytics.schedule import due_days, first_due
 
 class TestFirstDue:
     def test_weekly_waits_for_the_named_weekday(self) -> None:
-        # 2026-09-23 is a Wednesday; run_day 1 is Monday.
+        # 2026-09-23 是周三，run_day 1 指周一
         assert first_due("weekly", 1, date(2026, 9, 23)) == date(2026, 9, 28)
 
     def test_a_start_on_the_named_day_counts_itself(self) -> None:

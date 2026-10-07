@@ -1,4 +1,4 @@
-"""Portfolio API schemas (accounts, positions, transactions)."""
+"""持仓组合 API 的 schema（账户、持仓、流水）."""
 
 from datetime import date, datetime
 from typing import Literal
@@ -10,12 +10,12 @@ from app.schemas.base import BaseResponse, clean_required_text
 
 
 # ---------------------------------------------------------------------------
-# Accounts
+# 账户
 # ---------------------------------------------------------------------------
 
 
 class AccountItem(BaseModel):
-    """One portfolio account (source_app is only a label)."""
+    """一个资产组合账户（source_app 只是一个标签）."""
 
     id: int
     name: str
@@ -27,14 +27,14 @@ class AccountItem(BaseModel):
 
 
 class AccountsResponse(BaseResponse):
-    """GET /accounts response."""
+    """GET /accounts 响应体."""
 
     items: list[AccountItem]
     total: int
 
 
 class AccountCreateRequest(BaseModel):
-    """POST /accounts request."""
+    """POST /accounts 请求体."""
 
     name: str = Field(min_length=1, max_length=100)
     source_app: str | None = Field(default=None, max_length=50)
@@ -48,7 +48,7 @@ class AccountCreateRequest(BaseModel):
 
 
 class AccountUpdateRequest(BaseModel):
-    """PATCH /accounts/{id} request."""
+    """PATCH /accounts/{id} 请求体."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     source_app: str | None = Field(default=None, max_length=50)
@@ -60,12 +60,12 @@ class AccountUpdateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Positions
+# 持仓
 # ---------------------------------------------------------------------------
 
 
 class PositionItem(BaseModel):
-    """One holding with query-time derived metrics (never stored)."""
+    """一笔持仓，派生指标在查询时算出（绝不落库）."""
 
     id: int | None = None
     account_id: int
@@ -77,8 +77,8 @@ class PositionItem(BaseModel):
     market_value: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    # Which of the figures above the row does not actually store: a derived one
-    # must not be echoed back into the entry form as if the user had asserted it.
+    # 标出上面哪几个金额是这行数据其实没存的：派生值不能回显进录入表单，
+    # 冒充成用户亲自填过的数字。
     shares_derived: bool = False
     cost_derived: bool = False
     average_cost_nav_derived: bool = False
@@ -91,12 +91,12 @@ class PositionItem(BaseModel):
     position_ratio: float | None = None
     nav_date: date | None = None
     is_updated: bool = False
-    # 首次购买确认日: the earliest BUY when there is a ledger, else whatever the
-    # snapshot recorded. 持有天数 counts from it.
+    # 首次购买确认日：有流水时取最早的那笔 BUY，没有就沿用快照记下的值；
+    # 持有天数从这一天开始算。
     purchase_date: date | None = None
     holding_days: int | None = None
-    # How many BUY/SELL rows the shares and cost above were projected from.
-    # Non-zero means 同步持仓 may no longer restate them.
+    # 上面的份额和成本是由多少条 BUY/SELL 流水投影出来的。非 0 就意味着同步持仓
+    # 不再有资格改写它们。
     trade_count: int = 0
     created_at: datetime | None = None
     version: int = 1
@@ -104,14 +104,14 @@ class PositionItem(BaseModel):
 
 
 class PositionsResponse(BaseResponse):
-    """GET /portfolio/positions response."""
+    """GET /portfolio/positions 响应体."""
 
     items: list[PositionItem]
     total: int
 
 
 class PortfolioSummary(BaseModel):
-    """Asset summary across one or all accounts (spec 3.2)."""
+    """单个或全部账户的资产总览（spec 3.2）."""
 
     total_market_value: float = 0.0
     total_cost: float = 0.0
@@ -123,19 +123,18 @@ class PortfolioSummary(BaseModel):
 
 
 class PortfolioSummaryResponse(BaseResponse):
-    """GET /portfolio/summary response."""
+    """GET /portfolio/summary 响应体."""
 
     summary: PortfolioSummary
     accounts: list[AccountItem]
 
 
 class PositionUpsertRequest(BaseModel):
-    """同步持仓: restate what a holdings screen shows (partial allowed).
+    """同步持仓：按持仓页面显示的结果重述（允许只填一部分）.
 
-    The screen pairs its numbers differently depending on which side he reads
-    from, so the form offers two 口径: 持有金额 goes with 持有收益, 持有份额 goes
-    with 持仓成本价. Either pair fixes all four money figures; the one that is
-    not an input is derived and any stale stored value for it is retired.
+    页面从不同侧读这些数字，配对方式并不唯一，所以表单给两种口径：持有金额配
+    持有收益，持有份额配持仓成本价。任一组都能把四个金额全部定住；没当作输入
+    的那项改为推算得出，原先存着的旧值随之作废。
     """
 
     account_id: int
@@ -155,7 +154,7 @@ class PositionUpsertRequest(BaseModel):
 
 
 class TradeCreateRequest(BaseModel):
-    """加减仓: record one purchase, redemption, installment or conversion."""
+    """加减仓：记一笔买入、赎回、定投期数或转换."""
 
     account_id: int
     operation: Operation
@@ -167,10 +166,9 @@ class TradeCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _order_carries_its_own_unit(self) -> "TradeCreateRequest":
-        """Money sizes the buys, shares size the exits.
+        """进仓用金额定规模，出仓用份额定规模.
 
-        A conversion also names the fund to arrive in. None of it is inferable,
-        so all of it is required.
+        转换还得指定转入的目标基金。这些值都没法从别处推出来，因此全部必填。
         """
         if self.operation in ("BUY", "AUTO_INVEST") and self.amount is None:
             raise ValueError("买入与定投需要填写金额")
@@ -182,7 +180,7 @@ class TradeCreateRequest(BaseModel):
 
 
 class TradeLeg(BaseModel):
-    """One fund's side of an order, priced on the confirm day."""
+    """一笔订单在某只基金那一侧的腿，按确认日净值定价."""
 
     fund_code: str
     direction: Direction
@@ -197,30 +195,30 @@ class TradeLeg(BaseModel):
 
 
 class TradePreviewResponse(BaseResponse):
-    """GET .../trades/preview: what this order would do to the holding."""
+    """GET .../trades/preview：这单会怎样改动持仓."""
 
     operation: Operation
     trade_date: date
     after_cutoff: bool
-    # The session the order is priced against. It differs from trade_date
-    # whenever the cutoff or a non-trading day moved the order along.
+    # 订单定价所依据的那个交易日。只要越过截止点 15:00 或撞上非交易日，
+    # 它就和 trade_date 不同。
     confirm_date: date
     legs: list[TradeLeg]
 
 
 class PositionDeleteResponse(BaseModel):
-    """DELETE position response."""
+    """DELETE 持仓的响应体."""
 
     deleted: bool
 
 
 # ---------------------------------------------------------------------------
-# Transactions
+# 流水
 # ---------------------------------------------------------------------------
 
 
 class TransactionItem(BaseModel):
-    """One transaction or adjustment record."""
+    """一条流水或一笔人工调整记录."""
 
     id: int
     account_id: int
@@ -228,8 +226,8 @@ class TransactionItem(BaseModel):
     fund_name: str | None = None
     transaction_type: str
     trade_date: date
-    # The session an order was priced against. Only trades carry it; it is the
-    # day the ledger's shares and cost were bought at.
+    # 订单定价所依据的交易日。只有交易流水带它：流水里的份额和成本就是按这天
+    # 的净值记下来的。
     confirm_date: date | None = None
     shares: float | None = None
     nav: float | None = None
@@ -241,7 +239,7 @@ class TransactionItem(BaseModel):
 
 
 class TransactionsResponse(BaseResponse):
-    """GET /transactions response."""
+    """GET /transactions 响应体."""
 
     items: list[TransactionItem]
     total: int

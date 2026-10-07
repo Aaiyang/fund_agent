@@ -15,7 +15,7 @@ import {
   type WatchlistGroup,
 } from '@/hooks/useWatchlist';
 
-/** Group management: create, rename, delete, and in-group ordering (spec 3.3). */
+/** 分组管理：新建、改名、删除与组内排序（spec 3.3）。 */
 export default function WatchlistGroupsScreen() {
   const groups = useWatchlistGroups();
   const create = useCreateWatchlistGroup();
@@ -90,8 +90,8 @@ export default function WatchlistGroupsScreen() {
                   update={update}
                   remove={remove}
                   onDeleted={() => {
-                    // A filter pointing at a deleted group would leave the 自选
-                    // tab showing an empty list with no way to get out of it.
+                    // 筛选若还指向被删除的分组，自选页会停在一张空列表上无从退出，
+                    // 所以删除后要把本组和全局两处选中态都清空。
                     if (selectedGroup === group.id) setSelectedGroup(null);
                     if (groupId === group.id) setGroupId(null);
                   }}
@@ -102,8 +102,8 @@ export default function WatchlistGroupsScreen() {
         </Async>
       </Card>
 
-      {/* key remounts per group: the editor seeds its order from the group it
-          was opened for and would otherwise carry the previous group's list. */}
+      {/* 用 key 按分组重新挂载编辑器：它只按打开时那个分组初始化顺序，
+          否则会把上一个分组的列表带到当前分组界面上。 */}
       {selectedGroup !== null ? <GroupOrderEditor key={selectedGroup} groupId={selectedGroup} update={update} /> : null}
     </Screen>
   );

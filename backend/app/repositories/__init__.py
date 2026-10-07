@@ -1,1 +1,1 @@
-"""Repository package — the only layer that talks to the database."""
+"""仓储层包 —— 只有这一层直接读写数据库."""

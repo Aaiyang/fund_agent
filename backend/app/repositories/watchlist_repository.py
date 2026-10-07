@@ -1,4 +1,4 @@
-"""Watchlist repository: watchlist entries, groups and group items."""
+"""自选仓储：自选条目、自选分组与分组关联."""
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
@@ -12,14 +12,14 @@ from app.utils.clock import utc_now
 
 
 class WatchlistRepository:
-    """Async data access for the user's watchlist and its groups."""
+    """用户自选及其分组的异步数据访问."""
 
     # ------------------------------------------------------------------
-    # Watchlist entries
+    # 自选条目
     # ------------------------------------------------------------------
 
     async def list_funds(self, user_id: int) -> list[Watchlist]:
-        """List the user's watchlisted funds ordered by sort_order."""
+        """按 sort_order 列出该用户的自选基金."""
         async with get_async_session() as session:
             statement = (
                 select(Watchlist)
@@ -30,11 +30,10 @@ class WatchlistRepository:
             return list(result.scalars().all())
 
     async def add_fund(self, user_id: int, fund_code: str) -> Watchlist:
-        """Add a fund to the watchlist, idempotently.
+        """把基金加入自选，重复添加也不会出错.
 
-        INSERT ... ON CONFLICT DO NOTHING: the read-then-insert version let two
-        concurrent first adds both see no row, and the loser surfaced the unique
-        constraint as a 500.
+        这里靠 INSERT ... 在 ON CONFLICT 时 DO NOTHING：先前查再插的写法，会让两个
+        并发的首次添加都看到没有记录，输掉的那个把唯一约束冲突暴露成 500。
         """
         async with get_async_session() as session:
             statement = pg_insert(Watchlist).values(
@@ -50,7 +49,7 @@ class WatchlistRepository:
             return result.scalar_one()
 
     async def remove_fund(self, user_id: int, fund_code: str) -> bool:
-        """Remove a fund (and its group memberships). Returns True if removed."""
+        """移除自选（连同它的分组归属），删掉了才返回 True."""
         async with get_async_session() as session:
             entry = (
                 await session.execute(
@@ -66,7 +65,7 @@ class WatchlistRepository:
             return True
 
     async def update_sort(self, user_id: int, fund_code: str, sort_order: int) -> Watchlist | None:
-        """Update a fund's sort order within the watchlist."""
+        """更新某只基金在自选列表里的排序位置."""
         async with get_async_session() as session:
             entry = (
                 await session.execute(
@@ -81,7 +80,7 @@ class WatchlistRepository:
             return entry
 
     async def is_watchlisted(self, user_id: int, fund_code: str) -> bool:
-        """Whether the user watchlists this fund."""
+        """该用户是否把这只基金加入了自选."""
         async with get_async_session() as session:
             row = (
                 await session.execute(
@@ -93,7 +92,7 @@ class WatchlistRepository:
             return row is not None
 
     async def is_held(self, user_id: int, fund_code: str) -> bool:
-        """Whether the user holds this fund anywhere."""
+        """该用户是否在某个账户里持有这只基金."""
         async with get_async_session() as session:
             row = (
                 await session.execute(
@@ -105,7 +104,7 @@ class WatchlistRepository:
             return row is not None
 
     async def list_held_fund_codes(self, user_id: int) -> set[str]:
-        """Fund codes the user holds anywhere, for one bulk lookup."""
+        """一次批量查出该用户在任意账户里持有的基金代码."""
         async with get_async_session() as session:
             rows = (
                 (
@@ -121,11 +120,11 @@ class WatchlistRepository:
             return set(rows)
 
     # ------------------------------------------------------------------
-    # Groups
+    # 分组
     # ------------------------------------------------------------------
 
     async def list_groups(self, user_id: int) -> list[WatchlistGroup]:
-        """List the user's watchlist groups ordered by sort_order."""
+        """按 sort_order 列出该用户的自选分组."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(WatchlistGroup)
@@ -135,7 +134,7 @@ class WatchlistRepository:
             return list(result.scalars().all())
 
     async def get_group(self, user_id: int, group_id: int) -> WatchlistGroup | None:
-        """Load one group owned by the user."""
+        """读取属于该用户的一个分组."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(WatchlistGroup).where(
@@ -145,7 +144,7 @@ class WatchlistRepository:
             return result.scalar_one_or_none()
 
     async def create_group(self, user_id: int, name: str, sort_order: int = 0) -> WatchlistGroup:
-        """Create a custom watchlist group."""
+        """新建一个自定义自选分组."""
         async with get_async_session() as session:
             group = WatchlistGroup(user_id=user_id, name=name, sort_order=sort_order)
             session.add(group)
@@ -159,7 +158,7 @@ class WatchlistRepository:
         name: str | None = None,
         sort_order: int | None = None,
     ) -> WatchlistGroup | None:
-        """Rename or reorder a group."""
+        """分组改名或调整顺序."""
         async with get_async_session() as session:
             group = (
                 await session.execute(
@@ -179,7 +178,7 @@ class WatchlistRepository:
             return group
 
     async def delete_group(self, user_id: int, group_id: int) -> bool:
-        """Delete a group and its item associations."""
+        """删除分组，以及它与自选条目的关联."""
         async with get_async_session() as session:
             group = (
                 await session.execute(
@@ -195,7 +194,7 @@ class WatchlistRepository:
             return True
 
     async def add_to_group(self, user_id: int, group_id: int, fund_code: str) -> WatchlistGroupItem | None:
-        """Add a watchlisted fund to a group (idempotent)."""
+        """把已自选的基金放进某个分组（重复添加不报错）."""
         async with get_async_session() as session:
             entry = (
                 await session.execute(
@@ -219,10 +218,10 @@ class WatchlistRepository:
             return item
 
     async def list_group_map(self, user_id: int) -> dict[str, list[tuple[int, str]]]:
-        """Map fund code → [(group_id, group_name)] for every watchlisted fund.
+        """为每只自选基金给出 基金代码 → [(group_id, group_name)] 的映射.
 
-        One join instead of one query per row, and it keeps group order as the
-        user set it (``watchlist_group_item.sort_order``).
+        用一次 join 查完，而不是一行一次查询，并且保住用户自己设定的分组顺序
+        （组内次序记在 ``watchlist_group_item.sort_order`` 里）。
         """
         async with get_async_session() as session:
             result = await session.execute(
@@ -242,17 +241,15 @@ class WatchlistRepository:
             return grouped
 
     async def replace_group_members(self, user_id: int, group_id: int, fund_codes: list[str]) -> bool | None:
-        """Set a group's membership and in-group order (spec 3.3 排序).
+        """重写一个分组的成员和组内顺序（spec 3.3 排序）.
 
         Args:
-            user_id: Owner id — the group must belong to the caller.
-            group_id: Group to rewrite.
-            fund_codes: Desired members, in display order. Codes the user has
-                not watchlisted are ignored.
+            user_id: 归属用户 id —— 分组必须属于调用方。
+            group_id: 要重写的分组。
+            fund_codes: 期望的成员，按展示顺序给出；用户没加入自选的代码会被忽略。
 
         Returns:
-            True when updated, False when some code was not watchlisted,
-            None when the group does not exist.
+            更新成功返回 True，有代码不在自选里返回 False，分组不存在返回 None。
         """
         async with get_async_session() as session:
             group = (
@@ -304,11 +301,10 @@ class WatchlistRepository:
             return len(wanted_ids) == len([code for code in fund_codes if code in entry_ids])
 
     async def set_fund_groups(self, user_id: int, fund_code: str, group_ids: list[int]) -> bool:
-        """Replace which groups a watchlisted fund belongs to.
+        """重写某只自选基金所属的那几组.
 
         Returns:
-            True when the fund is watchlisted (even if no group changed),
-            False when the watchlist entry does not exist.
+            基金确实在自选里返回 True（哪怕分组一个都没变），自选条目不存在返回 False。
         """
         async with get_async_session() as session:
             entry = (

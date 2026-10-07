@@ -1,4 +1,4 @@
-"""Screenshot import worker task (Taskiq)."""
+"""截图识别导入的后台 worker 任务（Taskiq）."""
 
 from app.core.task_queue import broker
 from app.repositories.job_repository import job_repository
@@ -8,19 +8,19 @@ from app.workers.base import run_job
 
 @broker.task
 async def process_screenshot_import_task(import_id: str, user_id: int, job_id: str | None = None) -> str:
-    """Parse uploaded screenshots into a review-ready draft.
+    """把用户上传的截图解析成一份待人工核对的草稿.
 
-    Runs in the Taskiq worker (Redis broker) or, in the degraded no-Redis
-    fallback, in-process in the background. Both the batch status and the job
-    ledger live in PostgreSQL, so a lost worker is recoverable.
+    正常在 Taskiq worker 里跑（Redis broker）；退化到没有 Redis 时，
+    就在本进程的后台跑。批次状态和任务账本都落在 PostgreSQL 里，
+    所以 worker 挂掉之后仍然可以恢复。
 
     Args:
-        import_id: HoldingImport batch id.
-        user_id: Owner id, used to re-check the batch on the worker side.
-        job_id: Ledger row created by the caller, when there is one.
+        import_id: HoldingImport 批次的 ID。
+        user_id: 批次归属人的 ID，worker 侧据此再校验一次归属。
+        job_id: 调用方创建好的账本行，可能没有。
 
     Returns:
-        "ok" or "failed".
+        "ok" 或 "failed"。
     """
     if job_id is None:
         job = await job_repository.create("SCREENSHOT_IMPORT", subject=import_id)

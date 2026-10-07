@@ -1,9 +1,9 @@
-"""Field parsing: a clustered row's figures become holding fields.
+"""字段解析：把聚好的一行里的数字变成持仓字段.
 
-Two figures stack inside one column — 金额 above 昨日收益, 持有收益 above its
-rate — so a block's field is decided by which *line* of the row it sits on, not
-by its own text. That keeps 昨日收益 out of 持有收益 when a row's lines drift a
-few pixels apart, which is the mistake that silently misprices a holding.
+一列里常常上下叠着两个数——金额压在昨日收益上面，持有收益压在它自己的收益率
+上面——所以一个块算哪个字段，取决于它落在这一行的第几行，而不是它自己的文本。
+行的上下两截偶尔会错开几个像素，靠文本认就会把昨日收益当成持有收益，
+而这类错误会把一条持仓的价钱悄悄算歪。
 """
 
 import re
@@ -14,16 +14,16 @@ from app.integrations.holdings.layout import PageLayout, Slot
 from app.integrations.holdings.ocr import TextBlock
 from app.integrations.holdings.rows import HoldingRow
 
-# Minus arrives as four different glyphs depending on the font and the OCR pass.
+# 负号长什么样取决于字体和这一遍 OCR，前后一共会遇到四种字形。
 _MINUS = re.compile(r"^[−–—‐]")
 _NOISE = re.compile(r"[¥￥$,,\s]")
 
 
 def parse_figure(text: str) -> tuple[float | None, bool]:
-    """Read a screenshot number, returning (value, whether it carried a % sign).
+    """读截图里的一个数字，返回 (数值, 是否带过百分号).
 
-    Returns (None, False) for anything that is not a figure — a clipped row's
-    half-read line included — rather than inventing a zero.
+    只要读不出数值就返回 (None, False)——被截断的行只剩半截也算——
+    绝不替它凭空造出一个 0。
     """
     raw = _MINUS.sub("-", text.strip())
     percent = raw.rstrip().endswith("%")
@@ -37,7 +37,7 @@ def parse_figure(text: str) -> tuple[float | None, bool]:
 
 
 def _lines(blocks: list[TextBlock], tolerance: float) -> dict[int, list[TextBlock]]:
-    """Group a row's value blocks into stacked lines, top line = 0."""
+    """把一行的数值块按上下叠放的行归组，最上面一行编号是 0."""
     ordered = sorted(blocks, key=lambda block: block.center_y)
     lines: list[list[TextBlock]] = []
     for block in ordered:
@@ -49,7 +49,7 @@ def _lines(blocks: list[TextBlock], tolerance: float) -> dict[int, list[TextBloc
 
 
 def _slot_of(layout: PageLayout, column_index: int, line: int) -> Slot | None:
-    """Which field a column's nth line is."""
+    """某一列的第 n 行对应哪个字段."""
     if column_index >= len(layout.columns):
         return None
     column = layout.columns[column_index]
@@ -57,15 +57,15 @@ def _slot_of(layout: PageLayout, column_index: int, line: int) -> Slot | None:
 
 
 def to_positions(rows: list[HoldingRow], layout: PageLayout) -> list[RawExtractedPosition]:
-    """Turn clustered rows into extracted positions, ready for resolution."""
+    """把聚好的行变成抽出的持仓，等着做基金解析."""
     line_tolerance = layout.median_height * 0.6
     positions: list[RawExtractedPosition] = []
     dropped = 0
     for row in rows:
         values: dict[Slot, float] = {}
         scores: list[float] = []
-        # A block that sits where a figure belongs but will not parse: the row
-        # was cut off mid-height, so half a glyph is all the screen showed.
+        # 数字该在的位置上有块、却解析不出数值：说明这一行被屏幕截掉了半截，
+        # 屏幕上显示的连半个字形都不完整。
         partial = False
         for column_index, column in enumerate(layout.columns):
             if column.upper == "name" or column.upper is None:
@@ -83,15 +83,15 @@ def to_positions(rows: list[HoldingRow], layout: PageLayout) -> list[RawExtracte
                     partial = True
                     continue
                 if slot == "profit_loss_rate" and not percent:
-                    # A rate without its % sign is the one figure that can be a
-                    # fraction instead of percentage points; refuse to guess.
+                    # 只有收益率这一个数可能给的是小数而不是百分点（% 号丢了），
+                    # 这种歧义不去猜。
                     continue
                 values[slot] = number
 
         if partial:
-            # A row the screen cut off mid-height is missing a figure nobody can
-            # recover, and importing half a holding is worse than leaving it to
-            # the next screenshot — so it never reaches the review page.
+            # 被屏幕截掉半截的行缺了一个数，谁都补不回来；
+            # 导入半条持仓比把它留给下一张截图更糟，
+            # 所以这种行根本不会进复核页。
             dropped += 1
             continue
 

@@ -1,4 +1,4 @@
-"""Run the development API with a Windows-compatible asyncio event loop."""
+"""用 Windows 兼容的 asyncio 事件循环启动本地开发 API."""
 
 import argparse
 import asyncio
@@ -10,7 +10,7 @@ import uvicorn
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse local server options."""
+    """解析本地服务的启动参数."""
     parser = argparse.ArgumentParser(description="Run the Fund Agent API locally")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8000, type=int)
@@ -19,13 +19,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def configure_event_loop() -> None:
-    """Use the selector loop required by psycopg async connections on Windows."""
+    """Windows 上 psycopg 异步连接跑不了默认的 ProactorEventLoop，只能换成 selector 循环."""
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def main() -> None:
-    """Start the local Uvicorn development server."""
+    """启动本地 Uvicorn 开发服务."""
     args = parse_args()
     os.environ.setdefault("APP_ENV", "development")
     project_root = str(Path(__file__).resolve().parents[1])

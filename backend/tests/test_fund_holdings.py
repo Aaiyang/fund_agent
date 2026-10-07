@@ -1,4 +1,4 @@
-"""Holdings parsing: mixed-market quote symbols and the quarter-over-quarter diff."""
+"""持仓解析：跨市场的行情代码，以及季度之间的权重变化."""
 
 from datetime import date
 
@@ -12,7 +12,7 @@ from app.integrations.fund_data.normalizer import (
 from app.services.fund_service import summarize_holdings
 
 A_SHARE_LINE = (
-    # Real layout is 34 fields with the date at 30 and the time at 31.
+    # 真实版面是 34 个字段，日期在下标 30、时间在下标 31
     'var hq_str_sz300308="中际旭创,900.00,922.40,895.86,905.00,880.00,895.00,895.86,123456,11000000000,'
     + ",".join(["0"] * 20)
     + ',2026-09-24,16:29:45,00,D";'

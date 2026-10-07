@@ -9,7 +9,7 @@ import { useUiStore } from '@/stores/ui';
 import { confirmAction } from '@/utils/confirm';
 import { formatDateTime } from '@/utils/format';
 
-/** Account management: create, switch, rename, delete (spec 3.6). */
+/** 账户管理：新建、切换、改名、删除（spec 3.6）。 */
 export default function AccountListScreen() {
   const accounts = useAccounts();
   const setAccountId = useUiStore((state) => state.setAccountId);

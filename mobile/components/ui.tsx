@@ -1,4 +1,4 @@
-/** Small layout and text primitives shared by every screen. */
+/** 所有页面共用的布局与文字小构件。 */
 
 import { type ReactNode } from 'react';
 import { type StyleProp, type ViewStyle, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
@@ -17,7 +17,7 @@ export function Screen({
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
-  /** Bar rendered above the scroller so it stays visible while content moves. */
+  /** 渲染在滚动容器上方的横条，内容滚动时它保持可见。 */
   pinned?: ReactNode;
 }) {
   return (
@@ -136,7 +136,7 @@ export function Button({
   );
 }
 
-/** Bordered pill: the switcher and tag style used inside cards and forms. */
+/** 带边框的胶囊：卡片与表单里切换、标签的样式。 */
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
   return (
     <Pressable
@@ -159,10 +159,9 @@ export function Chip({ label, active, onPress }: { label: string; active?: boole
 }
 
 /**
- * Strip switcher item: bare text with an underline on the active one, the way a
- * mobile nav bar reads. Used by the pinned account and group rows above a table.
- * `accent` marks an item that navigates somewhere instead of selecting, so it
- * does not look like an unselected sibling.
+ * 条状切换项：裸文字，选中的一项底下加一条横线，按移动端导航栏的样子来。
+ * 用在表格上方固定的账户行与分组行。`accent` 标记那些负责跳转而不是
+ * 选中的条目，免得它看起来像个没选中的同组项。
  */
 export function NavTab({
   label,
@@ -214,7 +213,7 @@ export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warn
   );
 }
 
-/** The label line above an input, shared by the text field and the date picker. */
+/** 输入框上方的标签行，文本框与日期选择器共用。 */
 export function FieldLabel({ label, extra }: { label: string; extra?: ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>

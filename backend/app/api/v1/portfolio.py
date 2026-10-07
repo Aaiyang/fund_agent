@@ -1,4 +1,4 @@
-"""Portfolio API endpoints: summary, positions (optimistic lock), delete."""
+"""持仓组合 API 端点：资产总览、持仓读写（乐观锁）与删除."""
 
 from datetime import date
 
@@ -43,7 +43,7 @@ async def get_portfolio_summary(
     account_id: int | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PortfolioSummaryResponse:
-    """Asset summary: total value, P/L, daily P/L, per-account list (spec 3.2)."""
+    """资产总览：总市值、收益、当日收益，外加按账户拆分的清单（spec 3.2）."""
     try:
         summary = await portfolio_service.get_summary(identity.user_id, account_id)
     except AccountNotFoundError as e:
@@ -59,7 +59,7 @@ async def list_positions(
     account_id: int | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionsResponse:
-    """List positions with derived metrics; optional account filter."""
+    """列出持仓及其派生指标，可用 account_id 限定到单个账户."""
     try:
         items = await portfolio_service.list_positions(identity.user_id, account_id)
     except AccountNotFoundError as e:
@@ -81,10 +81,10 @@ async def preview_trade(
     target_code: str | None = Query(default=None, min_length=6, max_length=6, description="转换目标基金"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> TradePreviewResponse:
-    """Price an order on its confirm day and show the resulting holding.
+    """按确认日的净值给订单试算，并展示成交之后的持仓.
 
-    Declared before ``POST /positions/{fund_code}/trades`` in spirit but on a
-    distinct path, so no literal segment can be swallowed by the fund code.
+    相当于 ``POST /positions/{fund_code}/trades`` 的预演，但单独走一条路径，
+    这样就没有字面量路径段会被 `{fund_code}` 吞掉。
     """
     try:
         return await portfolio_service.preview_trade(
@@ -114,7 +114,7 @@ async def record_trade(
     payload: TradeCreateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionItem:
-    """Record a purchase or redemption and re-project the holding from the ledger."""
+    """记一笔买入或赎回，并用流水重新投影出该持仓."""
     try:
         return await portfolio_service.record_trade(
             identity.user_id,
@@ -146,7 +146,7 @@ async def get_position(
     account_id: int | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionItem:
-    """One position; `account_id` narrows it to a single account (spec 9.3)."""
+    """查询单个持仓；传 `account_id` 就收窄到一个账户内（spec 9.3）."""
     try:
         if account_id is not None:
             position = await portfolio_service.get_position(identity.user_id, account_id, fund_code)
@@ -168,12 +168,11 @@ async def upsert_position(
     payload: PositionUpsertRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionItem:
-    """同步持仓: restate what the holdings screen shows (spec 3.7.1).
+    """同步持仓：按持仓页面上看到的结果重述（spec 3.7.1）.
 
-    Updates require `expected_version`; a stale version returns 409 so a
-    concurrent screenshot import can never silently overwrite user edits. On a
-    fund with a trade ledger, 份额/成本/收益 are dropped by the service — only
-    持有金额 and 首次购买日期 come through this door.
+    更新必须带 `expected_version`，版本陈旧就返回 409，这样并发的截图识别导入
+    绝不可能悄悄覆盖用户的手工修改。对已有交易流水的基金，服务层会丢弃
+    份额/成本/收益——这条通道只放行持有金额与首次购买日期。
     """
     try:
         return await portfolio_service.upsert_position(
@@ -203,7 +202,7 @@ async def delete_position(
     account_id: int,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> PositionDeleteResponse:
-    """Erase one fund from an account: holding, ledger and 定投 plans."""
+    """把某只基金从账户里清掉：持仓、流水和定投计划一起删."""
     try:
         deleted = await portfolio_service.delete_position(identity.user_id, account_id, fund_code)
     except AccountNotFoundError as e:

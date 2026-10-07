@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/auth';
 import { theme } from '@/constants/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
-  // Already hidden or not available on this platform.
+  // 启动屏已隐藏，或该平台不支持启动屏 API。
 });
 
 export default function RootLayout() {

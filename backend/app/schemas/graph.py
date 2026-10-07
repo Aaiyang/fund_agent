@@ -1,4 +1,4 @@
-"""This file contains the graph schema for the application."""
+"""应用的 LangGraph 状态 schema 定义."""
 
 from typing import Annotated
 
@@ -10,7 +10,7 @@ from pydantic import (
 
 
 class GraphState(BaseModel):
-    """State definition for the LangGraph Agent/Workflow."""
+    """LangGraph Agent/Workflow 的状态定义."""
 
     messages: Annotated[list, add_messages] = Field(
         default_factory=list, description="The messages in the conversation"

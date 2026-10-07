@@ -17,7 +17,7 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: '已取消',
 };
 
-/** Import entry: choose manual entry or screenshot recognition (spec 3.7). */
+/** 导入入口：在手动录入与截图识别之间二选一（spec 3.7）。 */
 export default function HoldingImportScreen() {
   const history = useImportHistory();
 

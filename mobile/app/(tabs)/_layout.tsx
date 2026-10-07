@@ -5,8 +5,8 @@ import { Pressable } from 'react-native';
 import { theme } from '@/constants/theme';
 
 /**
- * Tab icons. expo-symbols validates each name per platform: iOS uses SF
- * Symbols, Android/web use the Material list, so the pairs differ.
+ * 标签栏图标。expo-symbols 按平台分别校验图标名：iOS 用 SF Symbols，
+ * Android/web 用 Material 图标列表，所以各平台的名称成对配置且取值不同。
  */
 function SearchButton() {
   return (

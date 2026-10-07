@@ -1,7 +1,7 @@
 /**
- * Token persistence. Spec 8.6 forbids plain storage on mobile, so native uses
- * SecureStore; expo-secure-store has no web implementation, so the web build
- * falls back to sessionStorage (per-tab, cleared on close).
+ * 令牌持久化。spec 8.6 禁止移动端用明文存储，所以原生端走 SecureStore；
+ * expo-secure-store 没有 web 实现，web 构建退回 sessionStorage
+ * （按标签页隔离，关掉标签就清空）。
  */
 
 import * as SecureStore from 'expo-secure-store';

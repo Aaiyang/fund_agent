@@ -1,4 +1,4 @@
-"""Data access for standing 定投 plans."""
+"""定投计划的数据访问."""
 
 from datetime import date
 
@@ -10,10 +10,10 @@ from app.utils.clock import utc_now
 
 
 class AutoInvestRepository:
-    """Async data access for auto-invest plans."""
+    """定投计划的异步数据访问."""
 
     async def list_plans(self, user_id: int, account_id: int | None = None) -> list[AutoInvestPlan]:
-        """List the user's plans, optionally scoped to one account."""
+        """列出该用户的定投计划，可用 account_id 收窄到一个账户."""
         async with get_async_session() as session:
             statement = select(AutoInvestPlan).where(col(AutoInvestPlan.user_id) == user_id)
             if account_id is not None:
@@ -22,7 +22,7 @@ class AutoInvestRepository:
             return list(result.scalars().all())
 
     async def get_plan(self, user_id: int, plan_id: int) -> AutoInvestPlan | None:
-        """Load one plan owned by this user."""
+        """读取一条属于该用户的计划."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(AutoInvestPlan).where(col(AutoInvestPlan.id) == plan_id, col(AutoInvestPlan.user_id) == user_id)
@@ -40,7 +40,7 @@ class AutoInvestRepository:
         start_date: date,
         end_date: date | None,
     ) -> AutoInvestPlan:
-        """Add a plan; a fund may carry several with different schedules."""
+        """新增一条计划；同一只基金可以挂多条不同节奏的计划."""
         async with get_async_session() as session:
             plan = AutoInvestPlan(
                 user_id=user_id,
@@ -68,7 +68,7 @@ class AutoInvestRepository:
         end_date: date | None = None,
         active: bool | None = None,
     ) -> AutoInvestPlan | None:
-        """Patch the schedule. A None field means "not supplied" (spec 3.7.1)."""
+        """修改计划的排期。某个字段为 None 表示调用方没给它（spec 3.7.1）."""
         async with get_async_session() as session:
             plan = (
                 await session.execute(
@@ -96,7 +96,7 @@ class AutoInvestRepository:
             return plan
 
     async def mark_run(self, plan_id: int, scheduled_day: date) -> None:
-        """Record how far the plan has been settled, so catching up is idempotent."""
+        """记下计划已经结算到哪一天，补跑因此是幂等的."""
         async with get_async_session() as session:
             plan = (
                 await session.execute(select(AutoInvestPlan).where(col(AutoInvestPlan.id) == plan_id))
@@ -107,7 +107,7 @@ class AutoInvestRepository:
                 session.add(plan)
 
     async def delete_plan(self, user_id: int, plan_id: int) -> bool:
-        """Remove one plan row. Its installments are the caller's to decide on."""
+        """删掉一条计划记录。它已生成的期次由调用方决定怎么处理."""
         async with get_async_session() as session:
             plan = (
                 await session.execute(
@@ -122,11 +122,10 @@ class AutoInvestRepository:
             return True
 
     async def delete_plans_for_fund(self, user_id: int, account_id: int, fund_code: str) -> int:
-        """Remove every plan buying one fund, returning how many went.
+        """删掉某账户下指向这只基金的全部计划，返回删掉的条数.
 
-        A plan surviving the fund it feeds would settle its next installment and
-        recreate the holding the user just erased, so the two are deleted
-        together.
+        计划如果活得比它买入的基金还久，下一期结算时就会把用户刚删掉的持仓重新写
+        回来，所以两者要一起删。
         """
         async with get_async_session() as session:
             plans = (

@@ -1,4 +1,4 @@
-"""Test configuration: env defaults before any app import, shared fixtures."""
+"""测试配置：在导入任何 app 模块之前把环境变量默认值设好，并集中放置共享 fixture."""
 
 import os
 

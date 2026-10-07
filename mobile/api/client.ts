@@ -1,10 +1,9 @@
 /**
- * REST client for the FastAPI backend: bearer auth, single-flight token
- * refresh, and typed errors. Screens never call fetch directly.
+ * 对接 FastAPI 后端的 REST 客户端：Bearer 鉴权、单飞（single-flight）令牌
+ * 刷新、带类型的错误。各页面从不直接调 fetch。
  *
- * The base URL must be a LAN address when running on a real Android device —
- * `localhost` points at the phone itself (spec 11.2). Set
- * EXPO_PUBLIC_API_BASE_URL in mobile/.env.
+ * 在真机 Android 上跑时，base URL 必须写局域网地址——`localhost` 指的是
+ * 手机自己（spec 11.2）。请在 mobile/.env 里设置 EXPO_PUBLIC_API_BASE_URL。
  */
 
 import { clearTokens, loadTokens, saveTokens } from '@/api/tokenStore';
@@ -28,14 +27,14 @@ type QueryValue = string | number | boolean | undefined | null;
 
 export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
-  /** JSON body. */
+  /** JSON 请求体。 */
   body?: unknown;
-  /** application/x-www-form-urlencoded fields (the auth endpoints use them). */
+  /** application/x-www-form-urlencoded 表单字段，鉴权类接口用这种。 */
   form?: Record<string, string>;
-  /** multipart payload built by the caller. */
+  /** 调用方自己拼好的 multipart 载荷。 */
   formData?: FormData;
   query?: Record<string, QueryValue>;
-  /** Set false for public endpoints. Default true. */
+  /** 公开接口设 false，默认 true。 */
   auth?: boolean;
 };
 
@@ -63,12 +62,12 @@ async function parseError(response: Response): Promise<ApiError> {
       code = 'validation_error';
     }
   } catch {
-    // Non-JSON error body: keep the status-derived code.
+    // 错误响应体不是 JSON：沿用按状态码拼出的错误码。
   }
   return new ApiError(response.status, code, message);
 }
 
-/** Refresh tokens are exchanged once at a time; concurrent 401s share it. */
+/** 刷新令牌一次只换一回；并发的 401 共享同一次刷新。 */
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function refreshTokens(): Promise<boolean> {
@@ -102,9 +101,9 @@ function headersWith(auth: boolean, token: string | null, extra: Record<string, 
 }
 
 /**
- * Perform a request, refreshing the access token once on 401.
+ * 发起一次请求，遇 401 就刷新一次访问令牌再试。
  *
- * Throws ApiError for any non-2xx response so callers can branch on status.
+ * 任何非 2xx 响应都抛 ApiError，调用方可以按状态码分支处理。
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, form, formData, query, auth = true } = options;
@@ -119,7 +118,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       });
     }
     if (formData) {
-      // Let the runtime set the multipart boundary.
+      // multipart 的 boundary 交给运行时自动设置。
       return fetch(url, { method, headers: headersWith(auth, tokens.access), body: formData });
     }
     return fetch(url, {

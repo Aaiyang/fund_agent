@@ -1,4 +1,4 @@
-"""Holding import repository: batches and pending items."""
+"""持仓导入仓储：导入批次与待确认条目."""
 
 from datetime import datetime, timedelta
 
@@ -14,7 +14,7 @@ from app.utils.clock import utc_now
 
 
 class ImportRepository:
-    """Async data access for holding import batches and items."""
+    """导入批次与批次条目的异步数据访问."""
 
     async def create_import(
         self,
@@ -25,7 +25,7 @@ class ImportRepository:
         image_count: int = 0,
         image_hashes: list[str] | None = None,
     ) -> HoldingImport:
-        """Create an import batch record."""
+        """新建一条导入批次记录."""
         async with get_async_session() as session:
             record = HoldingImport(
                 user_id=user_id,
@@ -41,7 +41,7 @@ class ImportRepository:
             return record
 
     async def get_import(self, user_id: int | None, import_id: str) -> HoldingImport | None:
-        """Load one import batch; pass user_id=None for system-internal use."""
+        """读取一个导入批次；user_id 传 None 是给系统内部用的."""
         statement = select(HoldingImport).where(col(HoldingImport.id) == import_id)
         if user_id is not None:
             statement = statement.where(col(HoldingImport.user_id) == user_id)
@@ -60,7 +60,7 @@ class ImportRepository:
         confirmed_at: datetime | None = None,
         applied_at: datetime | None = None,
     ) -> None:
-        """Patch mutable import fields (status transitions, counters)."""
+        """修改导入批次的可变字段（状态流转、计数）."""
         async with get_async_session() as session:
             record = (
                 await session.execute(select(HoldingImport).where(col(HoldingImport.id) == import_id))
@@ -84,7 +84,7 @@ class ImportRepository:
             session.add(record)
 
     async def list_history(self, user_id: int, limit: int = 50) -> list[HoldingImport]:
-        """List the user's import batches, newest first."""
+        """按时间倒序列出该用户的导入批次."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(HoldingImport)
@@ -95,7 +95,7 @@ class ImportRepository:
             return list(result.scalars().all())
 
     async def replace_items(self, import_id: str, items: list[DraftPositionItem]) -> None:
-        """Replace all pending items of an import with a new draft."""
+        """用新的草稿整体替换该批次的待确认条目."""
         async with get_async_session() as session:
             await session.execute(sa_delete(HoldingImportItem).where(col(HoldingImportItem.import_id) == import_id))
             for item in items:
@@ -118,7 +118,7 @@ class ImportRepository:
                 )
 
     async def list_items(self, import_id: str) -> list[HoldingImportItem]:
-        """List pending items of an import in creation order."""
+        """按创建顺序列出该批次的待确认条目."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(HoldingImportItem)
@@ -128,7 +128,7 @@ class ImportRepository:
             return list(result.scalars().all())
 
     async def get_item(self, import_id: str, item_id: int) -> HoldingImportItem | None:
-        """Load one item of an import."""
+        """读取该批次下的一条条目."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(HoldingImportItem).where(
@@ -138,17 +138,17 @@ class ImportRepository:
             return result.scalar_one_or_none()
 
     async def update_item(self, item: HoldingImportItem) -> None:
-        """Persist user edits / action on an item."""
+        """保存用户对条目的修改与处置."""
         async with get_async_session() as session:
             session.add(item)
 
     async def delete_items(self, import_id: str) -> None:
-        """Remove all items of an import."""
+        """删除该批次下的全部条目."""
         async with get_async_session() as session:
             await session.execute(sa_delete(HoldingImportItem).where(col(HoldingImportItem.import_id) == import_id))
 
     async def find_stale_parsing(self) -> list[HoldingImport]:
-        """Imports stuck in PARSING beyond the staleness budget (worker lost)."""
+        """找出卡在 PARSING 且超过陈旧时限的批次（worker 已经不在了）."""
         cutoff = utc_now() - timedelta(minutes=settings.HOLDING_IMPORT_STALE_MINUTES)
         async with get_async_session() as session:
             result = await session.execute(

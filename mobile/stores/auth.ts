@@ -1,6 +1,5 @@
 /**
- * Auth state (Zustand). Local/UI state only — server data belongs to TanStack
- * Query (spec 8.4).
+ * 认证状态（Zustand）。这里只放本地/UI 状态——服务器数据归 TanStack Query（spec 8.4）。
  */
 
 import { create } from 'zustand';
@@ -68,8 +67,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       '/auth/register',
       { method: 'POST', body: { email, password, username: username || null }, auth: false },
     );
-    // Registration returns an access token only; sign in again to also get the
-    // refresh token the client needs for long-lived sessions.
+    // 注册只回访问令牌；再走一次登录，把客户端维持长会话所需的
+    // 刷新令牌也拿到手。
     await get().signIn(email, password);
   },
 
@@ -82,11 +81,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await request<void>('/auth/logout', { method: 'POST' });
     } catch {
-      // A failed revocation must not leave the user stuck in the app.
+      // 吊销令牌失败也不能把用户卡死在应用里。
     }
     await clearTokens();
-    // Cached server data belongs to this user: leaving it in place would render
-    // the previous account's holdings until each query went stale.
+    // 缓存里的服务器数据属于这个用户：不清掉的话，各项查询过期之前，
+    // 界面会一直渲染上一个账户的持仓。
     queryClient.clear();
     useUiStore.getState().reset();
     set({ status: 'anonymous', user: null });

@@ -1,4 +1,4 @@
-"""Market data API schemas: benchmark index series and listed-instrument analysis."""
+"""行情数据 API 的 schema：基准指数序列与上市标的分析."""
 
 from datetime import date
 from typing import Literal
@@ -14,79 +14,78 @@ from app.integrations.fund_data.models import (
 from app.schemas.base import BaseResponse
 from app.schemas.fund import NavRange
 
-# Weekly and monthly bars exist so a long window stays a few dozen points, not
-# hundreds. The feed only answers for 月K when an adjustment is requested.
+# 设周线与月线，是为了让长区间停在几十个点上，而不是几百个。
+# 上游数据源只有在请求带复权参数时才返回月 K。
 MarketPeriod = Literal["day", "week", "month"]
-# Sessions the minute line can cover: today, or the last five stitched together.
-# Only the response uses this alias; a query parameter cannot be a Literal
-# because FastAPI hands it over as text and pydantic will not widen it to int.
+# 分时线能覆盖的交易日：当天，或把最近 5 天拼接起来。
+# 这个别名只给响应模型用；查询参数不能写成 Literal，因为 FastAPI 交过来的是
+# 文本，pydantic 不会把它放宽成 int。
 MarketDays = Literal[1, 5]
 
 
 class IndexCatalogItem(BaseModel):
-    """One selectable benchmark."""
+    """一个可供选择的业绩比较基准."""
 
     index_code: str
     name: str
 
 
 class IndexCatalogResponse(BaseResponse):
-    """GET /indexes response."""
+    """GET /indexes 响应体."""
 
     items: list[IndexCatalogItem]
     total: int
 
 
 class IndexPoint(BaseModel):
-    """One trading day's closing level."""
+    """某个交易日的指数收盘点位."""
 
     trade_date: date
     close: float
 
 
 class IndexQuoteItem(BaseModel):
-    """One index's latest close and its day change."""
+    """一只指数的最新收盘点位与当日涨跌."""
 
     index_code: str
     name: str
     close: float | None = None
-    # Percent points (2.2 = +2.2%), like the fund `daily_return` column, so the
-    # same formatter handles funds and indexes on the tape.
+    # 单位百分点（2.2 即 +2.2%），和基金的 `daily_return` 列一致，
+    # 这样首页行情条上基金与指数能共用同一个格式化函数。
     change_pct: float | None = None
     trade_date: date | None = None
 
 
 class IndexQuotesResponse(BaseResponse):
-    """GET /indexes/quotes response."""
+    """GET /indexes/quotes 响应体."""
 
     items: list[IndexQuoteItem]
     total: int
 
 
 class IndexHistoryResponse(BaseResponse):
-    """GET /indexes/{index_code}/history response."""
+    """GET /indexes/{index_code}/history 响应体."""
 
     index_code: str
     name: str
     range: NavRange | None = None
     points: list[IndexPoint]
-    # Fraction over the window (0.022 = +2.2%), matching FundPerformance's
-    # `return_*` fields — unlike the watchlist `*_return` fields, which are
-    # already percent points.
+    # 区间收益是小数比例（0.022 即 +2.2%），与 FundPerformance 的 `return_*`
+    # 字段同口径——自选列表里的 `*_return` 不同，那些已经是百分点。
     period_return: float | None = None
 
 
 class SymbolQuoteResponse(BaseResponse, MarketExternalQuote):
-    """GET /markets/{symbol}/quote response.
+    """GET /markets/{symbol}/quote 响应体.
 
-    Inherits the snapshot's fields verbatim. Units follow the house rule:
-    ``change_pct``, ``turnover_rate`` and ``amplitude`` are percent points,
-    ``amount`` is in whole currency units and the two market caps are in 亿.
+    快照字段原样继承。单位遵守本项目的统一口径：``change_pct``、
+    ``turnover_rate``、``amplitude`` 是百分点，``amount`` 是元，
+    两个市值字段单位是亿。
     """
 
 
 class SymbolHistoryResponse(BaseResponse):
-    """GET /markets/{symbol}/history response."""
+    """GET /markets/{symbol}/history 响应体."""
 
     symbol: str
     kind: str
@@ -94,12 +93,12 @@ class SymbolHistoryResponse(BaseResponse):
     range: NavRange
     bars: list[CandleExternalBar]
     total: int
-    # Fraction over the returned window, same convention as IndexHistoryResponse.
+    # 返回区间的收益比例，口径与 IndexHistoryResponse 相同。
     period_return: float | None = None
 
 
 class SymbolIntradayResponse(BaseResponse):
-    """GET /markets/{symbol}/intraday response."""
+    """GET /markets/{symbol}/intraday 响应体."""
 
     symbol: str
     kind: str
@@ -111,11 +110,10 @@ class SymbolIntradayResponse(BaseResponse):
 
 
 class SymbolCompanyResponse(BaseResponse):
-    """GET /markets/{symbol}/company response.
+    """GET /markets/{symbol}/company 响应体.
 
-    ``company`` is None for the indexes and non-A股 listings that have no record
-    in the source, which the screen renders as a hidden section rather than an
-    error, so one flaky upstream cannot break the chart above it.
+    指数以及上游没有记录的 A 股以外标的，``company`` 为 None——页面把这种情况
+    渲染成隐藏整个板块而不是报错，于是单个上游抖动拖不垮上方的图表。
     """
 
     symbol: str

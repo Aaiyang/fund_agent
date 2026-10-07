@@ -1,4 +1,4 @@
-"""NAV paging keeps the newest window and reports whether older rows remain."""
+"""净值分页保留最新的那一段，同时告知是否还有更早的行."""
 
 from datetime import date, timedelta
 
@@ -9,7 +9,7 @@ START = date(2026, 1, 1)
 
 
 def _series(count: int) -> list[FundNav]:
-    """Ascending NAV rows, newest last, as the repository returns them."""
+    """按净值日期升序生成行，最新一条在末尾，和仓储层返回的顺序一致."""
     return [
         FundNav(fund_code="011452", nav_date=START + timedelta(days=index), unit_nav=1.0) for index in range(count)
     ]

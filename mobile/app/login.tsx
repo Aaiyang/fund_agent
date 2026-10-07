@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Password rules mirror the backend validator (app/schemas/auth.py). */
+/** 密码规则与后端校验器（app/schemas/auth.py）保持一致。 */
 function passwordProblem(password: string): string | null {
   if (password.length < 8) return '密码至少 8 位';
   if (!/[A-Z]/.test(password)) return '密码需包含大写字母';

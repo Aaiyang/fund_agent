@@ -1,4 +1,4 @@
-"""Portfolio repository: accounts, positions (optimistic lock), transactions."""
+"""账户域仓储：账户、持仓（乐观锁）与流水."""
 
 from collections.abc import Sequence
 from datetime import date
@@ -15,22 +15,21 @@ from app.models.holding_import import HoldingImport, HoldingImportItem
 from app.models.portfolio import PortfolioAccount, PortfolioPosition, Transaction
 from app.utils.clock import utc_now
 
-# Which ledger rows add to a holding and which take away. A conversion is two
-# rows — one out of the source fund, one into the target — priced on the same
-# day, so it reads as a sell and a buy rather than a third kind of money.
+# 哪些流水行给持仓加份额、哪些减份额。转换是两行 —— 源基金赎出一行、目标基金买入
+# 一行，按同一个交易日定价，所以它读起来是一卖一买，而不是第三种性质的钱。
 LEDGER_IN = ("OPENING", "BUY", "AUTO_INVEST", "CONVERT_IN")
 LEDGER_OUT = ("SELL", "CONVERT_OUT")
 
 
 class PortfolioRepository:
-    """Async data access for accounts, positions and transactions."""
+    """账户、持仓与流水的异步数据访问."""
 
     # ------------------------------------------------------------------
-    # Accounts
+    # 账户
     # ------------------------------------------------------------------
 
     async def list_accounts(self, user_id: int) -> list[PortfolioAccount]:
-        """List the user's accounts by creation order."""
+        """按创建顺序列出该用户的账户."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(PortfolioAccount)
@@ -40,7 +39,7 @@ class PortfolioRepository:
             return list(result.scalars().all())
 
     async def get_account(self, user_id: int, account_id: int) -> PortfolioAccount | None:
-        """Load one account owned by the user."""
+        """读取该用户名下的一个账户."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(PortfolioAccount).where(
@@ -52,10 +51,10 @@ class PortfolioRepository:
     async def find_account_by_name(
         self, user_id: int, name: str, exclude_id: int | None = None
     ) -> PortfolioAccount | None:
-        """Load an account whose name matches, ignoring case and padding.
+        """按名称查账户，忽略大小写和首尾空格.
 
-        The unique constraint compares bytes, so "支付宝" and "支付宝 " would
-        both land; the service uses this to reject the near-duplicate first.
+        唯一约束比的是字节，"支付宝" 和 "支付宝 " 都会各占一行；服务层先用这个方法
+        把这种近似重名挡在前面。
         """
         async with get_async_session() as session:
             statement = select(PortfolioAccount).where(
@@ -74,7 +73,7 @@ class PortfolioRepository:
         account_type: str,
         import_mode: str,
     ) -> PortfolioAccount:
-        """Create a portfolio account."""
+        """创建一个资产组合账户."""
         async with get_async_session() as session:
             account = PortfolioAccount(
                 user_id=user_id,
@@ -94,7 +93,7 @@ class PortfolioRepository:
         name: str | None = None,
         source_app: str | None = None,
     ) -> PortfolioAccount | None:
-        """Rename an account or change its source label."""
+        """账户改名，或更换它的来源标签."""
         async with get_async_session() as session:
             account = (
                 await session.execute(
@@ -114,7 +113,7 @@ class PortfolioRepository:
             return account
 
     async def delete_account(self, user_id: int, account_id: int) -> bool:
-        """Delete an account with its positions, transactions and import records."""
+        """删除账户，连同它的持仓、流水和导入记录一起删掉."""
         async with get_async_session() as session:
             account = (
                 await session.execute(
@@ -145,7 +144,7 @@ class PortfolioRepository:
             return True
 
     async def touch_account_imported(self, user_id: int, account_id: int) -> None:
-        """Set last_imported_at to now after a confirmed import."""
+        """导入确认之后，把 last_imported_at 置为当前时间."""
         async with get_async_session() as session:
             account = (
                 await session.execute(
@@ -159,11 +158,11 @@ class PortfolioRepository:
                 session.add(account)
 
     # ------------------------------------------------------------------
-    # Positions
+    # 持仓
     # ------------------------------------------------------------------
 
     async def list_positions(self, user_id: int, account_id: int | None = None) -> list[PortfolioPosition]:
-        """List positions, optionally scoped to one account."""
+        """列出持仓，可用 account_id 收窄到一个账户."""
         async with get_async_session() as session:
             statement = select(PortfolioPosition).where(col(PortfolioPosition.user_id) == user_id)
             if account_id is not None:
@@ -172,7 +171,7 @@ class PortfolioRepository:
             return list(result.scalars().all())
 
     async def get_position(self, user_id: int, account_id: int, fund_code: str) -> PortfolioPosition | None:
-        """Load one position by (account, fund)."""
+        """按 (账户, 基金) 读取一条持仓."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(PortfolioPosition).where(
@@ -186,7 +185,7 @@ class PortfolioRepository:
     async def _select_position(
         self, session: AsyncSession, user_id: int, account_id: int, fund_code: str
     ) -> PortfolioPosition | None:
-        """Load one position inside an open session."""
+        """在已经开启的会话里读取一条持仓."""
         result = await session.execute(
             select(PortfolioPosition).where(
                 col(PortfolioPosition.user_id) == user_id,
@@ -210,35 +209,34 @@ class PortfolioRepository:
         purchase_date: date | None = None,
         reset: Sequence[str] = (),
     ) -> PortfolioPosition | None:
-        """Insert or update a position with optimistic locking.
+        """带乐观锁的持仓插入或更新.
 
         Args:
-            user_id: Owner id.
-            account_id: Target account id.
-            fund_code: The 6-digit fund code.
-            expected_version: Caller's observed version. Required for updates;
-                None on first insert. A mismatch returns None (→ HTTP 409).
-            shares: Held shares.
-            cost_amount: Cost basis in currency.
-            average_cost_nav: Cost per unit NAV.
-            market_value: Current market value.
-            profit_loss: Accumulated profit/loss.
-            purchase_date: 首次购买确认日, the day 持有天数 counts from.
-            reset: Column names to blank out after applying the values above,
-                returning each figure to its derived path.
+            user_id: 归属用户 id。
+            account_id: 目标账户 id。
+            fund_code: 6 位基金代码。
+            expected_version: 调用方读到的版本号；更新时必填，首次插入传 None。
+                版本不一致时返回 None（→ HTTP 409）。
+            shares: 持有份额。
+            cost_amount: 持仓成本金额。
+            average_cost_nav: 持仓均价，即每份的成本。
+            market_value: 当前市值。
+            profit_loss: 累计盈亏。
+            purchase_date: 首次购买确认日，持有天数从这一天开始算。
+            reset: 应用完上面这些值之后要清空的列名，让这些数字重新回到查询时派生。
 
         Returns:
-            The updated position, or None on version conflict / missing row.
+            更新后的持仓；版本冲突或该行不存在时返回 None。
 
-        A None field means "not supplied" and leaves an existing value intact:
-        spec 3.7.1 allows partial snapshots and forbids fabricating data.
+        字段为 None 表示调用方没有提供，已存的值原样保留：spec 3.7.1 允许部分快照，
+        同时禁止凭空造出数据。
         """
         async with get_async_session() as session:
             existing = await self._select_position(session, user_id, account_id, fund_code)
 
             if existing is None:
                 if expected_version is not None:
-                    return None  # caller expected an existing row — treat as conflict
+                    return None  # 调用方以为行已经存在，按版本冲突处理
                 statement = pg_insert(PortfolioPosition).values(
                     user_id=user_id,
                     account_id=account_id,
@@ -258,14 +256,14 @@ class PortfolioRepository:
                 ).rowcount
                 if created:
                     return await self._select_position(session, user_id, account_id, fund_code)
-                # A concurrent first write won the race; update that row instead
-                # of raising the unique constraint as a 500.
+                # 并发的首次写入抢先落了这一行：改成更新它，而不是把唯一约束冲突
+                # 抛成一个 500。
                 existing = await self._select_position(session, user_id, account_id, fund_code)
                 if existing is None:
                     return None
 
             if expected_version is not None and existing.version != expected_version:
-                return None  # optimistic lock conflict
+                return None  # 乐观锁版本冲突
 
             supplied = {
                 "shares": shares,
@@ -278,9 +276,8 @@ class PortfolioRepository:
             for key, value in supplied.items():
                 if value is not None:
                     setattr(existing, key, value)
-            # `reset` is how a caller says "put this figure back on the derived
-            # path"; the keys are checked against the same set so no column can
-            # be blanked by name alone.
+            # `reset` 是调用方在说“把这个数字交回派生口径”；键要和上面同一份集合比对，
+            # 所以不可能只凭一个列名就清空某一列。
             for key in reset:
                 if key in supplied:
                     setattr(existing, key, None)
@@ -291,7 +288,7 @@ class PortfolioRepository:
             return existing
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
-        """Remove one position row."""
+        """删掉一条持仓记录."""
         async with get_async_session() as session:
             existing = (
                 await session.execute(
@@ -305,9 +302,8 @@ class PortfolioRepository:
             if existing is None:
                 return False
             await session.delete(existing)
-            # The ledger goes with the row: leftover BUY/SELL/AUTO_INVEST rows
-            # would re-project the holding the moment anything trades on this
-            # code again, which reads as the delete never having happened.
+            # 流水跟着这一行一起删：残留的 BUY/SELL/AUTO_INVEST 行，会在这个代码上
+            # 再有交易的那一刻把持仓重新投影出来，看起来就像删除从没生效。
             await session.execute(
                 sa_delete(Transaction).where(
                     col(Transaction.user_id) == user_id,
@@ -318,7 +314,7 @@ class PortfolioRepository:
             return True
 
     # ------------------------------------------------------------------
-    # Transactions
+    # 流水
     # ------------------------------------------------------------------
 
     async def list_transactions(
@@ -328,7 +324,7 @@ class PortfolioRepository:
         fund_code: str | None = None,
         limit: int = 200,
     ) -> list[Transaction]:
-        """List transactions newest first with optional account/fund filters."""
+        """按时间倒序列出流水，可按账户和基金代码过滤."""
         async with get_async_session() as session:
             statement = select(Transaction).where(col(Transaction.user_id) == user_id)
             if account_id is not None:
@@ -340,13 +336,11 @@ class PortfolioRepository:
             return list(result.scalars().all())
 
     async def ledger_rows(self, user_id: int, account_id: int | None = None) -> dict[tuple[int, str], list[LedgerRow]]:
-        """Group every BUY/SELL row by (account, fund) in trade order.
+        """按成交先后，把每一行流水按 (账户, 基金) 分组.
 
-        The whole ledger in one read: projecting a fund means walking every one
-        of its rows, because a partial sell carries cost out at the average the
-        holding was carried at. An OPENING row is the snapshot the ledger was
-        started from and adds like a buy. Adjustment rows are excluded — they
-        record a snapshot overwrite, not a trade.
+        整本流水一次读完：投影一只基金要遍历它的每一行，因为部分赎回是按当时持仓
+        结转的均价把成本带出去的。OPENING 行是流水起步时的那份快照，和买入一样增加
+        持仓。调整类行不在其中 —— 它们记的是某次快照覆盖，不是交易。
         """
         async with get_async_session() as session:
             statement = (
@@ -372,7 +366,7 @@ class PortfolioRepository:
             return grouped
 
     async def earliest_confirm_date(self, user_id: int, account_id: int, fund_code: str) -> date | None:
-        """The first purchase's confirm day, which is where 持有天数 starts."""
+        """最早那笔买入的确认日，持有天数从这里开始数."""
         async with get_async_session() as session:
             statement = (
                 select(col(Transaction.confirm_date))
@@ -389,7 +383,7 @@ class PortfolioRepository:
             return (await session.execute(statement)).scalar_one_or_none()
 
     async def has_transaction_ref(self, user_id: int, external_transaction_id: str) -> bool:
-        """Whether an idempotent write already landed, e.g. one plan installment."""
+        """判断某次幂等写入是否已经落库，比如定投的某一期."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(col(Transaction.id))
@@ -402,7 +396,7 @@ class PortfolioRepository:
             return result.scalar_one_or_none() is not None
 
     async def delete_transactions_by_source(self, user_id: int, source: str) -> int:
-        """Drop every row one feature generated, so removing it leaves nothing behind."""
+        """删掉某个功能生成的全部流水，撤掉它时不留残余."""
         async with get_async_session() as session:
             result = await session.execute(
                 sa_delete(Transaction).where(col(Transaction.user_id) == user_id, col(Transaction.source) == source)
@@ -424,7 +418,7 @@ class PortfolioRepository:
         source: str = "manual",
         external_transaction_id: str | None = None,
     ) -> Transaction:
-        """Append an audit/transaction record."""
+        """追加一条流水/审计记录."""
         async with get_async_session() as session:
             record = Transaction(
                 user_id=user_id,

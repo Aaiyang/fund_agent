@@ -1,10 +1,9 @@
 /**
- * The app's one confirmation dialog, asked for from anywhere.
+ * 全局独一份的确认弹窗，任何地方都能发起。
  *
- * Destructive actions used to go through `window.confirm` / `Alert.alert`, and a
- * webview that swallows native dialogs turned that into a button that silently
- * did nothing. The dialog is rendered by the app instead, so the confirm step
- * looks and behaves the same on web, Android and iOS.
+ * 破坏性操作原先走 `window.confirm` / `Alert.alert`，碰上会吞掉原生对话框的
+ * webview，就等于按钮按了没反应。现在改由应用自己渲染弹窗，确认这一步在
+ * web、Android、iOS 上看起来和行为都一致。
  */
 
 import { create } from 'zustand';

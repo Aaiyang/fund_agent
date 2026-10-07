@@ -1,11 +1,9 @@
-"""Row clustering: turning a page of loose text blocks into holding rows.
+"""行聚类：把一整页散落的文本块变成一行行持仓.
 
-OCR hands back rectangles with no idea what they are. This groups them by
-vertical position into rows, keeps the ones that look like a holding (a name
-on the left plus at least one figure in a value column) and drops the rest —
-the news cards wedged between rows, the share-class chips under a name, and the
-bottom navigation bar are all text on the same image and must not become
-holdings.
+OCR 交回来的只是一堆矩形，并不知道自己是什么。这里按垂直位置把它们归成行，
+留下看着像持仓的那些（左边一个名称，加上数值列里至少一个数字），其余全丢掉——
+夹在行间的资讯卡片、名称下面的份额类别标签、底部导航栏，都是同一张图上的文字，
+不能当成持仓。
 """
 
 import re
@@ -14,9 +12,9 @@ from dataclasses import dataclass, field
 from app.integrations.holdings.layout import ColumnBand, PageLayout, Slot
 from app.integrations.holdings.ocr import OcrPage, TextBlock
 
-# Words that are page furniture on every fund app: tab strips, sort menus and
-# the bottom navigation bar. Matched exactly, because a fund called
-# 「持有收益」 would be a name, not chrome — the values here never are.
+# 每家基金 App 页面上都跑不掉的固定文字：标签条、排序菜单、底部导航栏。
+# 这里按整串精确匹配，因为一只真叫「持有收益」的基金那是在报名字，不是页面
+# 装饰——而集合里这些值永远只是装饰。
 _CHROME = {
     "全部",
     "偏股",
@@ -37,8 +35,8 @@ _CHROME = {
     "我的",
 }
 
-# Short labels an app stamps under a fund name. They sit in the name column and
-# would otherwise be glued onto the fund's name.
+# App 盖在基金名称下面的短标签。它们就落在名称列里，
+# 不加区分就会被粘到基金名称上去。
 _CHIPS = {
     "金选",
     "指数基金",
@@ -55,7 +53,7 @@ _CHIPS = {
     "中低风险",
 }
 
-# In-image cards and banners: they span the whole width, so no column owns them.
+# 图里的卡片和横幅：它们横贯整个宽度，所以不归任何一列管。
 _CARD = re.compile(r"^(市场解读|热门|快讯|解读|观点|查看|更多)")
 
 _TRUNCATION = ("…", "...", "…...", "..")
@@ -63,23 +61,23 @@ _TRUNCATION = ("…", "...", "…...", "..")
 
 @dataclass(frozen=True)
 class HoldingRow:
-    """One visual row that carries a holding."""
+    """视觉上的完整一行，里面装着一条持仓."""
 
     name: str
     cells: dict[Slot, list[TextBlock]] = field(default_factory=dict)
     tags: tuple[str, ...] = ()
     truncated: bool = False
-    # How far below the header the row sits, kept for ordering and logging.
+    # 这一行比表头低多少，留着供排序和打日志用。
     top: float = 0.0
 
     @property
     def figure_count(self) -> int:
-        """How many values were read in this row."""
+        """这一行里读出了多少个数值."""
         return sum(len(blocks) for slot, blocks in self.cells.items() if slot != "name")
 
 
 def _is_chrome(block: TextBlock, header_y: float | None, page_width: float) -> bool:
-    """Whether a block is page furniture rather than table content."""
+    """这个块是页面装饰，还是表格内容."""
     text = block.text.strip()
     if header_y is not None and block.center_y <= header_y + block.height / 2:
         return True
@@ -87,17 +85,17 @@ def _is_chrome(block: TextBlock, header_y: float | None, page_width: float) -> b
         return True
     if _CARD.match(text):
         return True
-    # A line spanning nearly the whole width is a banner, not a table cell.
+    # 横贯几乎整个宽度的那条线是横幅，不是表格单元。
     return block.x1 - block.x0 > 0.7 * page_width
 
 
 def _is_chip(block: TextBlock) -> bool:
-    """Whether a name-column block is a stamped label rather than part of a name."""
+    """名称列里的这个块是被盖上的标签，还是名称本身的一部分."""
     return block.text.strip() in _CHIPS
 
 
 def _cluster(blocks: list[TextBlock], median_height: float) -> list[list[TextBlock]]:
-    """Group blocks into visual rows by how far apart they sit vertically."""
+    """按块在垂直方向上隔得有多远，把它们归成视觉上的行."""
     if not blocks:
         return []
     ordered = sorted(blocks, key=lambda block: block.center_y)
@@ -112,7 +110,7 @@ def _cluster(blocks: list[TextBlock], median_height: float) -> list[list[TextBlo
 
 
 def _name_of(blocks: list[TextBlock]) -> tuple[str, bool]:
-    """Join a row's name lines in reading order and report truncation."""
+    """按阅读顺序把一行的名称各行拼起来，同时报告有没有被截断."""
     ordered = sorted(blocks, key=lambda block: (round(block.center_y / 10), block.x0))
     name = "".join(block.text.strip() for block in ordered)
     truncated = any(block.text.strip().endswith(mark) for block in ordered for mark in _TRUNCATION)
@@ -122,7 +120,7 @@ def _name_of(blocks: list[TextBlock]) -> tuple[str, bool]:
 
 
 def _split_columns(blocks: list[TextBlock], columns: tuple[ColumnBand, ...]) -> dict[ColumnBand, list[TextBlock]]:
-    """Assign blocks to columns, preserving left-to-right reading order inside each."""
+    """把块分配进各列，列内保持从左到右的阅读顺序."""
     spread: dict[ColumnBand, list[TextBlock]] = {}
     for block in blocks:
         column = next((candidate for candidate in columns if candidate.holds(block)), None)
@@ -132,7 +130,7 @@ def _split_columns(blocks: list[TextBlock], columns: tuple[ColumnBand, ...]) -> 
 
 
 def read_rows(page: OcrPage, layout: PageLayout) -> list[HoldingRow]:
-    """Extract the holding rows a screenshot shows, top to bottom."""
+    """抽出截图上显示的持仓行，从上往下."""
     content = [block for block in page.blocks if not _is_chrome(block, layout.header_y, page.width)]
     rows: list[HoldingRow] = []
     for cluster in _cluster(content, layout.median_height):
@@ -147,8 +145,8 @@ def read_rows(page: OcrPage, layout: PageLayout) -> list[HoldingRow]:
             (block.center_y for column in value_columns for block in spread[column]),
             default=0.0,
         )
-        # A name-column line that sits below every figure is a chip: apps stamp
-        # 金选/定投 there, and gluing it on produces a fund that does not exist.
+        # 名称列里压在每一个数字下面的那一行是标签：App 会把 金选/定投 盖在那里，
+        # 粘上去就拼出一只根本不存在的基金。
         kept = [
             block
             for block in name_blocks

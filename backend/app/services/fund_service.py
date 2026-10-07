@@ -1,9 +1,9 @@
-"""Fund domain service: search, detail, NAV history, performance, resolve.
+"""基金域服务：搜索、详情、净值历史、业绩、基金解析.
 
-All fund facts come from FundService — other services, the API layer and the
-future Agent tools never touch fund data providers directly (spec 14.1).
-Online reads prefer PostgreSQL, with Redis as a hot cache; external sync is
-enqueued or inlined only when local data is missing or stale (spec 5.6).
+基金相关的事实一律由 FundService 给出 —— 其他服务、API 层以及后续的 Agent 工具
+都不直接碰基金数据源适配层（spec 14.1）。
+线上读取优先走 PostgreSQL，Redis 只做热点缓存；只有本地数据缺失或过期时，
+才把外部同步入队或内联执行（spec 5.6）。
 """
 
 import asyncio
@@ -44,20 +44,20 @@ from app.utils.clock import business_today, range_start
 
 _LATEST_NAV_CACHE_TTL_SECONDS = 300
 _SEARCH_CACHE_TTL_SECONDS = 300
-# Disclosed holdings change once a quarter, so the fetch is cached even though
-# the quotes on top of them are not.
+# 持仓披露一个季度才变一次，所以即使压在它上面的行情不缓存，
+# 这次披露数据的抓取本身也要缓存。
 _HOLDINGS_CACHE_TTL_SECONDS = 3600
 _TOP_HOLDINGS = 10
-# The trend line needs two points; one latest NAV is what the search and rank
-# lists leave behind, so anything below this counts as "never really synced".
+# 走势图需要两个点；搜索结果和榜单只会留下一条最新净值，
+# 所以少于这个点数就算"从来没真正同步过"。
 _MIN_HISTORY_POINTS = 2
-# How long to back off after attempting the inline history sync for a fund that
-# still looks thin afterwards — a genuinely new fund has one NAV point.
+# 对"内联补过历史之后仍然显得很薄"的基金，要退避这么久才再试一次 ——
+# 真正新发的基金本来就只有一个净值点。
 _FULL_SYNC_RETRY_TTL_SECONDS = 86400
 
 
 def _weight_change(weight: float | None, previous: float | None) -> float | None:
-    """Quarter-over-quarter move of a holding's 占净值比例, in percentage points."""
+    """单只重仓股的 占净值比例 相对上一季度的变动，单位是百分点."""
     if weight is None or previous is None:
         return None
     return round(weight - previous, 4)
@@ -66,12 +66,12 @@ def _weight_change(weight: float | None, previous: float | None) -> float | None
 def summarize_holdings(
     holdings: list[FundExternalHolding],
 ) -> tuple[str | None, str | None, list[FundHoldingItem]]:
-    """Latest disclosed quarter, each row compared against the one before it.
+    """取最近一次披露的季度，并把每一行和上一季度的对应行做比较.
 
     Returns:
-        The latest quarter label, the previous quarter label, and the top
-        holdings ordered by weight. Rows without a parsable quarter (the source
-        renames this column between versions) are dropped rather than guessed.
+        最新季度的标签、上一季度的标签，以及按权重排好序的重仓股。
+        季度解析不出来的行（上游在不同版本里改过这一列的名字）直接丢弃，
+        不去猜它属于哪个季度。
     """
     by_quarter: dict[tuple[int, int], list[FundExternalHolding]] = {}
     for holding in holdings:
@@ -95,8 +95,8 @@ def summarize_holdings(
             stock_name=holding.stock_name,
             weight=holding.weight,
             weight_change=_weight_change(holding.weight, previous_weights.get(holding.stock_code)),
-            # A code missing from the previous disclosure is a new position, not
-            # a data gap; without an earlier quarter at all nothing is provable.
+            # 上一次披露里没有这个代码，说明是新进的仓位，不是数据缺口；
+            # 根本没有更早的季度时，什么都证明不了。
             is_new=previous_key is not None and holding.stock_code not in previous_weights,
         )
         for holding in by_quarter[latest_key]
@@ -114,21 +114,21 @@ def summarize_holdings(
 
 
 class FundService:
-    """Async fund data service shared by API, imports and future Agent tools."""
+    """供 API、导入流程和后续 Agent 工具共用的异步基金数据服务."""
 
     # ------------------------------------------------------------------
-    # Search
+    # 搜索
     # ------------------------------------------------------------------
 
     async def search(self, keyword: str, user_id: int) -> list[FundSearchItem]:
-        """Search funds: local database first, external provider on miss.
+        """搜索基金：先查本地库，查不到再找外部数据源.
 
         Args:
-            keyword: Code, full name, abbreviation or fuzzy fragment.
-            user_id: Caller id for is_watchlisted / is_held flags.
+            keyword: 代码、全称、简称或模糊片段。
+            user_id: 调用方 id，用于给出 is_watchlisted / is_held 标记。
 
         Returns:
-            Up to 50 fund search items.
+            最多 50 条搜索结果。
         """
         keyword_clean = keyword.strip()
         if not keyword_clean:
@@ -160,11 +160,11 @@ class FundService:
         ]
 
     async def _backfill_navs(self, missing: list[str], codes: list[str]) -> dict[str, FundNav]:
-        """Store NAVs for search hits that have none, then re-read PostgreSQL.
+        """给没有净值的搜索结果补写净值，然后重新读一次 PostgreSQL.
 
-        Funds discovered before their NAV was persisted (or synced by another
-        user) would otherwise list `--` for 净值/涨跌, which spec 3.4 requires.
-        Reads still come from PostgreSQL; the provider only fills the gap.
+        基金在净值落库之前就被搜到（或者是被别的用户同步进来的），
+        否则它的 净值/涨跌 会显示成 `--`，而 spec 3.4 要求这两项必须有值。
+        读取仍然只来自 PostgreSQL，数据源只负责把缺口填上。
         """
         if AKSHARE_AVAILABLE:
             try:
@@ -176,11 +176,11 @@ class FundService:
         return await fund_repository.get_latest_navs(codes)
 
     async def _search_fund_rows(self, keyword_clean: str) -> list[Fund]:
-        """Load matching fund master rows, caching the shared result set.
+        """读出匹配的基金主数据行，并缓存这份共享的结果集.
 
-        Only public data is cached; per-user flags stay out of the key so one
-        user's watchlist edit can never be masked by another's cache entry —
-        and never by their own, since flags are read live.
+        缓存里只放公开数据，每个用户的标记不参与缓存键，
+        所以某个用户改了自己的自选，绝不会被别人的缓存条目盖住 ——
+        也不会被自己的盖住，因为标记是实时读取的。
         """
         cached = await cache_service.get(cache_key("fund_search", keyword_clean))
         if cached:
@@ -191,15 +191,15 @@ class FundService:
             try:
                 external = await akshare_fund_provider.search_funds(keyword_clean)
             except Exception as e:
-                # A provider outage is an empty result page, not a 500: the
-                # caller already sees local matches when the table has them.
+                # 数据源挂了就按空结果页处理，而不是 500：
+                # 本地表里有匹配项时，调用方照样看得到它们。
                 logger.warning("fund_external_search_failed", keyword=keyword_clean, error=str(e))
                 external = []
             for record in external[:50]:
                 await fund_write_repository.upsert_fund_from_record(record)
             local_funds = await fund_repository.search_funds(keyword_clean)
-            # A 6-digit code missing from the rank table (exchange-traded funds,
-            # recent issues) still resolves by fetching that fund directly.
+            # 6 位代码在榜单表里查不到时（场内基金、新发的基金），
+            # 仍然可以直接抓取这一只基金来解析。
             if not local_funds and len(keyword_clean) == 6 and keyword_clean.isdigit():
                 await fund_sync_service.sync_fund(keyword_clean)
                 local_funds = await fund_repository.search_funds(keyword_clean)
@@ -214,11 +214,11 @@ class FundService:
         return funds
 
     # ------------------------------------------------------------------
-    # Detail / NAV / performance
+    # 详情 / 净值 / 业绩
     # ------------------------------------------------------------------
 
     async def get_detail(self, fund_code: str, user_id: int) -> FundDetailResponse | None:
-        """Return the fund overview; syncs data on first sight of a fund."""
+        """返回基金概况；第一次见到某只基金时把数据同步下来."""
         await self.ensure_fund_data(fund_code)
         fund = await fund_repository.get_fund(fund_code)
         if fund is None:
@@ -246,8 +246,8 @@ class FundService:
             is_watchlisted=is_watchlisted,
             is_held=is_held,
             source=fund.source,
-            # AKShare's rank table carries no as-of column; the newest NAV date
-            # we hold is the honest equivalent for "what this data describes".
+            # AKShare 的榜单表没有"数据截至"这一列；我们手上最新的净值日期，
+            # 才是"这份数据描述的是什么时候"的诚实答案。
             source_as_of=fund.source_as_of or (latest.nav_date if latest else None),
             updated_at=fund.updated_at or fund.fetched_at,
             nav_fetched_at=latest.fetched_at if latest else None,
@@ -262,16 +262,16 @@ class FundService:
         limit: int | None = None,
         before_date: date | None = None,
     ) -> FundNavHistoryResponse:
-        """Return the stored NAV series for charting (no live pass-through).
+        """返回已落库的净值序列，供画图使用（不实时穿透到外部数据源）.
 
         Args:
-            fund_code: The 6-digit fund code.
-            start_date: Explicit lower bound; overridden by `range_key`.
-            end_date: Explicit upper bound.
-            range_key: Named range from spec 3.5.3 (1m/3m/6m/1y/3y/all).
-            limit: Keep only the newest N points, for paging the history list.
-            before_date: Exclusive cursor — only points strictly older than this,
-                so a client can walk backwards without repeating a page.
+            fund_code: 6 位基金代码。
+            start_date: 显式的下界；给了 `range_key` 时以它为准。
+            end_date: 显式的上界。
+            range_key: spec 3.5.3 里的命名区间（1m/3m/6m/1y/3y/all）。
+            limit: 只保留最新的 N 个点，用于历史列表翻页。
+            before_date: 排他游标 —— 只取严格早于这一天的点，
+                客户端因此能往回翻页而不重复上一页。
         """
         await self.ensure_fund_data(fund_code)
         if range_key is not None:
@@ -298,12 +298,12 @@ class FundService:
         )
 
     async def get_holdings(self, fund_code: str) -> FundHoldingsResponse:
-        """Top-ten disclosed holdings with their current quotes.
+        """披露的前十大重仓股，以及它们当前的行情.
 
-        Read live rather than from PostgreSQL: the disclosure is quarterly but
-        sparse, and a page that only opens on tap should not carry a sync job,
-        cache-invalidation path and migration for data nobody looks at daily.
-        A source outage returns an empty page instead of failing the request.
+        这里是实时读数据源而不是读 PostgreSQL：披露按季度更新且很稀疏，
+        一个只在用户点开时才出现的页面，不该为"没人天天看的数据"
+        背上同步任务、缓存失效逻辑和数据库迁移。
+        数据源不可用时返回空页面，而不是让整个请求失败。
         """
         holdings = await self._disclosed_holdings(fund_code)
         industries, industries_as_of = await self._industry_allocation(fund_code)
@@ -318,8 +318,8 @@ class FundService:
             )
 
         symbols = {item.stock_code: sina_symbol(item.stock_code) for item in items}
-        # The provider maps raw listing codes to quote symbols itself; feeding it
-        # prefixed symbols would make it map them a second time and drop them all.
+        # 数据源自己会把原始上市代码映射成行情代码；再喂给它带前缀的代码，
+        # 它会把这些前缀再映射一遍，结果全都丢掉。
         quotes = {quote.symbol: quote for quote in await akshare_fund_provider.get_stock_quotes(list(symbols.keys()))}
         for item in items:
             quote = quotes.get(symbols.get(item.stock_code) or "")
@@ -338,7 +338,7 @@ class FundService:
         )
 
     async def _industry_allocation(self, fund_code: str) -> tuple[list[FundIndustryItem], date | None]:
-        """Latest disclosed industry weights, cached like the holdings table."""
+        """最近一次披露的行业权重，和重仓股表一样走缓存."""
         key = cache_key("fund_industries", fund_code)
         cached = await cache_service.get(key)
         if cached:
@@ -370,7 +370,7 @@ class FundService:
         return items, as_of
 
     async def _disclosed_holdings(self, fund_code: str) -> list[FundExternalHolding]:
-        """Load the two latest disclosure quarters, cached because they are quarterly."""
+        """读出最近两个披露季度；按季度更新，所以值得缓存."""
         key = cache_key("fund_holdings", fund_code)
         cached = await cache_service.get(key)
         if cached:
@@ -389,7 +389,7 @@ class FundService:
         return holdings
 
     def _compute_performance(self, points: list[NavPoint], end: date) -> FundPerformance:
-        """Compute deterministic period metrics from a NAV series."""
+        """从净值序列算出确定性的区间指标."""
         if not points:
             return FundPerformance()
         earliest = points[0].date
@@ -405,16 +405,16 @@ class FundService:
         )
 
     # ------------------------------------------------------------------
-    # Fund resolution (used by holdings imports)
+    # 基金解析（供持仓导入使用）
     # ------------------------------------------------------------------
 
     async def name_directory(self) -> list[tuple[str, str]]:
-        """(code, name) pairs a screenshot name can be matched against.
+        """可供截图里的名称去匹配的 (code, name) 名单.
 
-        Both spellings stay in the list on purpose: the register calls a fund
-        天弘恒生科技ETF联接C while the synced master row carries its long legal
-        name, and a screenshot prints the short one. Deduplicating by code would
-        let the long name crowd out the spelling that actually matches.
+        两种写法是刻意都留在名单里的：注册登记系统里这只基金叫
+        天弘恒生科技ETF联接C，同步下来的主数据行却是它的完整注册名，
+        而截图上印的是简称。按代码去重的话，长名字会把
+        真正能匹配上的那种写法挤掉。
         """
         local = await fund_repository.all_names()
         if not AKSHARE_AVAILABLE:
@@ -424,14 +424,14 @@ class FundService:
         return local + [pair for pair in external if pair not in seen]
 
     async def match_fund_names(self, name: str, limit: int = 5) -> list[NameMatch]:
-        """Rank the directory against one name, best first."""
+        """拿名单跟一个名字做匹配，把最像的排在最前面."""
         return rank_names(name, await self.name_directory(), limit=limit)
 
     async def resolve_fund(self, raw_name: str | None, raw_code: str | None) -> tuple[Fund | None, float]:
-        """Match raw extracted name/code to a standard fund entity.
+        """把抽取到的原始名称/代码对应到标准的基金实体.
 
         Returns:
-            (fund, confidence) — fund is None when unresolvable or ambiguous.
+            (fund, confidence) —— 无法确定或存在歧义时 fund 为 None。
         """
         code_clean = (raw_code or "").strip()
         if code_clean.isdigit() and len(code_clean) == 6:
@@ -444,10 +444,10 @@ class FundService:
         if not name_clean:
             return None, 0.0
 
-        # Ranked matching rather than "exact name or nothing": the screenshot
-        # prints 天弘恒生科技ETF联接(QDII)C while the register spells the same
-        # fund 天弘恒生科技ETF联接C, and several share classes of one fund are
-        # never collapsed into a guess.
+        # 用排序匹配，而不是"名字必须完全一致"：截图上印的是 天弘恒生科技ETF联接(QDII)C，
+        # 注册登记系统里把同一只基金写作 天弘恒生科技ETF联接C；
+        # 而同一只基金的多个份额类别，
+        # 绝不会靠猜测被合并成一个。
         winner = decide(await self.match_fund_names(name_clean))
         if winner is None:
             return None, 0.0
@@ -457,18 +457,18 @@ class FundService:
         return fund, round(winner.score * 0.9, 2)
 
     # ------------------------------------------------------------------
-    # Data freshness
+    # 数据新鲜度
     # ------------------------------------------------------------------
 
     async def ensure_fund_data(self, fund_code: str) -> None:
-        """Guarantee local data exists; refresh stale NAVs via the queue.
+        """保证本地有数据；净值过期就通过队列刷新.
 
-        A fund first met through the search or rank list arrives with that list's
-        abbreviation as its name and one latest NAV — enough to list, not enough
-        to chart (the trend needs two points) or to read back at an import.
-        Neither gets upgraded on the normal path: the profile used to be fetched
-        only for funds we had never heard of, and a one-point history is never
-        "stale". So the first view that needs more pays for the full sync.
+        经搜索或榜单第一次进来的基金，名字用的是那个列表里的简称，净值只有一条 ——
+        够列表展示，不够画图（走势要两个点），
+        也不够导入时回读。这两种缺失在正常路径上都不会被升级：
+        以前只有完全没听说过的基金才会去抓档案，
+        而只有一条点的历史永远不会被判成"过期"。
+        所以由第一个真正需要更多数据的视图来付这次全量同步。
         """
         fund = await fund_repository.get_fund(fund_code)
         if fund is None:
@@ -486,11 +486,11 @@ class FundService:
                 logger.warning("fund_sync_enqueue_failed", fund_code=fund_code, error=str(e))
 
     async def _needs_full_sync(self, fund: Fund) -> bool:
-        """Whether this row was only ever filled by a cheap path.
+        """这一行是不是只被省事的路径填过（从没做过完整同步）.
 
-        The marker matters because a fund that published its first NAV today
-        legitimately has one point: without it every view of that fund would
-        re-ask AKShare for a history that does not exist yet.
+        这个标记之所以重要：今天才公布第一条净值的基金，
+        本来就只有一个点是合理的，没有标记的话，
+        每次打开这只基金都会去向 AKShare 要一份还不存在的历史。
         """
         profile_known = fund.company is not None or fund.manager_name is not None or fund.inception_date is not None
         if profile_known and await fund_repository.nav_count(fund.fund_code) >= _MIN_HISTORY_POINTS:
@@ -498,7 +498,7 @@ class FundService:
         return await cache_service.get(cache_key("fund_full_sync", fund.fund_code)) is None
 
     async def _sync_now(self, fund_code: str) -> None:
-        """One full sync inline: profile, master row and NAV history."""
+        """内联跑一次完整同步：档案、主数据行和净值历史."""
         try:
             await asyncio.wait_for(
                 fund_sync_service.sync_fund(fund_code),
@@ -508,16 +508,16 @@ class FundService:
             logger.exception("fund_inline_sync_failed", fund_code=fund_code)
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # 内部辅助
     # ------------------------------------------------------------------
 
     async def _get_fund_ensuring_data(self, fund_code: str) -> Fund | None:
-        """Load a fund, attempting one inline sync when unknown."""
+        """读取基金；完全不认识时尝试一次内联同步."""
         await self.ensure_fund_data(fund_code)
         return await fund_repository.get_fund(fund_code)
 
     async def _latest_nav_cached(self, fund_code: str) -> FundNav | None:
-        """Cache-aside loader for the latest NAV row."""
+        """最新净值行的 cache-aside 读取（先查缓存，未命中回源再写回）."""
         key = cache_key("fund_latest_nav", fund_code)
         cached = await cache_service.get(key)
         if cached:
@@ -542,12 +542,12 @@ class FundService:
         return latest
 
     async def _user_flags(self, fund_code: str, user_id: int) -> tuple[bool, bool]:
-        """Check whether the user watchlists or holds this fund."""
+        """判断该用户是否把这只基金加进了自选或持仓."""
         watchlisted, held = await self._user_flag_sets(user_id)
         return fund_code in watchlisted, fund_code in held
 
     async def _user_flag_sets(self, user_id: int) -> tuple[set[str], set[str]]:
-        """Fund codes the user watchlists, and fund codes the user holds."""
+        """该用户自选的基金代码集合，以及该用户持有的基金代码集合."""
         async with get_async_session() as session:
             watchlisted = set(
                 (await session.execute(select(col(Watchlist.fund_code)).where(col(Watchlist.user_id) == user_id)))
@@ -569,32 +569,32 @@ class FundService:
 
     @staticmethod
     def _to_points(history: list[FundNav]) -> list[NavPoint]:
-        """Convert NAV rows to analytics points, ascending by date.
+        """把净值行转成分析用的数据点，按日期升序.
 
-        Rows without a unit NAV are dropped rather than read as 0.0: a zero on
-        the series makes every window anchored on it report a -100% return and
-        a -100% maximum drawdown.
+        单位净值为空的行直接丢弃，不按 0.0 读：
+        序列里出现一个 0，以它为起点的每个区间
+        都会报出 -100% 的区间收益和 -100% 的最大回撤。
         """
         return [NavPoint(date=row.nav_date, nav=row.unit_nav) for row in history if row.unit_nav is not None]
 
     @staticmethod
     def _encode_funds(funds: list[Fund]) -> str:
-        """Serialize the public part of search hits for the shared cache."""
+        """把搜索结果的公开部分序列化，放进共享缓存."""
         return json.dumps(
             [{"fund_code": fund.fund_code, "fund_name": fund.fund_name, "fund_type": fund.fund_type} for fund in funds]
         )
 
     @staticmethod
     def _decode_funds(raw: str) -> list[Fund]:
-        """Deserialize cached search hits back into fund master rows."""
+        """把缓存里的搜索结果还原成基金主数据行."""
         return [Fund.model_validate(entry) for entry in json.loads(raw)]
 
 
 def _newest_page(history: list[FundNav], limit: int | None) -> tuple[list[FundNav], bool]:
-    """Keep the newest `limit` rows of an ascending series; report older remainders.
+    """在升序序列里保留最新的 `limit` 行，并说明还有更早的行剩下.
 
-    Rows arrive ascending, so the tail is the most recent window and everything
-    before it is the next page walked backwards by cursor.
+    行是按日期升序进来的，所以尾部就是最近的那一段，
+    它前面的部分是下一页 —— 客户端用游标往回走就能取到。
     """
     if limit is None or len(history) <= limit:
         return history, False

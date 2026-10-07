@@ -1,9 +1,8 @@
-"""Market analysis endpoints: one listed instrument's quote, bars, minute line and profile.
+"""行情分析端点：单只上市标的的实时报价、K 线、分时线与公司资料.
 
-Symbols are canonical listing codes (`sh600519`, `hk01810`, `usAAPL`, `sh000001`)
-exactly as the holdings payload reports them. Validation happens in
-`tencent_symbol`, which is the single whitelist every path through to the feed
-goes by, so nothing here interpolates an unchecked string into an upstream URL.
+symbol 用规范化的上市代码（`sh600519`、`hk01810`、`usAAPL`、`sh000001`），
+与持仓数据上报的写法完全一致。校验全部收在 `tencent_symbol` 里，它是通往
+上游取数路径上唯一的白名单，因此这里不会把没校验过的字符串拼进上游 URL。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -31,7 +30,7 @@ async def get_symbol_quote(
     symbol: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> SymbolQuoteResponse:
-    """Realtime snapshot: price, session range, turnover, valuation and caps."""
+    """实时快照：现价、当日高低区间、成交额、估值与市值."""
     quote = await market_service.get_symbol_quote(symbol)
     if quote is None:
         raise HTTPException(status_code=404, detail="symbol_not_found")
@@ -47,7 +46,7 @@ async def get_symbol_history(
     period: MarketPeriod = Query(default="day", description="K线周期：day/week"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> SymbolHistoryResponse:
-    """Adjusted OHLCV bars for the requested window."""
+    """返回请求区间的复权 OHLCV K 线."""
     history = await market_service.get_symbol_history(symbol, period, range)
     if history is None:
         raise HTTPException(status_code=404, detail="symbol_not_found")
@@ -62,9 +61,9 @@ async def get_symbol_intraday(
     days: int = Query(default=1, description="分钟线覆盖的交易日数：1 或 5"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> SymbolIntradayResponse:
-    """Minute line for one session, or for the last five stitched together.
+    """返回单个交易日的分时线，或把最近 5 个交易日拼接起来.
 
-    The response's `prev_close` is the reference the chart measures against.
+    响应里的 `prev_close` 就是图表计算涨跌所参照的前收盘价。
     """
     if days not in (1, 5):
         raise HTTPException(status_code=422, detail="days_must_be_1_or_5")
@@ -81,7 +80,7 @@ async def get_symbol_company(
     symbol: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> SymbolCompanyResponse:
-    """Company master data. Empty for indexes and non-A股 listings."""
+    """上市公司主数据；指数和 A 股以外的标的返回空."""
     company = await market_service.get_symbol_company(symbol)
     if company is None:
         raise HTTPException(status_code=404, detail="symbol_not_found")

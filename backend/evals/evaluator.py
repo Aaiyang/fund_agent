@@ -1,4 +1,4 @@
-"""Evaluator for evals."""
+"""LLM 评测执行器：取 trace、按指标打分并回写 Langfuse."""
 
 import os
 import sys
@@ -14,7 +14,7 @@ from langfuse import Langfuse
 from langfuse.api.resources.commons.types.trace_with_details import TraceWithDetails
 from tqdm import tqdm
 
-# Fix import path for app module
+# 修正 app 包的导入路径（把 backend/ 目录加进 sys.path）
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.config import settings
 from app.core.logging import logger
@@ -33,36 +33,34 @@ from evals.schemas import ScoreSchema
 
 
 class Evaluator:
-    """Evaluates model outputs using predefined metrics.
+    """用预定义指标给模型输出打分的评测器.
 
-    This class handles fetching traces from Langfuse, evaluating them against
-    metrics, and uploading scores back to Langfuse.
+    负责从 Langfuse 拉取 trace、逐条按各指标评测，再把评分回写到 Langfuse。
 
     Attributes:
-        client: OpenAI client for API calls.
-        langfuse: Langfuse client for trace management.
+        client: 调用评分模型用的 OpenAI 客户端。
+        langfuse: 管理 trace 与评分回写的 Langfuse 客户端。
     """
 
     def __init__(self):
-        """Initialize Evaluator with OpenAI and Langfuse clients."""
+        """用 OpenAI 与 Langfuse 客户端初始化评测器."""
         self.client = openai.AsyncOpenAI(api_key=settings.EVALUATION_API_KEY, base_url=settings.EVALUATION_BASE_URL)
         self.langfuse = Langfuse(
             public_key=settings.LANGFUSE_PUBLIC_KEY,
             secret_key=settings.LANGFUSE_SECRET_KEY,
-            timeout=60,  # In seconds
+            timeout=60,  # 单位：秒
         )
-        # Initialize report data structure
+        # 初始化报告的数据结构
         self.report = initialize_report(settings.EVALUATION_LLM)
         initialize_metrics_summary(self.report, metrics)
 
     async def run(self, generate_report_file=True):
-        """Main execution function that fetches and evaluates traces.
+        """主流程：取 trace、按指标评测并汇总结果.
 
-        Retrieves traces from Langfuse, evaluates each one against all metrics,
-        and uploads the scores back to Langfuse.
+        从 Langfuse 取出待评 trace，对每条依次套用全部指标，再把评分回写到 Langfuse。
 
         Args:
-            generate_report_file: Whether to generate a JSON report after evaluation. Defaults to True.
+            generate_report_file: 评测结束后是否生成 JSON 报告文件，默认 True。
         """
         start_time = time.time()
         traces = self.__fetch_traces()
@@ -114,12 +112,12 @@ class Evaluator:
         )
 
     def _push_to_langfuse(self, trace: TraceWithDetails, score: ScoreSchema, metric: dict):
-        """Push evaluation score to Langfuse.
+        """把一条评分写回 Langfuse.
 
         Args:
-            trace: The trace to score.
-            score: The evaluation score.
-            metric: The metric used for evaluation.
+            trace: 被打分的那条 trace。
+            score: 评分结果（分数 + 理由）。
+            metric: 本次评测所用的指标定义。
         """
         self.langfuse.create_score(
             trace_id=trace.id,
@@ -130,15 +128,15 @@ class Evaluator:
         )
 
     async def _run_metric_evaluation(self, metric: dict, input: str, output: str) -> ScoreSchema | None:
-        """Evaluate a single trace against a specific metric.
+        """用单个指标评测一条 trace.
 
         Args:
-            metric: The metric definition to use for evaluation.
-            input: The input to evaluate.
-            output: The output to evaluate.
+            metric: 本次使用的指标定义。
+            input: 待评的输入内容。
+            output: 待评的输出内容。
 
         Returns:
-            ScoreSchema with evaluation results or None if evaluation failed.
+            评分结果 ScoreSchema；评测未成功则返回 None。
         """
         metric_name = metric["name"]
         if not metric:
@@ -167,15 +165,15 @@ class Evaluator:
         return score
 
     async def _call_openai(self, metric_system_prompt: str, input: str, output: str) -> ScoreSchema | None:
-        """Call OpenAI API to evaluate a trace.
+        """调用评分模型（OpenAI 兼容接口）给一条 trace 打分.
 
         Args:
-            metric_system_prompt: System prompt defining the evaluation metric.
-            input: Formatted input messages.
-            output: Formatted output message.
+            metric_system_prompt: 描述该指标口径的系统提示词。
+            input: 格式化后的输入消息。
+            output: 格式化后的输出消息。
 
         Returns:
-            ScoreSchema with evaluation results or None if API call failed.
+            评分结果 ScoreSchema；接口调用失败则返回 None。
         """
         num_retries = 3
         for _ in range(num_retries):
@@ -201,10 +199,10 @@ class Evaluator:
         return None
 
     def __fetch_traces(self) -> list[TraceWithDetails]:
-        """Fetch traces from the past 24 hours without scores.
+        """取最近 24 小时内还没有评分的 trace.
 
         Returns:
-            List of traces that haven't been scored yet.
+            尚未被打过分的 trace 列表。
         """
         last_24_hours = datetime.now() - timedelta(hours=24)
         logger.info("fetching_langfuse_traces", from_timestamp=str(last_24_hours))

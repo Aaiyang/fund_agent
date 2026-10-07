@@ -1,10 +1,8 @@
-"""Let the review page carry a purchase date.
+"""让确认页可以带上申购日期.
 
-A holdings screenshot never shows when a fund was bought, so confirming an
-import used to stamp every new position with the import day. That date then
-drove the cost estimate, which made a number the system invented look like a
-fact. The draft row now holds the date itself, prefilled and correctable, so
-only what the user saw on the review page reaches portfolio_position.
+持仓截图不会显示基金是什么时候买的，所以以前确认导入时，会给每个新建的持仓盖上导入
+那天的日期；这个日期又参与成本估算，等于把系统编出来的数当成事实。现在草稿行自己存
+这个日期，预填且可改，因此只有用户在确认页上看到的内容才会进入 portfolio_position。
 """
 
 from typing import Sequence, Union
@@ -19,7 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add the confirmation date and its cutoff side to a pending import row."""
+    """给待确认的导入行加上确认日，以及它落在截止点哪一侧的标记."""
     op.add_column("holding_import_item", sa.Column("purchase_date", sa.Date(), nullable=True))
     op.add_column(
         "holding_import_item",
@@ -28,6 +26,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both columns."""
+    """删掉这两列."""
     op.drop_column("holding_import_item", "purchase_after_cutoff")
     op.drop_column("holding_import_item", "purchase_date")

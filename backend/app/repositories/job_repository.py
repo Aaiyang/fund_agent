@@ -1,4 +1,4 @@
-"""Background job repository: create and transition job ledger rows."""
+"""后台任务流水仓储：建任务台账行并推进它的状态."""
 
 from app.core.database import get_async_session
 from app.models.job import BackgroundJob
@@ -6,10 +6,10 @@ from app.utils.clock import utc_now
 
 
 class JobRepository:
-    """Async data access for the background job ledger."""
+    """后台任务流水账的异步数据访问."""
 
     async def create(self, job_type: str, subject: str | None = None) -> BackgroundJob:
-        """Register a job as PENDING before it is enqueued."""
+        """入队之前先把任务登记成 PENDING 状态."""
         async with get_async_session() as session:
             job = BackgroundJob(job_type=job_type, subject=subject, status="PENDING")
             session.add(job)
@@ -17,7 +17,7 @@ class JobRepository:
             return job
 
     async def mark_running(self, job_id: str) -> None:
-        """Stamp the start of an attempt and count it."""
+        """记下本次尝试的开始时间，并把重试次数加一."""
         async with get_async_session() as session:
             job = await session.get(BackgroundJob, job_id)
             if job is None:
@@ -31,7 +31,7 @@ class JobRepository:
     async def finish(
         self, job_id: str, status: str, error_code: str | None = None, error_message: str | None = None
     ) -> None:
-        """Close a job with its terminal status and any failure detail."""
+        """用终态状态收尾一个任务，并带上失败详情."""
         async with get_async_session() as session:
             job = await session.get(BackgroundJob, job_id)
             if job is None:

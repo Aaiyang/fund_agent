@@ -1,7 +1,6 @@
 /**
- * Full NAV history as a paged list: 30 newest rows up front, older pages fetched
- * when the list reaches its bottom, so a fund with a decade of records never
- * renders at once.
+ * 全量净值历史的分页列表：首屏给最新 30 条，滚到底部再拉更早的页，
+ * 这样即便基金有十几年的记录也不会一次性全部渲染。
  */
 
 import { useLocalSearchParams } from 'expo-router';
@@ -15,8 +14,8 @@ import { formatDate, formatNumber, formatReturnPoints, trendColor } from '@/util
 export default function NavHistoryScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const pages = useFundNavPages(code ?? null);
-  // Each page arrives ascending; reversing per page while keeping page order
-  // yields one newest-first list without sorting the whole set again.
+  // 每页返回时按日期升序；逐页各自倒序、页序保持不变，
+  // 拼出来就是最新在前的一列，省掉对整份数据再排一次序。
   const rows = pages.data?.pages.flatMap((page) => [...page.points].reverse()) ?? [];
   const total = pages.data?.pages[0]?.total ?? 0;
 

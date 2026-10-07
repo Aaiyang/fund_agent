@@ -1,4 +1,4 @@
-"""OpenAI-compatible embedding adapter with configurable request timeout."""
+"""OpenAI 兼容接口的 embedding 适配器，请求超时可配."""
 
 from typing import Literal, Optional, override
 
@@ -10,10 +10,10 @@ from app.core.config import settings
 
 
 class OpenAICompatibleEmbedding(EmbeddingBase):
-    """Generate embeddings through an OpenAI-compatible API endpoint."""
+    """通过 OpenAI 兼容的 API 端点生成向量."""
 
     def __init__(self, config: Optional[BaseEmbedderConfig] = None) -> None:
-        """Initialize the embedding client from mem0 and application settings."""
+        """用 mem0 传来的配置加上应用设置，初始化 embedding 客户端."""
         super().__init__(config)
         self._model = self.config.model or settings.LONG_TERM_MEMORY_EMBEDDER_MODEL
         self._embedding_dims = self.config.embedding_dims or settings.EMBEDDING_DIM
@@ -33,7 +33,7 @@ class OpenAICompatibleEmbedding(EmbeddingBase):
         text: str,
         memory_action: Optional[Literal["add", "search", "update"]] = None,
     ) -> list[float]:
-        """Return an embedding vector for the supplied text."""
+        """返回给定文本对应的向量."""
         response = self.client.embeddings.create(
             input=[text.replace("\n", " ")],
             model=self._model,

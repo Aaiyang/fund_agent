@@ -1,10 +1,10 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import type { ReactNode } from 'react';
 
-// This file is web-only and used to configure the root HTML for every
-// web page during static rendering.
-// The contents of this function only run in Node.js environments and
-// do not have access to the DOM or browser APIs.
+// 本文件只在 web 端生效，静态渲染时用它给每个 web 页面
+// 配置根 HTML。
+// 这个函数里的内容只在 Node.js 环境运行，
+// 访问不到 DOM 或浏览器 API。
 export default function Root({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
@@ -14,14 +14,14 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
         {/*
-          Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
-          However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
+          在 web 上禁用 body 滚动，这样 ScrollView 的表现才更接近原生端。
+          不过移动端 web 往往更希望保留 body 滚动，想启用的话删掉这一行即可。
         */}
         <ScrollViewStyleReset />
 
-        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
+        {/* 用裸 CSS 兜底，确保深色模式下的背景色永远不闪变。 */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
-        {/* Add any additional <head> elements that you want globally available on web... */}
+        {/* 需要全局生效的其他 <head> 元素可以加在这里... */}
       </head>
       <body>{children}</body>
     </html>

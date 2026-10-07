@@ -1,9 +1,8 @@
-"""Optional OCR runtime isolation.
+"""可选 OCR 运行时的导入隔离.
 
-rapidocr pulls in an ONNX Runtime and the PP-OCR weights, which is a heavy
-dependency for a deployment that never imports screenshots. Mirroring
-akshare_client, it is imported once at module load behind an availability
-flag so the app still boots without it.
+rapidocr 会拖进 ONNX Runtime 和 PP-OCR 权重，对从不导入截图的部署来说这份依赖
+太重。照 akshare_client 的做法，在模块加载时导入一次并用可用性标记兜住，缺库时
+应用照样能启动。
 """
 
 try:

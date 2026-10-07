@@ -1,9 +1,8 @@
 /**
- * Group picker shown before a fund is added to the watchlist.
+ * 加自选前弹出的分组选择面板。
  *
- * Adding must be an explicit choice (spec 3.3 分组): the caller opens this
- * sheet and only fires the add on confirm, so there is no silent path that
- * drops the fund into whatever group happens to be filtered.
+ * 加入必须是显式选择（spec 3.3 分组）：调用方打开这个面板，只在用户点确认
+ * 后才发起添加，不存在把基金悄悄塞进当前筛选到的某个分组的路径。
  */
 
 import { useState } from 'react';
@@ -27,7 +26,7 @@ export function GroupPicker({
   groups: WatchlistGroup[];
   busy?: boolean;
   onCancel: () => void;
-  /** groupIds is empty for the explicit "不分组" choice. */
+  /** 用户明确选“不分组”时，groupIds 为空。 */
   onConfirm: (groupIds: number[]) => void;
   onCreateGroup: (name: string) => Promise<number | null>;
 }) {

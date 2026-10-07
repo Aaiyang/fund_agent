@@ -1,8 +1,7 @@
-"""Fund data repository: PostgreSQL persistence for funds and NAV history.
+"""基金数据仓储：基金主数据与净值历史的 PostgreSQL 落库.
 
-Reads and writes go through the asyncpg engine (app.core.database). All
-writes are short transactions; external provider calls never happen inside
-them (MVP spec 7.10).
+读写都走 asyncpg 引擎（app.core.database）。写操作一律是短事务，事务之内绝不调用
+外部数据源适配层（MVP spec 7.10）。
 """
 
 from datetime import date
@@ -19,35 +18,34 @@ from app.models.portfolio import PortfolioPosition
 from app.models.watchlist import Watchlist
 from app.utils.clock import utc_now
 
-# asyncpg allows at most 32767 bind parameters per statement; 8 columns per row.
+# asyncpg 单条语句最多 32767 个绑定参数；这里每行 8 列。
 _UPSERT_CHUNK_ROWS = 2000
 
 
 class FundRepository:
-    """Async data access for fund master data and NAV history."""
+    """基金主数据与净值历史的异步数据访问."""
 
     # ------------------------------------------------------------------
-    # Reads
+    # 读取
     # ------------------------------------------------------------------
 
     async def get_fund(self, fund_code: str) -> Fund | None:
-        """Load one fund master row by code."""
+        """按代码读取一条基金主数据."""
         async with get_async_session() as session:
             result = await session.execute(select(Fund).where(col(Fund.fund_code) == fund_code))
             return result.scalar_one_or_none()
 
     async def all_names(self) -> list[tuple[str, str]]:
-        """Every stored fund as a (code, name) pair, for name matching.
+        """把库里所有基金以 (代码, 名称) 返回，供名称匹配使用.
 
-        Two columns only: the whole table is read into memory to score
-        screenshot names against, and the NAV history would not fit.
+        只取两列：整张表要读进内存，给截图里识别出的名称打分，带上净值历史就装不下了。
         """
         async with get_async_session() as session:
             result = await session.execute(select(col(Fund.fund_code), col(Fund.fund_name)))
             return [(str(code), str(name)) for code, name in result.all()]
 
     async def search_funds(self, keyword: str, limit: int = 50) -> list[Fund]:
-        """Search local fund master data by code prefix or fuzzy name."""
+        """在本地基金主数据里按代码前缀或名称模糊搜索."""
         keyword_clean = keyword.strip()
         if not keyword_clean:
             return []
@@ -63,7 +61,7 @@ class FundRepository:
             return list(result.scalars().all())
 
     async def nav_count(self, fund_code: str) -> int:
-        """How many NAV points we hold for one fund."""
+        """库里为这只基金存了多少个净值点."""
         async with get_async_session() as session:
             result = await session.execute(
                 select(func.count()).select_from(FundNav).where(col(FundNav.fund_code) == fund_code)
@@ -76,7 +74,7 @@ class FundRepository:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[FundNav]:
-        """Load NAV rows ascending by date between optional bounds."""
+        """按日期升序读取净值行，起止日期可选."""
         async with get_async_session() as session:
             statement = select(FundNav).where(col(FundNav.fund_code) == fund_code)
             if start_date is not None:
@@ -88,7 +86,7 @@ class FundRepository:
             return list(result.scalars().all())
 
     async def get_latest_nav(self, fund_code: str) -> FundNav | None:
-        """Load the most recent NAV row for a fund."""
+        """读取这只基金最新的一条净值行."""
         async with get_async_session() as session:
             statement = (
                 select(FundNav)
@@ -100,11 +98,10 @@ class FundRepository:
             return result.scalar_one_or_none()
 
     async def get_nav_on_or_before(self, fund_code: str, on_or_before: date) -> FundNav | None:
-        """Load the session a purchase was priced against.
+        """读出这笔买入定价所依据的那个交易日.
 
-        The confirmation day is not necessarily a publishing day (a purchase
-        confirmed on a holiday rolls forward), so the answer is the newest row
-        at or before it rather than an exact-date lookup.
+        确认日不一定是发布净值的交易日（节假日确认的买入会往后滚），所以要的是它
+        当天或之前最新的一行，而不是按精确日期去查。
         """
         async with get_async_session() as session:
             statement = (
@@ -117,7 +114,7 @@ class FundRepository:
             return result.scalar_one_or_none()
 
     async def get_funds(self, fund_codes: list[str]) -> dict[str, Fund]:
-        """Load many fund master rows by code, keyed by code."""
+        """按代码批量读取基金主数据行，结果以代码为键."""
         if not fund_codes:
             return {}
         async with get_async_session() as session:
@@ -125,7 +122,7 @@ class FundRepository:
             return {fund.fund_code: fund for fund in result.scalars().all()}
 
     async def get_latest_navs(self, fund_codes: list[str]) -> dict[str, FundNav]:
-        """Load the newest NAV row per fund in a single PostgreSQL DISTINCT ON."""
+        """用一条 PostgreSQL DISTINCT ON 查出每只基金最新的那条净值行."""
         if not fund_codes:
             return {}
         async with get_async_session() as session:
@@ -141,10 +138,10 @@ class FundRepository:
     async def get_nav_history_map(
         self, fund_codes: list[str], start_date: date | None = None
     ) -> dict[str, list[FundNav]]:
-        """Load the NAV series for many funds in one query, keyed by code.
+        """一次查询读出多只基金的净值序列，以代码为键.
 
-        Each list is ascending by date so the analytics helpers can scan it
-        linearly. Funds without rows are omitted.
+        每只基金的列表都按日期升序，分析计算函数可以线性扫过去。没有净值行的基金
+        不会出现在结果里。
         """
         if not fund_codes:
             return {}
@@ -160,7 +157,7 @@ class FundRepository:
             return series
 
     async def get_hot_fund_codes(self) -> list[str]:
-        """Distinct fund codes held or watchlisted by any user (Hot Funds)."""
+        """任何用户持有或自选过的去重基金代码（热门基金）."""
         position_codes = select(col(PortfolioPosition.fund_code)).distinct()
         watchlist_codes = select(col(Watchlist.fund_code)).distinct()
         async with get_async_session() as session:
@@ -168,10 +165,10 @@ class FundRepository:
             return sorted({row[0] for row in result if row[0]})
 
     async def list_user_fund_codes(self, user_id: int) -> list[str]:
-        """Distinct codes one user holds or watchlists: the on-demand refresh set.
+        """该用户持仓与自选的去重代码，也就是按需刷新的那批基金.
 
-        Both flags feed the same NAV columns, so refreshing them together is what
-        lets the holdings screen show one consistent set of numbers.
+        持仓标记和自选标记喂的是同一批净值字段，一起刷新才能让持仓页看到口径
+        一致的一组数字。
         """
         position_codes = (
             select(col(PortfolioPosition.fund_code)).where(col(PortfolioPosition.user_id) == user_id).distinct()
@@ -183,14 +180,13 @@ class FundRepository:
 
 
 class FundWriteRepository:
-    """Write-side operations for fund data (upserts)."""
+    """基金数据的写入侧操作（upsert）."""
 
     async def upsert_fund_from_record(self, record: FundExternalProfile | FundExternalRecord) -> None:
-        """Insert or update a fund master row from an external record.
+        """用一条外部记录插入或更新基金主数据行.
 
-        A search/rank record also carries the latest NAV, so that is written as
-        a `fund_nav` point too — otherwise a fund that was only ever reached
-        through search would list no 净值/涨跌 (spec 3.4 requires both).
+        搜索/榜单记录也带着最新净值，所以顺手把它写成一个 `fund_nav` 点 —— 否则
+        只通过搜索见过的基金就没有 净值/涨跌 可列，而 spec 3.4 要求这两项都有值。
         """
         now = utc_now()
         values = {
@@ -210,7 +206,7 @@ class FundWriteRepository:
                     "asset_size": record.asset_size,
                 }
             )
-        # Search records carry the public NAV date, which is what the row speaks as of
+        # 搜索记录带着已公布的净值日期，这一行说的就是截至那一天的数据
         as_of = getattr(record, "nav_date", None)
         if as_of is not None:
             values["source_as_of"] = as_of
@@ -236,11 +232,10 @@ class FundWriteRepository:
             )
 
     async def upsert_navs(self, navs: list[FundExternalNav]) -> int:
-        """Bulk-upsert NAV rows in chunks. Returns the number of rows written.
+        """分片批量 upsert 净值行，返回写入的行数.
 
-        One statement carries 8 bind parameters per row and asyncpg caps a
-        statement at 32767, so a full history for a long-lived fund must be
-        split or its sync fails permanently.
+        每条语句每行要占 8 个绑定参数，而 asyncpg 的上限是 32767，所以老基金的
+        完整历史必须切片，否则它的同步会一直失败。
         """
         if not navs:
             return 0
@@ -265,10 +260,9 @@ class FundWriteRepository:
                 statement = statement.on_conflict_do_update(
                     constraint="uq_fund_nav_code_date",
                     set_={
-                        # A NULL in the payload means the source did not say, not
-                        # that the stored value is wrong. The batched quote table
-                        # carries no 累计净值 for every fund, so an unconditional
-                        # overwrite here would blank a figure the detail page shows.
+                        # 载荷里是 NULL，只说明上游没给这个数，不代表库里存的值错了。
+                        # 批量行情表并不给每只基金都带 累计净值，这里无条件覆盖会把
+                        # 详情页要展示的数字抹成空。
                         "unit_nav": func.coalesce(statement.excluded.unit_nav, FundNav.unit_nav),
                         "accumulated_nav": func.coalesce(statement.excluded.accumulated_nav, FundNav.accumulated_nav),
                         "daily_return": func.coalesce(statement.excluded.daily_return, FundNav.daily_return),

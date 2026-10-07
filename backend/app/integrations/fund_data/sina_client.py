@@ -1,9 +1,8 @@
-"""Sina quote feed for individual-stock prices.
+"""个股行情的新浪数据源.
 
-Eastmoney's push2 quote hosts are unreachable from this network and its fund
-estimate API has been retired, so stock quotes come from Sina's batched
-``hq.sinajs.cn`` endpoint: one request covers A-share, Hong Kong and US
-listings together, which is what a QDII fund's top ten actually needs.
+本网络连不上东财 push2 的行情主机，它的基金估值接口也已经下线，所以股票行情
+改走新浪的批量接口 ``hq.sinajs.cn``：一次请求就能同时拿到 A股、港股、美股，
+而 QDII 基金的前十重仓正需要跨这三个市场.
 """
 
 import httpx
@@ -14,7 +13,7 @@ from app.integrations.fund_data.models import StockExternalQuote
 from app.integrations.fund_data.normalizer import parse_sina_quotes
 
 _QUOTE_TIMEOUT_SECONDS = 8.0
-# The feed rejects requests without a same-family Referer.
+# 不带同源 Referer 的请求会被接口直接拒掉。
 _QUOTE_HEADERS = {
     "Referer": "https://finance.sina.com.cn/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -28,10 +27,10 @@ _QUOTE_HEADERS = {
     reraise=True,
 )
 async def fetch_quotes(symbols: list[str]) -> list[StockExternalQuote]:
-    """Fetch quotes for prefixed symbols (sz300570, hk01810, gb_aapl, ...).
+    """按带前缀的代码（sz300570、hk01810、gb_aapl……）取行情.
 
-    A transport failure raises; an unparsable body yields fewer quotes, which
-    the caller renders as missing prices rather than an error page.
+    传输失败会抛异常；响应体解析不出来时只返回能解析的那几条，调用方按缺价
+    处理，而不是弹错误页.
     """
     if not symbols:
         return []

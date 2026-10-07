@@ -1,4 +1,4 @@
-"""Fund API request/response schemas."""
+"""基金 API 的请求与响应 schema."""
 
 from datetime import date, datetime
 from typing import Literal
@@ -11,7 +11,7 @@ NavRange = Literal["1m", "3m", "6m", "1y", "3y", "all"]
 
 
 class FundSearchItem(BaseModel):
-    """One search result row with the caller's relationship flags."""
+    """一条搜索结果，附调用方与它的关系标记（自选/持有）."""
 
     fund_code: str
     fund_name: str
@@ -24,14 +24,14 @@ class FundSearchItem(BaseModel):
 
 
 class FundSearchResponse(BaseResponse):
-    """GET /funds/search response."""
+    """GET /funds/search 响应体."""
 
     items: list[FundSearchItem]
     total: int
 
 
 class FundPerformance(BaseModel):
-    """Deterministic analytics computed by backend Python (spec 5.2)."""
+    """由后端 Python 确定性算出的业绩指标（spec 5.2）."""
 
     return_1m: float | None = None
     return_3m: float | None = None
@@ -44,7 +44,7 @@ class FundPerformance(BaseModel):
 
 
 class FundDetailResponse(BaseResponse):
-    """GET /funds/{fund_code} response — fund overview (spec 3.5.1)."""
+    """GET /funds/{fund_code} 响应——基金概览（spec 3.5.1）."""
 
     fund_code: str
     fund_name: str
@@ -60,7 +60,7 @@ class FundDetailResponse(BaseResponse):
     performance: FundPerformance = FundPerformance()
     is_watchlisted: bool = False
     is_held: bool = False
-    # Lineage: which source, as of when, and when we last refreshed it (spec 5.6)
+    # 数据血缘：出自哪个数据源、数据截至何时、我们上次刷新是何时（spec 5.6）
     source: str | None = None
     source_as_of: date | None = None
     updated_at: datetime | None = None
@@ -68,7 +68,7 @@ class FundDetailResponse(BaseResponse):
 
 
 class FundNavPoint(BaseModel):
-    """One NAV series point for charting."""
+    """净值序列里的一个点，用于画图."""
 
     nav_date: date
     unit_nav: float | None = None
@@ -77,7 +77,7 @@ class FundNavPoint(BaseModel):
 
 
 class FundNavHistoryResponse(BaseResponse):
-    """GET /funds/{fund_code}/nav response."""
+    """GET /funds/{fund_code}/nav 响应体."""
 
     fund_code: str
     range: str | None = None
@@ -87,31 +87,30 @@ class FundNavHistoryResponse(BaseResponse):
 
 
 class FundHoldingItem(BaseModel):
-    """One disclosed holding with its quote and quarter-over-quarter change."""
+    """一条披露持仓，带行情报价和较上期变动."""
 
     stock_code: str
-    # Market-prefixed symbol for the analysis screen: the disclosure table has no
-    # market column, so the same shape inference the quote feed uses is published
-    # here rather than re-derived on the client.
+    # 给行情分析页用的带市场前缀 symbol：披露表没有市场列，所以这里直接发布
+    # 行情源那套形状推断的结果，不让客户端再推一遍。
     symbol: str | None = None
     stock_name: str | None = None
-    weight: float | None = None  # 占净值比例, percent points
-    weight_change: float | None = None  # 较上期, percentage points
-    is_new: bool = False  # absent from the previous disclosure
+    weight: float | None = None  # 占净值比例，单位百分点
+    weight_change: float | None = None  # 较上期变动，单位百分点
+    is_new: bool = False  # 上一期披露里没有这只票
     price: float | None = None
-    change_pct: float | None = None  # live during a session, last close otherwise
-    quote_time: str | None = None  # raw source timestamp, per-market format
+    change_pct: float | None = None  # 盘中取实时涨跌，收盘后取最近收盘价
+    quote_time: str | None = None  # 上游原始时间戳，格式因市场而异
 
 
 class FundIndustryItem(BaseModel):
-    """One industry's share of the fund, from the same disclosure cycle."""
+    """某行业占该基金的份额，取自同一期披露."""
 
     industry: str
-    weight: float | None = None  # 占净值比例, percent points
+    weight: float | None = None  # 占净值比例，单位百分点
 
 
 class FundHoldingsResponse(BaseResponse):
-    """GET /funds/{fund_code}/holdings response (top ten by disclosed weight)."""
+    """GET /funds/{fund_code}/holdings 响应（按披露权重取前十）."""
 
     fund_code: str
     quarter: str | None = None
@@ -122,14 +121,14 @@ class FundHoldingsResponse(BaseResponse):
 
 
 class FundPerformanceResponse(BaseResponse):
-    """GET /funds/{fund_code}/performance response."""
+    """GET /funds/{fund_code}/performance 响应体."""
 
     fund_code: str
     performance: FundPerformance
 
 
 class RelatedSectorsResponse(BaseResponse):
-    """GET /funds/{fund_code}/related-sectors response (placeholder)."""
+    """GET /funds/{fund_code}/related-sectors 响应（占位实现）."""
 
     fund_code: str
     sectors: list[dict[str, object]] = []
@@ -137,7 +136,7 @@ class RelatedSectorsResponse(BaseResponse):
 
 
 class FundSyncStatusResponse(BaseResponse):
-    """POST /funds/{fund_code}/refresh response."""
+    """POST /funds/{fund_code}/refresh 响应体."""
 
     fund_code: str
     queued: bool
@@ -145,12 +144,11 @@ class FundSyncStatusResponse(BaseResponse):
 
 
 class FundNavRefreshResponse(BaseResponse):
-    """POST /funds/refresh-latest response.
+    """POST /funds/refresh-latest 响应体.
 
-    `status` is the only field a client has to branch on, and every value short
-    of `unavailable` is a normal outcome rather than an error: a fund the source
-    table does not carry gets queued individually, and a refresh already running
-    for this user is reported as `throttled`. The counts are for the read-out.
+    客户端唯一需要分支的字段是 `status`，除 `unavailable` 之外都属正常结果而非
+    错误：全量表里没有的基金会被逐个单独入队补刷，同一用户已有刷新在跑时报
+    `throttled`。那几个计数只是给前端看的结果播报。
     """
 
     status: Literal["ok", "partial", "throttled", "deferred", "unavailable"] = "ok"

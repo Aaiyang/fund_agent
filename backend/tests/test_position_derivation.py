@@ -1,4 +1,4 @@
-"""What a holdings row leaves open is derived here, never read as zero."""
+"""持仓行里没写明的数字由这里推导，绝不能一律当成 0 来读."""
 
 import pytest
 
@@ -53,8 +53,8 @@ class TestLedgerProjection:
         assert totals.cost_amount == 4750.0
 
     def test_a_partial_sell_carries_cost_out_at_the_average_held(self) -> None:
-        # Half of a 3000/1000 holding leaves 1500 of cost, not the sale price:
-        # the gain on the way out must stay in 持有收益, not vanish from the basis.
+        # 成本 3000、份额 1000 的持仓卖掉一半，剩下的是 1500 成本，而不是卖出价：
+        # 卖出这一段赚到的必须留在持有收益里，不能从持仓成本里凭空消失。
         totals = project_ledger(
             [
                 LedgerRow(kind="BUY", shares=1000.0, amount=3000.0),
@@ -108,7 +108,7 @@ class TestOrderPricing:
 
 
 class TestOrderDeltaFromTheService:
-    """The order screen hands over one figure: money for a buy, units for an exit."""
+    """下单界面只交一个数：买入交金额，卖出交份额."""
 
     def test_the_whole_amount_buys_at_the_confirm_nav(self) -> None:
         delta = PortfolioService._order_delta("BUY", 2.5, 1000.0, None)

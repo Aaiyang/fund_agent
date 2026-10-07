@@ -1,4 +1,4 @@
-"""What a batched quote payload may be written, and what must be chased instead."""
+"""批量行情里拿到的净值，哪些可以直接落库，哪些必须回头走单基金补拉."""
 
 from datetime import date
 
@@ -19,11 +19,10 @@ def _funds(*codes: str) -> dict[str, Fund]:
 
 
 def test_rows_the_source_does_not_carry_are_reported_not_failed() -> None:
-    """A fund missing from the batched table is a follow-up, not an error.
+    """批量表里查不到的基金是要跟进补拉，不是出错.
 
-    Some funds are never listed in that table at all, so treating a miss as a
-    failure would report "refresh failed" for a holding that simply needs the
-    per-fund path.
+    有些基金根本不会出现在那张表里，把「没查到」当成失败，就会让一个其实只需要
+    走单基金路径的持仓被报成刷新失败。
     """
     writable, missing = plan_nav_writes(["005918", "270042"], [_nav("005918")], _funds("005918", "270042"))
 
@@ -32,11 +31,10 @@ def test_rows_the_source_does_not_carry_are_reported_not_failed() -> None:
 
 
 def test_a_code_without_a_master_row_is_chased_instead_of_written() -> None:
-    """`fund_nav` has a foreign key onto `fund`, so one orphan fails the batch.
+    """`fund_nav` 对 `fund` 有外键，一条孤儿代码就会让整批写入失败.
 
-    The upsert is one statement over many rows: a code with no master row would
-    abort it and cost every other fund its update. The per-fund sync creates the
-    master row first, so the orphan goes to `missing`.
+    upsert 是把很多行合成一条语句执行的：某个代码没有对应的主档行会中断整条语句，
+    其他基金这次更新也就全丢了。单基金同步会先把主档行建出来，所以孤儿代码进 `missing`。
     """
     writable, missing = plan_nav_writes(["005918", "011452"], [_nav("005918"), _nav("011452")], _funds("005918"))
 
@@ -45,7 +43,7 @@ def test_a_code_without_a_master_row_is_chased_instead_of_written() -> None:
 
 
 def test_funds_the_caller_did_not_ask_for_are_ignored() -> None:
-    """The source table covers every fund; only the requested set is written."""
+    """来源表本身覆盖全部基金，落库时只写调用方请求的那一组."""
     writable, missing = plan_nav_writes(["005918"], [_nav("005918"), _nav("002112")], _funds("005918", "002112"))
 
     assert [nav.fund_code for nav in writable] == ["005918"]
@@ -53,7 +51,7 @@ def test_funds_the_caller_did_not_ask_for_are_ignored() -> None:
 
 
 def test_an_empty_payload_reports_every_requested_code() -> None:
-    """An outage-shaped payload must not read as a clean refresh."""
+    """上游不可用导致的空结果，不能被当成一次干净的刷新."""
     writable, missing = plan_nav_writes(["005918", "011452"], [], _funds("005918", "011452"))
 
     assert writable == []
@@ -61,7 +59,7 @@ def test_an_empty_payload_reports_every_requested_code() -> None:
 
 
 def test_duplicate_rows_collapse_to_the_newest_date() -> None:
-    """One row per fund is written, and it is the newest the source reported."""
+    """每只基金只写一行，写的是来源报上来的最新日期."""
     writable, _ = plan_nav_writes(
         ["005918"], [_nav("005918", _EARLIER, 1.4), _nav("005918", _DAY, 1.5)], _funds("005918")
     )

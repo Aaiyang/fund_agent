@@ -1,10 +1,10 @@
-"""Durable background task names.
+"""持久化后台任务的任务名常量.
 
-Services enqueue by name (`broker.kiq(TASK, ...)`) instead of importing a worker
-module: workers import services, so a direct import back would close a cycle —
-that is why the call sites previously hid imports inside functions.
+服务层按任务名入队（`broker.kiq(TASK, ...)`），而不是去 import worker 模块：
+worker 会 import 服务，直接反向 import 就形成了一个环——
+这正是原先的调用点要把 import 藏进函数体内的原因。
 
-Keep this module free of submodule imports.
+本模块必须保持不 import 任何子模块。
 """
 
 FUND_SYNC_TASK = "app.workers.fund_sync:sync_fund_task"

@@ -1,9 +1,9 @@
-"""Periodic background jobs: enqueue Hot Fund sync from the API process.
+"""周期后台任务：由 API 进程入队热门基金同步.
 
-Execution still belongs to the Taskiq worker (or the in-process broker
-fallback) — this loop only enqueues, so the request path never performs
-provider I/O (MVP spec 7.13). Disable with FUND_HOT_SYNC_ENABLED=false when an
-external scheduler drives ``sync_hot_funds_task`` instead.
+执行仍然归 Taskiq worker 负责（无 Redis 时落到进程内 broker 兜底），
+这个循环只入队，所以请求链路上绝不会去做数据源 I/O（MVP spec 7.13）。
+外部调度器直接驱动 ``sync_hot_funds_task`` 时，
+用 FUND_HOT_SYNC_ENABLED=false 把这里关掉。
 """
 
 import asyncio
@@ -18,7 +18,7 @@ _job: asyncio.Task[Any] | None = None
 
 
 async def _hot_fund_loop() -> None:
-    """Sleep, then enqueue one Hot Fund sweep, until cancelled."""
+    """睡满一个周期后入队一轮热门基金同步，直到被取消."""
     interval_minutes = settings.FUND_HOT_SYNC_INTERVAL_MINUTES
     while True:
         await asyncio.sleep(interval_minutes * 60)
@@ -30,7 +30,7 @@ async def _hot_fund_loop() -> None:
 
 
 def start_periodic_jobs() -> None:
-    """Start the periodic enqueue loop when enabled."""
+    """开关打开时启动周期入队循环."""
     global _job
     if not settings.FUND_HOT_SYNC_ENABLED:
         logger.info("periodic_jobs_disabled")
@@ -41,7 +41,7 @@ def start_periodic_jobs() -> None:
 
 
 async def stop_periodic_jobs() -> None:
-    """Cancel the periodic loop and wait for it to unwind."""
+    """取消周期循环，并等它真正退出."""
     global _job
     if _job is not None:
         _job.cancel()

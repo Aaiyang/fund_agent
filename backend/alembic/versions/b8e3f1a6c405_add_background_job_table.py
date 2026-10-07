@@ -1,4 +1,4 @@
-"""Add the background_job ledger table.
+"""新增 background_job 任务账本表.
 
 Revision ID: b8e3f1a6c405
 Revises: a1f4c0b7d9e2
@@ -8,7 +8,7 @@ Create Date: 2026-09-21
 import sqlalchemy as sa
 from alembic import op
 
-# revision identifiers, used by Alembic.
+# 迁移版本号标识，Alembic 靠它串起迁移链
 revision = "b8e3f1a6c405"  # pragma: allowlist secret
 down_revision = "a1f4c0b7d9e2"  # pragma: allowlist secret
 branch_labels = None
@@ -16,7 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """Create the durable background task ledger (spec 7.8)."""
+    """建出可持久化的后台任务账本表（spec 7.8）."""
     op.create_table(
         "background_job",
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -38,7 +38,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the ledger table."""
+    """删掉这张任务账本表."""
     op.drop_index(op.f("ix_background_job_subject"), table_name="background_job")
     op.drop_index(op.f("ix_background_job_status"), table_name="background_job")
     op.drop_index(op.f("ix_background_job_job_type"), table_name="background_job")

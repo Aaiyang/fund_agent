@@ -1,10 +1,10 @@
-"""When a 定投 plan is due to debit.
+"""定投计划的扣款日落在哪一天.
 
-The platform decides this, not us — but the plan is something the user states
-(每几周/每月几号、多少钱), so the app can work out which installments it has
-already been told to record and write them as ordinary purchases. Days that
-fall on a non-trading day roll the same way an order does, in
-:mod:`app.analytics.settlement`.
+真正决定扣款日的是销售平台，不是我们——但定投计划是用户自己说出来的
+（每几周/每月几号、多少钱），所以应用能推算出哪些期已经交代过要记账，
+并把它们写成一笔笔普通买入。落在非交易日的扣款日与下单一样顺延，
+顺延规则见
+:mod:`app.analytics.settlement`。
 """
 
 from __future__ import annotations
@@ -19,23 +19,23 @@ _STEP_DAYS: dict[str, int] = {"daily": 1, "weekly": 7, "biweekly": 14}
 
 
 def _month_start(moment: date) -> date:
-    """The first day of the month after ``moment``."""
+    """``moment`` 之后那个月的第一天."""
     return date(moment.year + (moment.month == 12), moment.month % 12 + 1, 1)
 
 
 def _day_in_month(run_day: int, moment: date) -> int:
-    """Clamp 每月 29-31 号 to the month's last day, the way the platforms do."""
+    """把每月 29-31 号压到当月最后一天，与各平台的扣款日做法一致."""
     return min(run_day, calendar.monthrange(moment.year, moment.month)[1])
 
 
 def first_due(frequency: Frequency, run_day: int, start: date) -> date:
-    """The first scheduled day on or after the plan starts."""
+    """计划起始日当天或之后的第一个扣款日."""
     if frequency == "daily":
         return start
     if frequency == "monthly":
         candidate = start.replace(day=_day_in_month(run_day, start))
         return candidate if candidate >= start else _next_monthly(run_day, candidate)
-    # run_day is an ISO weekday: 1 = Monday … 7 = Sunday.
+    # run_day 是 ISO 星期序号：1 = 周一 … 7 = 周日。
     ahead = (run_day % 7 - start.isoweekday()) % 7
     return start + timedelta(days=ahead)
 
@@ -53,11 +53,11 @@ def due_days(
     after: date | None,
     through: date,
 ) -> list[date]:
-    """Every scheduled day in ``(after, through]`` the plan still owes.
+    """取出 ``(after, through]`` 内这个计划还欠着的每一个扣款日.
 
-    A plan that was never settled starts from its own first due day; one being
-    caught up months later jumps straight to what is outstanding instead of
-    walking the history it already recorded.
+    从未结算过的计划从自己的第一个扣款日排起；隔了几个月才补记时，
+    直接跳到还欠着的那几期即可，不必再把它
+    已经记过账的历史从头走一遍。
     """
     day = first_due(frequency, run_day, start)
     if after is not None and day <= after:

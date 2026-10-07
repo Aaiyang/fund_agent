@@ -1,10 +1,10 @@
-"""定投计划: state the schedule once, then settle whatever has come due.
+"""定投计划：周期声明一次，之后把已经到期的各期结算出来.
 
-The platform is what actually debits the money, so a plan is the user's own
-declaration rather than something this app observes. Settling writes ordinary
-purchase rows priced on each due day's NAV, which keeps the holding's ledger
-the single source for 份额 and 成本 — and keeps a plan the user paused at the
-platform from being silently wrong here, because he edits the plan.
+真正扣钱的是平台，所以计划是用户自己的声明，不是这个应用观察到的事实。
+结算写的是普通的买入流水，按每个扣款日当天的净值定价，
+这样持仓的流水账本仍然是 份额 和 成本 的唯一来源 ——
+也避免了用户在平台那边暂停计划之后，这边的数据悄悄错下去，
+因为是他自己来改这条计划。
 """
 
 from datetime import date, timedelta
@@ -23,28 +23,28 @@ from app.services.portfolio_service import (
 )
 from app.utils.clock import business_today
 
-# How far ahead the form looks for the next debit day.
+# 表单往前找下一个扣款日时，最多看这么远。
 _LOOKAHEAD_DAYS = 120
 _WEEK_DAYS = 7
 
 
 class PlanInputError(Exception):
-    """The schedule contradicts itself, e.g. 每周 with a day-of-month."""
+    """周期设置自相矛盾，例如 每周 却给了一个"每月几号"的扣款日."""
 
 
 class PlanNotFoundError(Exception):
-    """The plan does not exist or belongs to another user."""
+    """计划不存在，或者属于其他用户."""
 
 
 class AutoInvestService:
-    """Async operations for standing purchase plans."""
+    """定期定额买入计划的异步操作."""
 
     async def list_plans(self, user_id: int, account_id: int | None = None) -> tuple[list[AutoInvestPlanItem], int]:
-        """Every plan, caught up to today first.
+        """返回全部计划，并且先把它们结算到今天.
 
-        Reading is what settles a plan: the worker is not always running, and a
-        plan that is only ever settled by a schedule would silently fall behind
-        on a machine where nobody started it.
+        读取这个动作本身就负责结算：worker 不一定一直在跑，
+        只靠定时任务结算的计划，
+        在没人启动它的机器上会悄悄落后于日期。
         """
         plans = await auto_invest_repository.list_plans(user_id, account_id)
         settled = 0
@@ -66,7 +66,7 @@ class AutoInvestService:
         start_date: date,
         end_date: date | None,
     ) -> AutoInvestPlanItem:
-        """Add a plan after checking the account and the schedule's own shape."""
+        """校验过账户归属、以及周期本身是否自洽之后，新增一条计划."""
         await portfolio_service.ensure_account(user_id, account_id)
         self._check(frequency, run_day, start_date, end_date)
         plan = await auto_invest_repository.create_plan(
@@ -93,7 +93,7 @@ class AutoInvestService:
         end_date: date | None = None,
         active: bool | None = None,
     ) -> AutoInvestPlanItem:
-        """Change the schedule. Installments already written are left alone."""
+        """修改周期。已经写出去的各期流水不动."""
         current = await auto_invest_repository.get_plan(user_id, plan_id)
         if current is None:
             raise PlanNotFoundError(f"auto invest plan {plan_id} not found")
@@ -111,11 +111,11 @@ class AutoInvestService:
         return await self._item(updated)
 
     async def delete_plan(self, user_id: int, plan_id: int, with_orders: bool = False) -> bool:
-        """Remove a plan, and optionally every installment it wrote.
+        """删除计划，可以顺带删掉它写下的每一期流水.
 
-        Deleting the plan alone leaves its purchases in the ledger — they are
-        money that really moved. ``with_orders`` is the undo path for a plan
-        created by mistake: it drops those rows and re-projects the holding.
+        只删计划的话，它买出来的流水还留在账本里 —— 那是真花出去的钱。
+        ``with_orders`` 是给误建计划准备的撤销路径：
+        删掉那些流水，再把持仓重新投影一遍。
         """
         current = await auto_invest_repository.get_plan(user_id, plan_id)
         if current is None:
@@ -133,7 +133,7 @@ class AutoInvestService:
         return deleted
 
     async def _settle(self, plan: AutoInvestPlan) -> int:
-        """Write every installment the plan is due for, oldest first."""
+        """把计划欠下的各期流水，按时间从早到晚全部写出来."""
         if not plan.active:
             return 0
         days = due_days(
@@ -163,8 +163,8 @@ class AutoInvestService:
                     external_ref=reference,
                 )
             except (NavNotPublishedError, TradeInputError) as error:
-                # A fund NAV publishes after the close, so today's debit simply
-                # is not priceable yet; the next read picks it up again.
+                # 基金净值要收盘之后才公布，所以今天这期还算不出价格；
+                # 下一次读取时会重新结算到它。
                 logger.info(
                     "auto_invest_installment_deferred",
                     plan_id=plan.id,
@@ -180,11 +180,11 @@ class AutoInvestService:
 
     @staticmethod
     def _check(frequency: Frequency, run_day: int, start_date: date, end_date: date | None) -> None:
-        """Reject a schedule that cannot be read unambiguously.
+        """拒绝无法唯一解读的周期设置.
 
         Raises:
-            PlanInputError: a weekday outside 1-7 on a weekly plan, or an end
-                date before the plan starts. 每天 has no day to name at all.
+            PlanInputError: 周定投给了 1-7 之外的星期，
+                或者结束日期早于开始日期。每天 本来就不需要指定哪一天。
         """
         if frequency not in ("daily", "monthly") and run_day > _WEEK_DAYS:
             raise PlanInputError(f"{frequency} 定投的扣款日要在 1-7 之间（周一到周日）")
@@ -192,7 +192,7 @@ class AutoInvestService:
             raise PlanInputError("结束日期不能早于开始日期")
 
     async def _item(self, plan: AutoInvestPlan) -> AutoInvestPlanItem:
-        """Map a plan to its response, with the next debit day worked out."""
+        """把计划映射成响应，并算出下一个扣款日."""
         fund = await fund_repository.get_fund(plan.fund_code)
         return AutoInvestPlanItem(
             id=plan.id or 0,
@@ -211,7 +211,7 @@ class AutoInvestService:
 
     @staticmethod
     def _next_due(plan: AutoInvestPlan) -> date | None:
-        """The next scheduled day after today, or None once the plan is done."""
+        """今天之后的下一个应付日；计划已经走完时返回 None."""
         if not plan.active:
             return None
         today = business_today()

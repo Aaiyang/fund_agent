@@ -14,7 +14,7 @@ type DraftRow = { query: string; code: string | null; name: string | null; marke
 
 const EMPTY_ROW: DraftRow = { query: '', code: null, name: null, market_value: '', profit_loss: '' };
 
-/** Manual batch entry: parsed into a draft, confirmed on the review page. */
+/** 手动批量录入：先解析成草稿，再跳到审阅页逐条确认。 */
 export default function ManualImportScreen() {
   const accounts = useAccounts();
   const create = useCreateManualImport();
@@ -22,8 +22,8 @@ export default function ManualImportScreen() {
   const [accountId, setAccountId] = useState<number | null>(null);
   const [rows, setRows] = useState<DraftRow[]>([EMPTY_ROW]);
   const [problem, setProblem] = useState<string | null>(null);
-  // The account selected in the top nav is the import target; a pick made here
-  // only rewrites this form, and 全部账户 has no target of its own.
+  // 顶部导航选中的账户就是导入目标；这里另选的账户只改写本表单，
+  // 而“全部账户”视图本身不是合法的导入目标。
   const chosen = accountId ?? viewAccount ?? accounts.data?.items[0]?.id ?? null;
 
   function updateRow(index: number, patch: Partial<DraftRow>) {
@@ -43,8 +43,8 @@ export default function ManualImportScreen() {
     }
     const positions: ManualPosition[] = filled.map((row) => {
       const query = row.query.trim();
-      // A picked suggestion carries the exact code; free text is routed by
-      // shape so the backend resolver gets it as code or as name.
+      // 从联想建议里选中的项自带精确代码；纯手输则按形态分流，
+      // 保证后端解析器拿到的要么是代码要么是名称。
       const digits = /^\d{6}$/.test(query);
       return {
         fund_code: row.code ?? (digits ? query : null),

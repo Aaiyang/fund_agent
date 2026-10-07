@@ -1,4 +1,4 @@
-"""Watchlist API schemas."""
+"""自选 API 的 schema."""
 
 from datetime import date
 
@@ -8,9 +8,9 @@ from app.schemas.base import BaseResponse, clean_required_text
 
 
 class WatchlistFundItem(BaseModel):
-    """One watchlisted fund with market data and relationship flags.
+    """一只自选基金，带行情数据与关系标记.
 
-    All `*_return` fields are percent points (2.2 means +2.2%).
+    所有 `*_return` 字段的单位都是百分点（2.2 即 +2.2%）。
     """
 
     fund_code: str
@@ -32,28 +32,28 @@ class WatchlistFundItem(BaseModel):
 
 
 class WatchlistResponse(BaseResponse):
-    """GET /watchlist response."""
+    """GET /watchlist 响应体."""
 
     items: list[WatchlistFundItem]
     total: int
 
 
 class WatchlistAddRequest(BaseModel):
-    """POST /watchlist request."""
+    """POST /watchlist 请求体."""
 
     fund_code: str = Field(min_length=5, max_length=12)
     group_ids: list[int] = Field(default_factory=list)
 
 
 class WatchlistUpdateRequest(BaseModel):
-    """PATCH /watchlist/{fund_code} request."""
+    """PATCH /watchlist/{fund_code} 请求体."""
 
     sort_order: int | None = None
     group_ids: list[int] | None = None
 
 
 class WatchlistGroupItem(BaseModel):
-    """One watchlist group."""
+    """一个自选分组."""
 
     id: int
     name: str
@@ -62,14 +62,14 @@ class WatchlistGroupItem(BaseModel):
 
 
 class WatchlistGroupsResponse(BaseResponse):
-    """GET /watchlist/groups response."""
+    """GET /watchlist/groups 响应体."""
 
     items: list[WatchlistGroupItem]
     total: int
 
 
 class WatchlistGroupCreateRequest(BaseModel):
-    """POST /watchlist/groups request."""
+    """POST /watchlist/groups 请求体."""
 
     name: str = Field(min_length=1, max_length=100)
     sort_order: int = 0
@@ -81,7 +81,7 @@ class WatchlistGroupCreateRequest(BaseModel):
 
 
 class WatchlistGroupUpdateRequest(BaseModel):
-    """PATCH /watchlist/groups/{group_id} request."""
+    """PATCH /watchlist/groups/{group_id} 请求体."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sort_order: int | None = None

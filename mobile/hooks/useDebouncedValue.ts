@@ -1,4 +1,4 @@
-/** Hold a value back until typing stops, for anything that costs a request. */
+/** 把值的更新压到停止输入之后，供那种动一下就发一次请求的场景用。 */
 
 import { useEffect, useState } from 'react';
 

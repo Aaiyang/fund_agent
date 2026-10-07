@@ -1,4 +1,4 @@
-"""Calendar helpers: one clock for timestamps, one for business dates."""
+"""日历工具：同一份时间戳时钟与业务日期时钟，各自负责一件事."""
 
 from datetime import date
 
@@ -10,7 +10,7 @@ from app.utils.clock import NAV_RANGE_MONTHS, range_start
 
 class TestNavRanges:
     def test_range_names_match_the_api_contract(self) -> None:
-        """The Literal in the API schema and the math table must not drift."""
+        """API schema 里的 Literal 取值和换算表 NAV_RANGE_MONTHS 必须对齐，任一处改动都要同步改另一处."""
         assert set(NAV_RANGE_MONTHS) == set(NavRange.__args__)
 
     def test_all_reaches_back_to_inception(self) -> None:
@@ -33,7 +33,7 @@ class TestNavRanges:
         assert range_start("3m", date(2026, 2, 10)) == date(2025, 11, 10)
 
     def test_clamps_to_a_day_that_exists_in_the_target_month(self) -> None:
-        # 31 Aug minus 6 months has no 31 February
+        # 8 月 31 日往回推 6 个月本该落在 2 月 31 日，而 2 月没有这一天
         assert range_start("6m", date(2026, 8, 31)) == date(2026, 2, 28)
 
     def test_unknown_range_raises(self) -> None:

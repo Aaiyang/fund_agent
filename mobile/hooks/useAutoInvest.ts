@@ -1,4 +1,4 @@
-/** 定投计划: the schedule itself and the installments it settles (spec 3.8). */
+/** 定投计划：周期扣款排期本身，以及它已结算的各期（spec 3.8）。 */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -9,16 +9,15 @@ import type { components } from '@/api/schema';
 export type AutoInvestPlan = components['schemas']['AutoInvestPlanItem'];
 
 /**
- * Listing plans is what settles them: the backend writes every installment
- * that came due since the last read, so a plan stays current even when no
- * worker process is running.
+ * 列出计划本身就是结算：后端会把自上次读取以来所有到期的期数补记入账，
+ * 这样即便没有后台 worker 进程在跑，计划也不会落后于实际。
  */
 export function useAutoInvestPlans(accountId: number | null) {
   const client = useQueryClient();
   return useQuery({
     queryKey: [...queryKeys.autoInvest, accountId] as const,
-    // Reading settles the plans, so the money views have to be refreshed from
-    // inside the fetch — doing it during render would fire on every repaint.
+    // 读取顺带结算计划，所以金额相关的视图必须在这次 fetch 内部就刷新
+    // ——放到渲染阶段做，每次重绘都会触发一遍。
     queryFn: async () => {
       const data = await api.get<components['schemas']['AutoInvestPlansResponse']>('/auto-invest/plans', {
         account_id: accountId,

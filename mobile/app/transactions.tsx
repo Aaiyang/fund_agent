@@ -20,10 +20,10 @@ const TYPE_LABEL: Record<string, string> = {
   MANUAL_ADJUSTMENT: '手工修正',
 };
 
-// Rows that add up to a holding, as opposed to the audit trail of a snapshot.
+// 这些类型是累计成持仓的流水，与快照覆盖留下的审计记录相对。
 const TRADES = ['BUY', 'SELL', 'AUTO_INVEST', 'CONVERT_IN', 'CONVERT_OUT', 'OPENING'];
 
-/** Transaction and adjustment history (spec 3.8). */
+/** 交易与调整的历史记录（spec 3.8）。 */
 export default function TransactionsScreen() {
   const params = useLocalSearchParams<{ fund_code?: string; account_id?: string }>();
   const uiAccount = useUiStore((state) => state.accountId);

@@ -1,8 +1,8 @@
-"""Benchmark index series and the listed-instrument analysis feed.
+"""业绩比较基准指数序列，以及上市品种的分析行情.
 
-Index closes live in PostgreSQL and are backfilled on read; the market screen is
-fetched through on every visit because a quote nobody asked for is a quote
-nobody looked at, and the tables would only drift.
+指数收盘价存在 PostgreSQL，读取时按需回填；行情页每次访问都穿透抓取 ——
+没人查询的行情就等于没人看过，
+把这些行存下来只会让表里的数据慢慢跑偏。
 """
 
 from datetime import date, timedelta
@@ -39,9 +39,9 @@ from app.schemas.market import (
 )
 from app.utils.clock import business_today, range_start
 
-# The picker's fixed catalog. Codes are looked up here before reaching AKShare,
-# so no caller-controlled string is ever passed to the third-party client.
-# Order is the home tape's order: the two broad market gauges first.
+# 选择器用的固定目录。代码先在这里查，再决定是否访问 AKShare，
+# 所以调用方可控的字符串永远不会传进第三方客户端。
+# 顺序就是首页行情的顺序：两个大盘宽基指数排在最前。
 BENCHMARK_INDEXES: dict[str, str] = {
     "sh000001": "上证指数",
     "sz399001": "深证成指",
@@ -50,41 +50,41 @@ BENCHMARK_INDEXES: dict[str, str] = {
     "sh000012": "国债指数",
 }
 
-# Public series that moves once a day: one provider pull per index per window.
+# 每天只动一次的公开序列：每个指数在每个窗口内只抓一次数据源。
 _SYNC_TTL_SECONDS = 6 * 3600
 _STALE_DAYS = 3
-# Long enough to always hold two trading days, including a holiday stretch.
+# 留得足够长，即使遇上连休也能拿到两个交易日的收盘。
 _QUOTE_LOOKBACK_DAYS = 20
 
-# How often each market-screen piece is worth re-asking the feed for. Bars move
-# once a day, the snapshot and minute line move all session.
+# 行情页各块数据值得隔多久重新抓一次。K线一天只动一次，
+# 快照和分时线则整个盘中都在动。
 _SYMBOL_QUOTE_TTL_SECONDS = 30
 _SYMBOL_INTRADAY_TTL_SECONDS = 60
 _SYMBOL_HISTORY_TTL_SECONDS = 600
 _COMPANY_TTL_SECONDS = 24 * 3600
-# Trading sessions behind each named range, used to size the bar request.
+# 每个命名区间大致包含多少个交易日，用来决定 K线要请求多少根。
 _TRADING_DAYS: dict[str, int] = {"1m": 22, "3m": 63, "6m": 126, "1y": 250, "3y": 750, "all": 1200}
-# How many trading days one bar of each period stands for.
+# 每个周期的每根 K线代表多少个交易日。
 _TRADING_DAYS_PER_BAR: dict[MarketPeriod, int] = {"day": 1, "week": 5, "month": 21}
-# Daily bars to pull when looking for the close before the five-day window:
-# seven calendar days back is at most a handful of sessions, holidays included.
+# 找五日窗口起点之前那个收盘价时，要拉多少根日线：
+# 往回七个自然日最多也就几个交易日，把节假日也算进去了。
 _BASELINE_BARS = 15
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class MarketService:
-    """Reads benchmark closes and tops them up from the provider on demand."""
+    """读取基准指数收盘价，已存的数据不够时按需从数据源补齐."""
 
     def catalog(self) -> list[IndexCatalogItem]:
-        """Selectable benchmarks, in picker order."""
+        """可供选择的业绩比较基准，按选择器里的顺序."""
         return [IndexCatalogItem(index_code=code, name=name) for code, name in BENCHMARK_INDEXES.items()]
 
     async def get_history(self, index_code: str, range_key: NavRange) -> IndexHistoryResponse | None:
-        """Closes plus the window's cumulative change for one benchmark.
+        """某个基准的收盘价序列，以及该区间内的累计涨跌幅.
 
         Returns:
-            The series, or None when `index_code` is not a known benchmark.
+            序列数据；`index_code` 不是已知的基准时返回 None。
         """
         name = BENCHMARK_INDEXES.get(index_code)
         if name is None:
@@ -105,11 +105,11 @@ class MarketService:
         )
 
     async def get_quotes(self) -> list[IndexQuoteItem]:
-        """Latest close and day change for every catalog index, picker order.
+        """目录里每个指数的最新收盘价和当日涨跌，按选择器顺序返回.
 
-        The tape is public data with no per-user part, so it is safe to serve
-        from the same stored series the chart uses; a cold index just pays one
-        provider pull here as it would on the fund page.
+        行情是公开数据，没有任何按用户的部分，
+        所以用图表读的那份落库序列来供也无妨；
+        某个指数没缓存，就在这里多付一次抓取，跟基金页一样。
         """
         today = business_today()
         start = today - timedelta(days=_QUOTE_LOOKBACK_DAYS)
@@ -130,10 +130,10 @@ class MarketService:
         return quotes
 
     async def get_symbol_quote(self, symbol: str) -> SymbolQuoteResponse | None:
-        """Snapshot of one listed instrument, or None for an unusable code.
+        """单个上市品种的行情快照；代码不可用时返回 None.
 
-        The code is canonicalized through a shape whitelist before it reaches the
-        feed, so an unvalidated string can never be interpolated into a request.
+        代码在进数据源之前会先按格式白名单归一化，
+        所以未经校验的字符串绝不会被拼进请求里。
         """
         canonical = tencent_symbol(symbol)
         if canonical is None:
@@ -157,7 +157,7 @@ class MarketService:
     async def get_symbol_history(
         self, symbol: str, period: MarketPeriod, range_key: NavRange
     ) -> SymbolHistoryResponse | None:
-        """Adjusted bars for one instrument, trimmed to the requested window."""
+        """单个品种复权后的 K线，按请求的区间裁剪."""
         canonical = tencent_symbol(symbol)
         if canonical is None:
             logger.info("market_symbol_rejected", symbol=symbol)
@@ -188,9 +188,9 @@ class MarketService:
         return response
 
     async def get_symbol_intraday(self, symbol: str, five_day: bool = False) -> SymbolIntradayResponse | None:
-        """The minute line for this session, or for the last five stitched.
+        """本日的分时线，或者把最近五日拼在一起的分时线.
 
-        Empty outside trading hours for markets the feed has no history for.
+        数据源没有历史的那些市场，非交易时段返回空。
         """
         canonical = tencent_symbol(symbol)
         if canonical is None:
@@ -222,11 +222,11 @@ class MarketService:
         return response
 
     async def _close_before(self, symbol: str, day: date | None) -> float | None:
-        """The last close ahead of `day`, which is what a 五日 chart measures from.
+        """`day` 之前最后一个交易日的收盘价，五日图正是拿它当基准.
 
-        The five-session reply carries no baseline of its own. Missing it is not
-        an error: the chart then scales to the data instead of drawing a flat
-        reference line.
+        五日的回复本身不带基准值。取不到也不算错误：
+        这时图表改成按数据自身缩放，
+        而不是画一条平直的基准线。
         """
         if day is None:
             return None
@@ -239,11 +239,11 @@ class MarketService:
         return earlier[-1] if earlier else None
 
     async def get_symbol_company(self, symbol: str) -> SymbolCompanyResponse | None:
-        """Company master data. A missing record is a hidden card, not an error.
+        """公司主数据。查不到只是把这张卡片藏起来，不是错误.
 
-        This is the one piece served by Eastmoney rather than the quote feed, and
-        that host answers intermittently from here, so a failure is logged and
-        reported as "no profile" instead of taking the chart down with it.
+        这一块是唯一来自东方财富而不是行情数据源的，
+        而从这里访问它是时断时续的，所以失败只记日志、
+        按"没有资料"返回，不连带把图表一起弄挂。
         """
         canonical = tencent_symbol(symbol)
         if canonical is None:
@@ -262,13 +262,13 @@ class MarketService:
             company = None
 
         response = SymbolCompanyResponse(symbol=canonical, company=company)
-        # Only a real record is worth holding; a miss should be retried next time.
+        # 只有真正查到的记录才值得留着；没查到的下次要重试。
         if company is not None:
             await _write_cache(key, response, _COMPANY_TTL_SECONDS)
         return response
 
     async def _ensure_stored(self, index_code: str, start: date | None, today: date) -> None:
-        """Pull the full daily series when what is stored cannot serve the range."""
+        """已存的数据撑不起请求区间时，拉一次完整的日线序列."""
         coverage = await index_repository.get_coverage(index_code)
         if coverage is not None and _covers(coverage, start, today):
             return
@@ -284,33 +284,33 @@ class MarketService:
             else:
                 logger.warning("index_history_empty", index_code=index_code)
         except Exception as e:
-            # A read must not 500 because the benchmark source is unhappy:
-            # serve whatever is already stored, and let the next request retry.
+            # 基准数据源出问题不能把一次读请求变成 500：
+            # 库里有什么就先给什么，把重试留给下一个请求。
             logger.warning("index_history_sync_failed", index_code=index_code, error=str(e))
             await cache_service.release_lock(lock_key)
 
 
 def _daily_change(closes: list[float]) -> float | None:
-    """Close-to-close change of the last two sessions, in percent points."""
+    """最近两个交易日收盘之间的涨跌幅，单位是百分点."""
     if len(closes) < 2 or not closes[-2]:
         return None
     return round((closes[-1] - closes[-2]) / closes[-2] * 100, 4)
 
 
 def _bar_count(period: MarketPeriod, range_key: NavRange) -> int:
-    """Bars to request so the window is covered without fetching a decade."""
+    """请求多少根 K线：既覆盖住整个区间，又不至于多取十年的数据."""
     per_bar = _TRADING_DAYS_PER_BAR[period]
     days = _TRADING_DAYS[range_key]
     return days if per_bar == 1 else max(days // per_bar, 6)
 
 
 def _bars_change(bars: list[CandleExternalBar]) -> float | None:
-    """Cumulative close-to-close change across the returned bars."""
+    """跨返回的这些 K线，收盘对收盘的累计涨跌幅."""
     return _window_change([IndexPoint(trade_date=bar.trade_date, close=bar.close) for bar in bars])
 
 
 async def _read_cache(key_parts: tuple[str, ...], model: type[ModelT]) -> ModelT | None:
-    """Serve a stored response, treating a bad record as a miss."""
+    """读出缓存里的响应；记录读坏了就当作未命中."""
     raw = await cache_service.get(cache_key(*key_parts))
     if not raw:
         return None
@@ -326,7 +326,7 @@ async def _write_cache(key_parts: tuple[str, ...], model: BaseModel, ttl: int) -
 
 
 def _covers(coverage: tuple[date, date], start: date | None, today: date) -> bool:
-    """True when the stored series spans the requested window and is recent."""
+    """落库序列覆盖了请求区间、而且还不算陈旧时返回 True."""
     earliest, latest = coverage
     if start is not None and earliest > start:
         return False
@@ -334,7 +334,7 @@ def _covers(coverage: tuple[date, date], start: date | None, today: date) -> boo
 
 
 def _window_change(points: list[IndexPoint]) -> float | None:
-    """Cumulative close-to-close change across the returned window."""
+    """返回区间内收盘对收盘的累计涨跌幅."""
     if len(points) < 2:
         return None
     series = [NavPoint(date=point.trade_date, nav=point.close) for point in points]

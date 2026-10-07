@@ -1,4 +1,4 @@
-"""Accounts API endpoints."""
+"""账户（资产组合）API 端点."""
 
 from fastapi import (
     APIRouter,
@@ -29,7 +29,7 @@ async def list_accounts(
     request: Request,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountsResponse:
-    """List the user's portfolio accounts with import status."""
+    """列出用户名下的账户，附带各自的导入状态."""
     items = await portfolio_service.list_accounts(identity.user_id)
     return AccountsResponse(items=items, total=len(items))
 
@@ -41,7 +41,7 @@ async def create_account(
     payload: AccountCreateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountItem:
-    """Create a portfolio account; the name must be new for this user."""
+    """新建账户，账户名在该用户下必须尚未被占用."""
     try:
         return await portfolio_service.create_account(
             identity.user_id, payload.name, payload.source_app, payload.account_type, payload.import_mode
@@ -57,7 +57,7 @@ async def get_account(
     account_id: int,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountItem:
-    """Get one account with its latest import status."""
+    """查询单个账户，含其最近一次导入状态."""
     accounts = await portfolio_service.list_accounts(identity.user_id)
     for account in accounts:
         if account.id == account_id:
@@ -73,7 +73,7 @@ async def update_account(
     payload: AccountUpdateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AccountItem:
-    """Rename an account or change its source label."""
+    """修改账户名称或来源标签."""
     try:
         updated = await portfolio_service.update_account(
             identity.user_id, account_id, payload.name, payload.source_app
@@ -92,7 +92,7 @@ async def delete_account(
     account_id: int,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> dict[str, str]:
-    """Delete an account and its positions / transactions / import records."""
+    """删除账户，并连带删除其持仓、流水与导入记录."""
     deleted = await portfolio_service.delete_account(identity.user_id, account_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="account_not_found")

@@ -1,4 +1,4 @@
-"""Holding import contracts: payload, draft, provider protocol."""
+"""持仓导入的契约：输入载荷、草稿条目、provider 协议."""
 
 from typing import Protocol, runtime_checkable
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class ManualPositionInput(BaseModel):
-    """One manually entered holding row."""
+    """一条手动录入的持仓."""
 
     fund_code: str | None = Field(default=None, max_length=12)
     fund_name: str | None = Field(default=None, max_length=200)
@@ -19,7 +19,7 @@ class ManualPositionInput(BaseModel):
 
 
 class HoldingImportPayload(BaseModel):
-    """Provider input: manual rows and/or screenshot image paths."""
+    """provider 的输入：手动录入的持仓行，和/或截图的本地文件路径."""
 
     account_id: int
     manual_positions: list[ManualPositionInput] = Field(default_factory=list)
@@ -27,10 +27,10 @@ class HoldingImportPayload(BaseModel):
 
 
 class RawExtractedPosition(BaseModel):
-    """One position extracted from a screenshot, pre-resolution.
+    """从截图里抽出的一条持仓，还没做基金解析.
 
-    Every field is optional — screenshots vary wildly in what they show
-    (MVP spec 3.7.2). Confidence is per-item (0.0–1.0).
+    每个字段都可能为空——各家 App 截图展示的字段差别很大（MVP spec 3.7.2）。
+    confidence 是逐条打的（0.0–1.0）。
     """
 
     fund_name: str | None = None
@@ -42,14 +42,14 @@ class RawExtractedPosition(BaseModel):
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
     daily_profit_loss: float | None = None
-    # The app clipped the name with an ellipsis: it will not match a fund
-    # exactly, and the review page should show candidates rather than one guess.
+    # 名称被 App 用省略号截断了：这种名称不可能精确匹配到某只基金，
+    # 复核页要给出候选，而不是替用户猜一个。
     truncated: bool = False
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class DraftPositionItem(BaseModel):
-    """One normalized draft row awaiting user confirmation."""
+    """一条归一化后等待用户确认的草稿行."""
 
     raw_fund_name: str | None = None
     matched_fund_code: str | None = None
@@ -60,8 +60,8 @@ class DraftPositionItem(BaseModel):
     average_cost_nav: float | None = None
     profit_loss: float | None = None
     profit_loss_rate: float | None = None
-    # Carried from the screenshot: the app clipped this name with an ellipsis,
-    # so the row is only trustworthy once he has picked the fund himself.
+    # 从截图一路带过来的标记：名称被 App 用省略号截断过，所以只有用户
+    # 自己把基金挑定，这一行才可信。
     truncated: bool = False
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     validation_status: str = "valid"
@@ -69,7 +69,7 @@ class DraftPositionItem(BaseModel):
 
 
 class HoldingImportDraft(BaseModel):
-    """Unified parse result from any provider: rows + stats + error."""
+    """任何 provider 的统一解析结果：草稿行 + 统计 + 错误信息."""
 
     items: list[DraftPositionItem] = Field(default_factory=list)
     image_count: int = 0
@@ -79,8 +79,8 @@ class HoldingImportDraft(BaseModel):
 
 @runtime_checkable
 class HoldingImportProvider(Protocol):
-    """Convert a raw payload into a pending draft — never writes holdings."""
+    """把原始载荷转成待确认草稿——绝不写持仓."""
 
     async def parse(self, payload: HoldingImportPayload) -> HoldingImportDraft:
-        """Parse the payload into a draft for review."""
+        """把载荷解析成供复核的草稿."""
         ...

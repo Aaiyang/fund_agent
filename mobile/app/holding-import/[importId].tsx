@@ -20,7 +20,7 @@ const ISSUE_LABEL: Record<string, string> = {
   profit_and_rate_disagree: '收益与收益率一正一负',
 };
 
-/** Review + confirm an import batch. Nothing is written until confirm (spec 3.7). */
+/** 审阅并确认一个导入批次。用户点击确认之前不会写入任何数据（spec 3.7）。 */
 export default function ImportReviewScreen() {
   const { importId } = useLocalSearchParams<{ importId: string }>();
   const detail = useImportDetail(importId ?? null);
@@ -70,8 +70,8 @@ export default function ImportReviewScreen() {
                 <Card>
                   <Button
                     label={`确认导入 ${
-                      // Mirrors confirm_import's rule: an error row defaults to
-                      // SKIP, and an unmatched row can never be applied.
+                      // 与后端 confirm_import 的口径一致：校验出错的行默认按 SKIP，
+                      // 未匹配到基金的行永远不可能被写入。
                       (batch.items ?? []).filter(
                         (item) =>
                           !!item.matched_fund_code &&
@@ -152,8 +152,8 @@ function ItemCard({
       </Text>
       <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
         {item.matched_fund_code ?? '无代码'} · 置信度 {typeof item.confidence === 'number' ? `${Math.round(item.confidence * 100)}%` : '--'}
-        {/* The title is the fund's own name; this is what the screenshot printed,
-            kept so a fuzzy match can be checked without leaving the page. */}
+        {/* 标题显示的是基金自身的名称；这里拼的是截图上打印的原始文字，
+            保留它是为了不用离开页面就能核对模糊匹配的结果。 */}
         {item.matched_fund_name && item.raw_fund_name && item.matched_fund_name !== item.raw_fund_name
           ? ` · 截图 ${item.raw_fund_name}`
           : ''}
@@ -161,8 +161,8 @@ function ItemCard({
     </>
   );
 
-  // Once the batch is applied the server rejects any further edit, so the card
-  // stops pretending it can be one: what was written is shown, nothing else.
+  // 批次一旦生效，服务端会拒绝任何后续修改，卡片就不再假装还能编辑：
+  // 只展示已写入的内容，编辑控件一概不给。
   if (!editable) {
     return (
       <Card>
@@ -188,9 +188,9 @@ function ItemCard({
         </View>
       ) : null}
 
-      {/* A screenshot rarely prints the code, and one name covers the A/C share
-          classes of the same fund — which of them he holds is his fact, so the
-          pick is offered rather than guessed. */}
+      {/* 截图上很少印出基金代码，而同一个名称往往同时覆盖同一只基金的 A/C 份额——
+          用户持有的到底是哪一类只有他自己知道，所以这里列出候选让他挑，
+          而不是替他猜。 */}
       {!item.matched_fund_code && (item.candidates ?? []).length > 0 ? (
         <View style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 6 }}>选一只</Text>
@@ -221,10 +221,10 @@ function ItemCard({
         </View>
       </View>
 
-      {/* The screenshot's own right-hand column: 持有收益 and its rate. Both are
-          shown so a misread is visible here — the rate is the one figure the
-          import does not store (成本 = 金额 − 收益 afterwards), so a gap between
-          it and the app's number is a real difference, not a lost field. */}
+      {/* 截图右侧那一列本来就是持有收益和它的收益率。两个都展示出来，
+          识别出错在这里就能看出来——收益率是导入流程唯一不落库的数字
+          （之后按 成本 = 金额 − 收益 反推），所以它与应用算出的数不一致时，
+          说明是真实的差异，而不是字段丢了。 */}
       <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 8 }}>
         持有收益 {formatSignedMoney(item.profit_loss)} · 持有收益率 {formatReturnPoints(item.profit_loss_rate)}
       </Text>

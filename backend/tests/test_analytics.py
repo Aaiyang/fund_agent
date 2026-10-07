@@ -1,4 +1,4 @@
-"""Deterministic analytics must never be delegated to the LLM (spec 5.2)."""
+"""确定性的金融计算绝不能交给 LLM 去做（spec 5.2）."""
 
 import math
 import statistics
@@ -13,14 +13,14 @@ START = date(2026, 1, 1)
 
 
 def _series(navs: list[float], start: date = START) -> list[NavPoint]:
-    """Build a daily ascending NAV series."""
+    """按天构造一条升序的净值序列."""
     return [NavPoint(date=start + timedelta(days=index), nav=nav) for index, nav in enumerate(navs)]
 
 
 class TestRangeReturn:
     def test_uses_nearest_nav_on_or_before_each_boundary(self) -> None:
         points = _series([1.0, 1.1, 1.2])
-        # The end boundary falls on a non-trading day: the closest earlier row wins
+        # 结束边界落在非交易日上：取日期不晚于边界的那条最近记录
         assert range_return(points, points[0].date, points[2].date + timedelta(days=3)) == pytest.approx(0.2)
 
     def test_none_when_series_is_too_short(self) -> None:
@@ -39,12 +39,11 @@ class TestPeriodReturn:
     def test_month_is_treated_as_30_44_days(self) -> None:
         points = _series([1.0] + [1.0] * 30 + [1.5])
         end = points[-1].date
-        # 30.44-day window from `end` starts 2 days after the first point
+        # 从 `end` 往回推 30.44 天的窗口，起点落在第一个点之后 2 天
         assert period_return(points, end, 1) == pytest.approx(0.5)
 
     def test_window_length_uses_30_44_days_per_month(self) -> None:
-        # Only the very first row is cheap: a 12-month window (365 days) reaches
-        # it, an 11-month window (334 days) does not.
+        # 只有第一行是低净值：12 个月窗口（365 天）能回溯到它，11 个月窗口（334 天）回溯不到。
         points = _series([1.0] + [3.0] * 365)
         end = points[-1].date
         assert period_return(points, end, 12) == pytest.approx(2.0)
@@ -53,7 +52,7 @@ class TestPeriodReturn:
 
 class TestWindowReturn:
     def test_window_length_is_exactly_the_given_days(self) -> None:
-        # Only day 0 is cheap: a 7-day window reaches it, a 6-day window does not
+        # 只有第 0 天是低净值：7 天窗口覆盖得到它，6 天窗口覆盖不到
         points = _series([1.0] + [3.0] * 7)
         end = points[-1].date
         assert window_return(points, end, 7) == pytest.approx(2.0)

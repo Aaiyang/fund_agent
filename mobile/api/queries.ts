@@ -1,6 +1,6 @@
 /**
- * Query-key factory. Keys are the single source of truth for invalidation:
- * every mutation invalidates the widest prefix it can justify.
+ * query key 工厂。key 是失效判定的唯一真源：每个 mutation 都去失效
+ * 它能站得住脚的最宽前缀。
  */
 
 export const queryKeys = {

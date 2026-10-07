@@ -1,7 +1,7 @@
-"""In-memory lock behaviour.
+"""内存实现的锁行为.
 
-The Redis path is guarded by its compare-and-delete script, which needs a live
-server to exercise.
+Redis 那条路径由 compare-and-delete 脚本保证原子性，得连上真实服务器才跑得动，
+这里覆盖不到。
 """
 
 import asyncio
@@ -29,7 +29,7 @@ def test_expired_lock_is_reclaimable() -> None:
     async def scenario() -> bool:
         cache = InMemoryCacheService()
         key = "sync:fund:012414"
-        await cache.acquire_lock(key, ttl=0)  # already expired on the next check
+        await cache.acquire_lock(key, ttl=0)  # ttl 为 0，下一次检查时锁已经过期
         return await cache.acquire_lock(key, ttl=60)
 
     assert asyncio.run(scenario()) is True, "a TTL that lapsed must not block forever"

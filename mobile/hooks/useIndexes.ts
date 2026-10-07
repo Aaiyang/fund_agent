@@ -1,4 +1,4 @@
-/** Benchmark indexes for the fund-detail comparison line (spec 3.5.3). */
+/** 基金详情页业绩对比线用的业绩比较基准指数（spec 3.5.3）。 */
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -12,7 +12,7 @@ export type IndexHistory = components['schemas']['IndexHistoryResponse'];
 
 export const DEFAULT_BENCHMARK = 'sh000300';
 
-/** The catalog is a fixed server-side list; it never changes between visits. */
+/** 目录是服务端写死的清单，任何时候来取都不会变。 */
 export function useIndexCatalog() {
   return useQuery({
     queryKey: queryKeys.indexes,
@@ -32,7 +32,7 @@ export function useIndexHistory(indexCode: string | null, range: NavRange) {
   });
 }
 
-/** Home-page market tape: closes move once a day, so 5 minutes is fresh enough. */
+/** 首页行情条：收盘价一个交易日才动一次，缓存 5 分钟已经够新鲜。 */
 export function useIndexQuotes() {
   return useQuery({
     queryKey: queryKeys.indexQuotes,

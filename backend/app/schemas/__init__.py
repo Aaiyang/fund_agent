@@ -1,4 +1,4 @@
-"""This file contains the schemas for the application."""
+"""应用各域 schema 的统一导出."""
 
 from app.schemas.auth import Token
 from app.schemas.base import BaseResponse

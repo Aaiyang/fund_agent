@@ -1,7 +1,7 @@
 /**
- * Holdings grid: the same {@link DataTable} layout as 自选, with the derived
- * holding metrics (占比/收益) as horizontally scrollable columns. The holding
- * amount stays in the fixed name column so it never scrolls out of view.
+ * 持仓表格：和自选用同一套 {@link DataTable} 布局，派生的持仓指标
+ * （占比/收益）做成可横向滚动的列。持有金额留在固定的名称列里，
+ * 永远不会被滚出视野。
  */
 
 import { DataTable, type DataColumn } from '@/components/DataTable';
@@ -24,8 +24,8 @@ const COLUMNS: DataColumn<PositionItem>[] = [
       subColor: item.is_updated ? theme.textFaint : theme.warning,
     }),
   },
-  // The same reserved slot 自选 keeps: 盘中估值 has no backend, so the column
-  // holds its place next to 最新涨幅 and says so.
+  // 与自选那边同款预留列：盘中估值还没有后端来源，这列就在最新涨幅
+  // 旁边占住位置，并注明未接入。
   { key: 'estimate', title: '预估涨幅', width: 84, cell: () => ({ text: '--', sub: '未接入' }) },
   {
     key: 'weeklyProfit',

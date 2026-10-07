@@ -1,4 +1,4 @@
-"""Every AKShare endpoint is called with keyword arguments, so they must survive the hop into the worker thread."""
+"""所有 AKShare 接口都靠关键字参数被调用，因此这些参数必须原样传到 worker 线程那一侧."""
 
 import asyncio
 import time
@@ -9,7 +9,7 @@ from app.integrations.fund_data.akshare_provider import AKShareFundProvider
 
 
 class _Frame:
-    """Minimal stand-in for the DataFrame AKShare returns."""
+    """给 AKShare 返回的 DataFrame 做一个最小可用的替身."""
 
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self._rows = rows
@@ -75,18 +75,17 @@ def _rank_provider(monkeypatch, fetch) -> tuple[AKShareFundProvider, list[str]]:
 
 
 def _age(provider: AKShareFundProvider, seconds: float) -> None:
-    """Wind the cache clocks back so a time-to-live can be exercised in a test."""
+    """把缓存的时钟往回拨，测试里才能跑到有效期已过期这条分支."""
     provider._rank_cached_at -= seconds  # noqa: SLF001
     provider._rank_attempted_at -= seconds  # noqa: SLF001
 
 
 def test_a_forced_read_refetches_the_rank_table_and_carries_accumulated_nav(monkeypatch) -> None:
-    """The on-demand refresh needs a new table; a stale read must stay cheap.
+    """按需刷新要拿到新表，而普通读取得继续保持廉价.
 
-    The batched table answers every fund in one request, so a plain read keeps
-    the long cache, while `force` — what opening 持仓 does — ignores it. A forced
-    read immediately after another is refused: two rebuilds a part cannot both
-    be worth their bandwidth.
+    那张批量表一次请求就能答复所有基金，所以普通读取沿用很长的缓存期；`force`
+    —— 打开持仓页走的就是它 —— 则绕过缓存。紧接在一次强制刷新之后再强制刷新会被
+    拒绝：两次重建挨得这么近，不可能都值回那点带宽。
     """
     provider, calls = _rank_provider(monkeypatch, lambda attempt: _rank_rows("005918", 1.5))
 
@@ -104,7 +103,7 @@ def test_a_forced_read_refetches_the_rank_table_and_carries_accumulated_nav(monk
 
 
 def test_concurrent_forced_reads_share_one_rank_table_fetch(monkeypatch) -> None:
-    """Two users opening the screen at once cost one request over every fund."""
+    """两个用户同时打开这个页面，也只付出一次覆盖全部基金的请求."""
 
     def slow(_attempt: int) -> list[dict[str, object]]:
         time.sleep(0.05)
@@ -120,7 +119,7 @@ def test_concurrent_forced_reads_share_one_rank_table_fetch(monkeypatch) -> None
 
 
 def test_a_failed_rebuild_leaves_the_previous_table_serving(monkeypatch) -> None:
-    """An outage costs one attempt per window, not one per tab focus."""
+    """上游不可用时，每个时间窗只试一次，而不是每切一次标签页就试一次."""
 
     def failing(attempt: int) -> list[dict[str, object]]:
         if attempt == 1:

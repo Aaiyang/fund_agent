@@ -14,8 +14,8 @@ const MAX_IMAGES = 5;
 const MAX_BYTES = 8 * 1024 * 1024;
 
 /**
- * Screenshot upload. The backend answers 202 + import_id and parses in a
- * worker; this screen only hands the batch over (spec 7.9).
+ * 截图上传。后端立即回 202 + import_id，识别交给后台 worker 完成；
+ * 本页只负责把这批图片提交出去（spec 7.9）。
  */
 export default function ScreenshotImportScreen() {
   const accounts = useAccounts();
@@ -25,8 +25,8 @@ export default function ScreenshotImportScreen() {
   const [images, setImages] = useState<PickedImage[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
 
-  // The account selected in the top nav is the import target; a pick made here
-  // only rewrites this form, and 全部账户 has no target of its own.
+  // 顶部导航选中的账户就是导入目标；这里另选的账户只改写本表单，
+  // 而“全部账户”视图本身不是合法的导入目标。
   const chosen = accountId ?? viewAccount ?? accounts.data?.items[0]?.id ?? null;
 
   async function pick() {

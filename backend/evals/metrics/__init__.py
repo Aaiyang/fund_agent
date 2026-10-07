@@ -1,4 +1,4 @@
-"""Metrics for evals."""
+"""评测指标集合：把 prompts/ 下的每个 .md 文件当成一个指标."""
 
 import os
 

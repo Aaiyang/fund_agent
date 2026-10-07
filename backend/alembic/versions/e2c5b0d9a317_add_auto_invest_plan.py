@@ -1,8 +1,7 @@
-"""Add the standing 定投 plan table.
+"""新增定投计划表.
 
-A plan is something the user states — 每几周/每月几号、多少钱 — so the app can
-work out which installments it was told to record and write them as ordinary
-purchases instead of asking him to tap 同步定投 every time.
+计划由用户自己声明——每几周/每月几号、投多少钱——应用据此算出用户要求记录的是哪几期，
+并把它们写成普通申购流水，而不是每次都要用户去点 同步定投。
 """
 
 from typing import Sequence, Union
@@ -17,7 +16,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create auto_invest_plan."""
+    """建出 auto_invest_plan."""
     op.create_table(
         "auto_invest_plan",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -42,7 +41,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the table."""
+    """删掉这张表."""
     op.drop_index("ix_auto_invest_plan_fund_code", table_name="auto_invest_plan")
     op.drop_index("ix_auto_invest_plan_account_id", table_name="auto_invest_plan")
     op.drop_index("ix_auto_invest_plan_user_id", table_name="auto_invest_plan")

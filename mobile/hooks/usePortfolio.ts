@@ -1,4 +1,4 @@
-/** Positions, asset summary, accounts and transactions (spec 3.2 / 3.6 / 3.8). */
+/** 持仓、资产汇总、账户与流水（spec 3.2 / 3.6 / 3.8）。 */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -12,7 +12,7 @@ export type PortfolioSummary = components['schemas']['PortfolioSummary'];
 export type AccountItem = components['schemas']['AccountItem'];
 export type TransactionItem = components['schemas']['TransactionItem'];
 
-/** Account writes change both the account list and every derived holding view. */
+/** 账户有写入，账户列表和所有派生的持仓视图都要一起失效。 */
 function invalidateAccounts(client: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.accounts }),
@@ -21,7 +21,7 @@ function invalidateAccounts(client: ReturnType<typeof useQueryClient>) {
   ]);
 }
 
-/** Position writes also append adjustment records. */
+/** 持仓写入还会附带生成调整记录。 */
 function invalidatePositions(client: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.portfolio }),
@@ -56,9 +56,8 @@ export function usePosition(accountId: number | null, fundCode: string | null) {
 export type TradeOperation = components['schemas']['TradeCreateRequest']['operation'];
 
 /**
- * What an order would do to the holding, priced on its confirm day before
- * anything is written. The arithmetic needs the NAV history, so it stays on the
- * server and the form just shows the answer.
+ * 这一单会对持仓产生什么影响：任何东西落库前，先按它的确认日定价算一遍。
+ * 这笔账要用到净值历史，所以留在服务端算，表单只负责把答案显示出来。
  */
 export function useTradePreview(input: {
   accountId: number | null;
@@ -134,9 +133,9 @@ export function useDeleteAccount() {
   return useMutation({
     mutationFn: (accountId: number) => api.del(`/accounts/${accountId}`),
     onSuccess: (_data, accountId) => {
-      // The navigation keeps a selected account, and screens now default to it.
-      // Leaving the choice pointing at a deleted id would make those screens ask
-      // the server for an account it answers 404 for.
+      // 导航层记着选中的账户，各页面现在都默认按它取数。
+      // 选中项若还指向已删除的 id，那些页面就会去问服务端一个只回
+      // 404 的账户。
       const ui = useUiStore.getState();
       if (ui.accountId === accountId) ui.setAccountId(null);
       return invalidateAccounts(client);
@@ -145,9 +144,8 @@ export function useDeleteAccount() {
 }
 
 /**
- * 同步持仓: restate what the holdings screen shows. `expected_version` is
- * required when updating an existing row; a stale version comes back as 409
- * (spec 7.11).
+ * 同步持仓：照实转述持仓页面上的数字。更新已存在的行必须带
+ * `expected_version`，版本过期会回 409（spec 7.11）。
  */
 export function useUpsertPosition() {
   const client = useQueryClient();
@@ -158,7 +156,7 @@ export function useUpsertPosition() {
   });
 }
 
-/** 加减仓: record one order. The server re-projects the holding from the ledger. */
+/** 加减仓：记一笔订单。服务端会拿流水把持仓重新投影一遍。 */
 export function useRecordTrade() {
   const client = useQueryClient();
   return useMutation({

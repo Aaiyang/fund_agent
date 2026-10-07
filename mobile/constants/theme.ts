@@ -1,5 +1,5 @@
 /**
- * App palette. Chinese market convention: gains are red, losses green.
+ * 应用调色板。按中国市场惯例：涨红跌绿。
  */
 
 export const theme = {

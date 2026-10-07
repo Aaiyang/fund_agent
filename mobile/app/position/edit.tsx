@@ -15,12 +15,11 @@ import { confirmAction } from '@/utils/confirm';
 import { formatMoney, formatNumber, formatSignedMoney, formatSignedRate, isCalendarDate, toInputNumber } from '@/utils/format';
 
 /**
- * 同步持仓: restate what a third-party holdings screen shows (spec 3.7.1).
+ * 同步持仓：把第三方持仓页上的数字转述进来（spec 3.7.1）。
  *
- * This is the snapshot path, not the trade path — no date prices anything here.
- * The three money figures are what he reads off the screen; the fourth is
- * implied by them, so the form works out whichever side he did not type and
- * shows it as a result rather than as another box.
+ * 这是快照通道、不是交易通道——这里没有任何数字按日期定价。
+ * 三个金额是用户从屏幕上直接读到的，第四个能由它们推出，所以表单
+ * 自动算出他没填的那一侧，作为结果展示，而不是再多给一个输入框。
  */
 export default function PositionEditScreen() {
   const params = useLocalSearchParams<{ code?: string; account_id?: string }>();
@@ -45,8 +44,8 @@ export default function PositionEditScreen() {
     );
   }
 
-  // Remounting when the account or stored version changes re-seeds the form,
-  // which is why no effect has to copy query data into field state.
+  // 账户或存量版本号一变就重新挂载表单、重新灌入初值，
+  // 因此不需要任何 effect 把查询数据拷进字段状态。
   return (
     <PositionForm
       key={`${accountId}-${existing.data?.version ?? 'new'}`}
@@ -79,8 +78,8 @@ function PositionForm({
   const [purchaseDate, setPurchaseDate] = useState(
     initialPurchaseDate(existing?.purchase_date, existing?.created_at ?? existing?.updated_at),
   );
-  // A ledger owns these columns, so the snapshot keeps only what it may still
-  // correct: the value on screen and the day the holding started.
+  // 有流水后这些列就归流水管，快照通道只保留它仍有权修正的两项：
+  // 屏幕上的市值，以及持仓起始的那一天。
   const traded = tradedPosition(existing);
   const [mode, setMode] = useState<'amount' | 'shares'>('amount');
   const [marketValue, setMarketValue] = useState(snapshotText(existing, 'market_value'));
@@ -101,8 +100,8 @@ function PositionForm({
     mode,
     traded,
   });
-  // With a ledger the figures he cannot edit are still the ones the trades add
-  // up to, so the card reports those rather than blanks next to his one input.
+  // 有流水时，用户改不了的数字仍由买卖流水累加得出，所以结果卡片
+  // 在他那一个输入框旁边如实展示这些值，而不是留白。
   const result = traded
     ? {
         market_value: typed.market_value ?? existing?.market_value ?? null,
@@ -114,8 +113,8 @@ function PositionForm({
       }
     : typed;
   const figures = { ...result, holding_days: days };
-  // An all-blank result card is noise: it only earns its space once a figure
-  // actually resolves, from what he typed or from the row he is editing.
+  // 全空的结果卡片纯属噪音：只有当至少一个数字真的算得出来——
+  // 来自他填的内容或正在编辑的那一行——它才配占这块地方。
   const hasMoney = [
     figures.market_value,
     figures.shares,
@@ -178,8 +177,8 @@ function PositionForm({
         account_id: accountId,
         ...sent,
         purchase_date: purchaseDate.trim() || null,
-        // Whatever the row stored but this restatement does not carry goes back
-        // to being derived, so switching 口径 never leaves a stale figure behind.
+        // 行里原本存了、但这次重述没有带过去的列，一律退回派生值，
+        // 这样切换口径后不会留下过期的旧数字。
         reset: traded
           ? []
           : (['shares', 'average_cost_nav', 'profit_loss'] as const).filter(
@@ -310,10 +309,9 @@ function PositionForm({
 }
 
 /**
- * All four add to or take away from the holding that is already there. 定投 is
- * one of them — a debit that already happened — but it fixes its own day to
- * today, so it asks for an amount only. The recurring schedule lives on the
- * 定投计划 page, reached from the card's own action.
+ * 这四种操作都在既有持仓上做了加减。定投也是其中之一——一笔已经发生的扣款——
+ * 但它把扣款日固定为今天，所以只问金额。周期性排期在定投计划页维护，
+ * 从这张卡片自己的入口进去。
  */
 const TRADE_ACTIONS: { label: string; operation: 'BUY' | 'SELL' | 'AUTO_INVEST' | 'CONVERT' }[] = [
   { label: '同步加仓', operation: 'BUY' },
@@ -322,14 +320,14 @@ const TRADE_ACTIONS: { label: string; operation: 'BUY' | 'SELL' | 'AUTO_INVEST' 
   { label: '同步转换', operation: 'CONVERT' },
 ];
 
-/** A fund with a BUY/SELL ledger has its money figures owned by the trade records. */
+/** 基金一旦有了买入/卖出流水，金额类数字就归交易流水说了算。 */
 function tradedPosition(existing: PositionItem | null): boolean {
   return (existing?.trade_count ?? 0) > 0;
 }
 
 type Mode = 'amount' | 'shares';
 
-/** The four money columns, and the label each box shows. */
+/** 四个金额列，以及每个输入框显示的标签。 */
 type SendColumn = 'market_value' | 'shares' | 'average_cost_nav' | 'profit_loss';
 
 const LABELS: Record<SendColumn, string> = {
@@ -340,9 +338,8 @@ const LABELS: Record<SendColumn, string> = {
 };
 
 /**
- * Which pair a 口径 shows. A holdings screen lists 金额 next to 收益 and 份额
- * next to 成本价, so each side reads off the pair it already has; the other
- * figures follow from it and stay read-only.
+ * 每种口径展示哪一对输入框。持仓页面通常金额挨着收益、份额挨着成本价，
+ * 用户照着手里已有的那一对填即可；其余数字由这一对推出来，保持只读。
  */
 function shownColumns(mode: Mode, traded: boolean): SendColumn[] {
   if (traded) return ['market_value'];
@@ -354,17 +351,17 @@ type ResolveInput = {
   shares: string;
   costNav: string;
   profitLoss: string;
-  /** What the row already carries, so the card is not blank until he types. */
+  /** 该行已有的存量值，这样用户还没输入时结果卡片不至于全空。 */
   storedCost: number | null;
   nav: number | null;
   mode: Mode;
   traded: boolean;
 };
 
-/** The same precedence the API uses, so the form shows what saving will store. */
+/** 与 API 相同的取值优先级，保证表单预览的就是保存后真正落库的值。 */
 function resolve(input: ResolveInput) {
-  // Only the visible boxes count: a figure typed in the other 口径 and then
-  // switched away from must not keep steering the result from off screen.
+  // 只有当前可见的输入框参与计算：在另一种口径下填过、之后又切走的数字，
+  // 不能在屏幕外继续左右结果。
   const byAmount = input.mode === 'amount' || input.traded;
   const typedAmount = number(input.marketValue);
   const typedShares = number(input.shares);
@@ -399,7 +396,7 @@ function resolve(input: ResolveInput) {
   };
 }
 
-/** Days since 首次购买日期, UTC-safe so a device's timezone cannot shift it. */
+/** 距首次购买日期的天数；全程按 UTC 计算，设备时区改动不了它。 */
 function daysSince(value: string): number | null {
   if (!isCalendarDate(value)) return null;
   const [year, month, day] = value.trim().split('-').map(Number);
@@ -413,7 +410,7 @@ function number(value: string): number | null {
   return value.trim() === '' || Number.isNaN(Number(value)) ? null : Number(value);
 }
 
-/** 持有金额 is the anchor; the other three can each be implied by the rest. */
+/** 持有金额是锚定值；其余三列都能由剩下的数字反推出来。 */
 function isDerived(existing: PositionItem, column: SendColumn): boolean {
   if (column === 'shares') return Boolean(existing.shares_derived);
   if (column === 'average_cost_nav') return Boolean(existing.average_cost_nav_derived);
@@ -421,7 +418,7 @@ function isDerived(existing: PositionItem, column: SendColumn): boolean {
   return false;
 }
 
-/** Only what the row really stores: a derived figure must not prefill a box. */
+/** 只回填该行真正存储的值：派生出来的数字不能预填进输入框。 */
 function snapshotText(existing: PositionItem | null, column: SendColumn): string {
   if (!existing || isDerived(existing, column)) return '';
   if (tradedPosition(existing) && column !== 'market_value') return '';

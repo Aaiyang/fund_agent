@@ -1,13 +1,11 @@
-"""Tencent quote feed behind the market analysis screen.
+"""行情分析页背后的腾讯数据源.
 
-Chosen over AKShare for this one screen because it is the only source reachable
-from this network that covers A股, 港股, 美股 and 指数 together, including daily
-bars and the current session's minute line. Eastmoney's push2 hosts answer
-intermittently at best, and AKShare's own stock helpers fail outright because
-``requests`` picks up a system proxy that ``httpx`` here ignores.
+这一页不用 AKShare：在本网络里，它是唯一能同时覆盖 A股、港股、美股和指数，
+还给出日线与当日分时线的源。东财 push2 的行情主机最多时好时坏，AKShare 自带的
+股票接口则直接失败——``requests`` 会读系统代理，而这里的 ``httpx`` 不读。
 
-The company profile is the one exception: it comes from Eastmoney's F10 data
-center, which is stable, and only exists for A股 listings.
+公司主数据是唯一的例外：它取自东财的 F10 数据中心，那边稳定，但只有 A股 标的
+才有.
 """
 
 import httpx
@@ -35,9 +33,9 @@ _KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 _MINUTE_URL = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
 _DAY_QUERY_URL = "https://web.ifzq.gtimg.cn/appstock/app/day/query"
 _PROFILE_URL = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
-# One request caps at this many bars; the longest range on the screen still fits.
+# 单次请求最多取这么多根 K 线，页面上最长的区间也照样装得下。
 _MAX_BARS = 1200
-# Only Shanghai and Shenzhen have an F10 record in the data center.
+# 数据中心里只有沪市和深市有 F10 记录。
 _A_SHARE_PREFIXES = {"sh": "SH", "sz": "SZ"}
 
 
@@ -48,10 +46,9 @@ _A_SHARE_PREFIXES = {"sh": "SH", "sz": "SZ"}
     reraise=True,
 )
 async def fetch_quotes(symbols: list[str]) -> list[MarketExternalQuote]:
-    """Fetch snapshots for canonical symbols in one batched request.
+    """一次批量请求取这些规范代码的快照.
 
-    An unparsable body yields fewer quotes rather than an error, which the
-    screen renders as missing numbers.
+    响应体解析不出来时返回更少条而不报错，页面把它显示成缺数.
     """
     if not symbols:
         return []
@@ -72,11 +69,11 @@ async def fetch_quotes(symbols: list[str]) -> list[MarketExternalQuote]:
     reraise=True,
 )
 async def resolve_symbol(symbol: str) -> str:
-    """Return the symbol the bar endpoint actually serves data for.
+    """返回 K 线接口真正有数据的那个代码.
 
-    US listings need their exchange suffix: ``usAAPL`` quotes fine but its K-line
-    reply is a two-row stub, while ``usAAPL.OQ`` returns the full history. The
-    quote feed reports the suffixed code, so one cheap lookup fixes the shape.
+    美股标的必须带交易所后缀：``usAAPL`` 取行情没问题，但 K 线只回两行占位数
+    据，``usAAPL.OQ`` 才有完整历史。行情接口会把带后缀的代码报出来，所以花一次
+    很便宜的查询就能把形状补对.
     """
     if not symbol.startswith("us") or "." in symbol:
         return symbol
@@ -93,14 +90,13 @@ async def resolve_symbol(symbol: str) -> str:
     reraise=True,
 )
 async def fetch_candles(symbol: str, period: str = "day", count: int = 250) -> list[CandleExternalBar]:
-    """Fetch adjusted bars for one instrument.
+    """取单个标的的复权 K 线.
 
-    ``symbol`` must already be canonical (see ``tencent_symbol``); US listings
-    additionally need their exchange suffix, which the caller resolves with
-    :func:`resolve_symbol` because the bare ticker returns a stub.
+    ``symbol`` 必须已经是规范形式（见 ``tencent_symbol``）；美股还要额外带交易所
+    后缀，裸 ticker 只会拿到占位数据，所以调用方先用 :func:`resolve_symbol` 解析.
     """
-    # The param string is symbol,period,start_date,end_date,count,adjust; leaving
-    # both dates empty is how the feed is asked for the most recent N bars.
+    # param 串依次是 symbol,period,start_date,end_date,count,adjust；两个日期
+    # 都留空，就是向接口要最近 N 根 K 线。
     params = {"param": f"{symbol},{period},,,{max(1, min(count, _MAX_BARS))},qfq"}
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
         response = await client.get(_KLINE_URL, params=params, headers=_HEADERS)
@@ -119,7 +115,7 @@ async def fetch_candles(symbol: str, period: str = "day", count: int = 250) -> l
     reraise=True,
 )
 async def fetch_minutes(symbol: str) -> MinuteExternalSeries:
-    """Fetch the current session's minute line, per-minute volumes included."""
+    """取当日分时线，连每分钟的成交量一起."""
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
         response = await client.get(_MINUTE_URL, params={"code": symbol}, headers=_HEADERS)
         response.raise_for_status()
@@ -137,10 +133,10 @@ async def fetch_minutes(symbol: str) -> MinuteExternalSeries:
     reraise=True,
 )
 async def fetch_recent_minutes(symbol: str) -> MinuteExternalSeries:
-    """Fetch the last five sessions' minute lines, stitched oldest-first.
+    """取最近五个交易日的分时线，按从早到晚拼起来.
 
-    美股 has no data here (the reply is an empty list), same as for the single
-    session. The window's reference close is not part of the reply either.
+    这里美股没有数据（返回空列表），跟单日分时一样；整段的基准昨收也不在返回
+    里.
     """
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
         response = await client.get(_DAY_QUERY_URL, params={"code": symbol}, headers=_HEADERS)
@@ -159,7 +155,7 @@ async def fetch_recent_minutes(symbol: str) -> MinuteExternalSeries:
     reraise=True,
 )
 async def fetch_company_profile(symbol: str) -> CompanyExternalProfile | None:
-    """Fetch A股 master data; other markets return None without a request."""
+    """取 A股 主数据；其他市场不发请求，直接返回 None."""
     suffix = _A_SHARE_PREFIXES.get(symbol[:2])
     if suffix is None or not symbol[2:].isdigit():
         return None

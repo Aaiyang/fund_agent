@@ -1,9 +1,8 @@
 /**
- * Analysis feed for one listed instrument: snapshot, bars, minute line, profile.
+ * 单只上市品种的分析数据源：快照、K 线、分钟线、公司简介。
  *
- * Nothing here is stored server-side, so each hook's `staleTime` is the only
- * thing between the screen and a provider call; they mirror the TTLs the backend
- * uses, because polling faster than that buys nothing.
+ * 这些数据服务端都不落库，各 hook 的 `staleTime` 就是页面与适配器层调用
+ * 之间唯一的缓冲；它们对齐后端用的缓存有效期，因为拉得比那更勤毫无意义。
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -42,7 +41,7 @@ export function useMarketHistory(symbol: string | null, period: MarketPeriod, ra
   });
 }
 
-/** Only fetched while a minute tab is showing, and only while it can change. */
+/** 只在分钟线标签开着时拉，也只在它还可能变化的时段拉。 */
 export function useMarketIntraday(symbol: string | null, enabled: boolean, days: 1 | 5 = 1) {
   return useQuery({
     queryKey: queryKeys.marketIntraday(symbol ?? '', days),
@@ -54,7 +53,7 @@ export function useMarketIntraday(symbol: string | null, enabled: boolean, days:
   });
 }
 
-/** Company master data: quarterly-frozen at best, so cache it for a day. */
+/** 公司概况最多随季报冻结一次，缓存一天足矣。 */
 export function useMarketCompany(symbol: string | null) {
   return useQuery({
     queryKey: queryKeys.marketCompany(symbol ?? ''),

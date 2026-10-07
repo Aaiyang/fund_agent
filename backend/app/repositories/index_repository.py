@@ -1,4 +1,4 @@
-"""Index quote repository: PostgreSQL persistence for benchmark closes."""
+"""指数行情仓储：基准指数收盘点位在 PostgreSQL 的落库."""
 
 from datetime import date
 
@@ -12,12 +12,12 @@ from app.integrations.fund_data.models import IndexExternalQuote
 from app.models.market import IndexQuote
 from app.utils.clock import utc_now
 
-# asyncpg allows at most 32767 bind parameters per statement; 7 columns per row.
+# asyncpg 单条语句最多 32767 个绑定参数；这里每行 7 列。
 _UPSERT_CHUNK_ROWS = 2000
 
 
 class IndexRepository:
-    """Async data access for benchmark index closes."""
+    """基准指数收盘点位的异步数据访问."""
 
     async def get_history(
         self,
@@ -25,7 +25,7 @@ class IndexRepository:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[IndexQuote]:
-        """Load closes ascending by date between optional bounds."""
+        """按日期升序读取收盘点位，起止日期可选."""
         async with get_async_session() as session:
             statement = select(IndexQuote).where(col(IndexQuote.index_code) == index_code)
             if start_date is not None:
@@ -37,7 +37,7 @@ class IndexRepository:
             return list(result.scalars().all())
 
     async def get_coverage(self, index_code: str) -> tuple[date, date] | None:
-        """Oldest and newest stored close dates, or None when nothing is stored."""
+        """已存的最早与最晚收盘日期，一条都没存时返回 None."""
         async with get_async_session() as session:
             statement = select(
                 func.min(col(IndexQuote.trade_date)),
@@ -49,11 +49,10 @@ class IndexRepository:
         return earliest, latest
 
     async def upsert_quotes(self, quotes: list[IndexExternalQuote]) -> int:
-        """Bulk-upsert closes in chunks. Returns the number of rows written.
+        """分片批量 upsert 收盘点位，返回写入的行数.
 
-        asyncpg caps one statement at 32767 arguments, and a full index history
-        is ~6000 rows of 7 columns, so the values are split rather than sent as
-        one insert.
+        asyncpg 把单条语句的参数上限卡在 32767，而一只指数的完整历史约 6000 行、
+        每行 7 列，所以要把值切开分批写，而不是一条 insert 全发过去。
         """
         if not quotes:
             return 0

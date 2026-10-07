@@ -9,7 +9,7 @@ import { theme } from '@/constants/theme';
 import { useAccounts, usePositions, useUpdateAccount } from '@/hooks/usePortfolio';
 import { formatDateTime, formatRate } from '@/utils/format';
 
-/** One account: rename, review its holdings and last import (spec 3.6). */
+/** 单个账户：改名、查看该账户的持仓与最近一次导入（spec 3.6）。 */
 export default function AccountDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const accountId = Number(id);

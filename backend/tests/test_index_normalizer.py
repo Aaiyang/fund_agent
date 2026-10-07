@@ -1,4 +1,4 @@
-"""Index rows come from two different AKShare sources with different columns."""
+"""指数的行来自两个不同的 AKShare 接口，列名并不一样."""
 
 from datetime import date
 

@@ -1,8 +1,7 @@
-"""AKShare import isolation.
+"""AKShare 导入隔离.
 
-akshare is slow to import and hard-fails some environments; mirroring the
-cache.py pattern, it is imported once at module load behind an availability
-flag so the app still boots when the library is missing.
+akshare 导入很慢，在某些环境里还会直接失败；沿用 cache.py 的做法，在模块加载
+时导入一次并用可用性标记兜住，缺库时应用照样能启动.
 """
 
 try:

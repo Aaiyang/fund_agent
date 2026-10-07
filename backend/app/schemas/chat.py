@@ -1,4 +1,4 @@
-"""This file contains the chat schema for the application."""
+"""应用的对话相关 schema 定义."""
 
 import re
 from typing import (
@@ -16,11 +16,11 @@ from app.schemas.base import BaseResponse
 
 
 class Message(BaseModel):
-    """Message model for chat endpoint.
+    """chat 端点的消息模型.
 
     Attributes:
-        role: The role of the message sender (user or assistant).
-        content: The content of the message.
+        role: 消息发送方角色（user 或 assistant）。
+        content: 消息正文。
     """
 
     model_config = {"extra": "ignore"}
@@ -31,22 +31,22 @@ class Message(BaseModel):
     @field_validator("content")
     @classmethod
     def validate_content(cls, v: str) -> str:
-        """Validate the message content.
+        """校验消息正文.
 
         Args:
-            v: The content to validate
+            v: 待校验的正文
 
         Returns:
-            str: The validated content
+            str: 校验通过的正文
 
         Raises:
-            ValueError: If the content contains disallowed patterns
+            ValueError: 正文里出现不允许的内容时抛出
         """
-        # Check for potentially harmful content
+        # 拦掉可能有危害的内容
         if re.search(r"<script.*?>.*?</script>", v, re.IGNORECASE | re.DOTALL):
             raise ValueError("Content contains potentially harmful script tags")
 
-        # Check for null bytes
+        # 拦掉空字节
         if "\0" in v:
             raise ValueError("Content contains null bytes")
 
@@ -54,10 +54,10 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat endpoint.
+    """chat 端点的请求模型.
 
     Attributes:
-        messages: List of messages in the conversation.
+        messages: 本次对话的消息列表。
     """
 
     messages: List[Message] = Field(
@@ -68,21 +68,21 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseResponse):
-    """Response model for chat endpoint.
+    """chat 端点的响应模型.
 
     Attributes:
-        messages: List of messages in the conversation.
+        messages: 本次对话的消息列表。
     """
 
     messages: List[Message] = Field(..., description="List of messages in the conversation")
 
 
 class StreamResponse(BaseResponse):
-    """Response model for streaming chat endpoint.
+    """流式 chat 端点的响应模型.
 
     Attributes:
-        content: The content of the current chunk.
-        done: Whether the stream is complete.
+        content: 当前这一段的内容。
+        done: 整条流是否已经结束。
     """
 
     content: str = Field(default="", description="The content of the current chunk")
@@ -90,7 +90,7 @@ class StreamResponse(BaseResponse):
 
 
 class SessionTitle(BaseModel):
-    """Structured output schema for session title generation."""
+    """会话标题生成所用的结构化输出 schema."""
 
     title: str = Field(
         ...,

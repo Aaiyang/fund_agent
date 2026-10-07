@@ -1,9 +1,9 @@
-"""Fund sync worker tasks.
+"""基金同步的后台 worker 任务.
 
-Run a dedicated worker with:
+启动独立 worker 进程的命令：
     taskiq worker app.core.task_queue:broker app.workers.fund_sync app.workers.screenshot_import
-Without Redis the broker falls back to in-process execution (see
-app.core.task_queue); task state remains authoritative in PostgreSQL.
+没有 Redis 时 broker 退化为本进程内执行
+（见 app.core.task_queue）；但任务状态的权威记录始终在 PostgreSQL 里。
 """
 
 from app.core.logging import logger
@@ -15,15 +15,15 @@ from app.workers.base import run_job
 
 @broker.task
 async def sync_fund_task(fund_code: str, job_id: str | None = None) -> str:
-    """Sync one fund's master data and NAV history.
+    """同步单只基金的基本资料与净值历史.
 
     Args:
-        fund_code: The 6-digit fund code.
-        job_id: Ledger row created by the caller; one is created here when the
-            task is triggered directly (e.g. by an external scheduler).
+        fund_code: 6 位基金代码。
+        job_id: 调用方创建好的账本行；任务被直接触发时（例如由外部调度器触发），
+            这里会自己补建一条。
 
     Returns:
-        "ok" or "failed".
+        "ok" 或 "failed"。
     """
     if job_id is None:
         job = await job_repository.create("FUND_SYNC", subject=fund_code)
@@ -39,13 +39,13 @@ async def sync_fund_task(fund_code: str, job_id: str | None = None) -> str:
 
 @broker.task
 async def sync_hot_funds_task(job_id: str | None = None) -> str:
-    """Sync every Hot Fund (held or watchlisted) in one bounded sweep.
+    """一轮有界的批量同步，覆盖全部热门基金（持仓中的与自选里的）.
 
     Args:
-        job_id: Ledger row created by the caller, when there is one.
+        job_id: 调用方创建好的账本行，可能没有。
 
     Returns:
-        "ok" or "failed".
+        "ok" 或 "failed"。
     """
     if job_id is None:
         job = await job_repository.create("HOT_FUND_SYNC")

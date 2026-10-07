@@ -7,7 +7,7 @@ import { describeError } from '@/components/states';
 import { theme } from '@/constants/theme';
 import { useAccounts, useCreateAccount } from '@/hooks/usePortfolio';
 
-/** Create a portfolio account. Only the name is asked for (spec 3.6). */
+/** 创建资产组合账户，只要求填名称（spec 3.6）。 */
 export default function AccountAddScreen() {
   const create = useCreateAccount();
   const accounts = useAccounts();
@@ -20,8 +20,8 @@ export default function AccountAddScreen() {
       setProblem('请输入账户名称');
       return;
     }
-    // The backend enforces this too; checking the loaded list gives the answer
-    // without a round trip.
+    // 重名后端也会校验；直接查已加载的账户列表就能判定，
+    // 省掉一次网络往返。
     const taken = (accounts.data?.items ?? []).some((account) => account.name.trim().toLowerCase() === trimmed.toLowerCase());
     if (taken) {
       setProblem('该账户名称已存在');

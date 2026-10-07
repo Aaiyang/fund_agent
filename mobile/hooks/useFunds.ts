@@ -1,4 +1,4 @@
-/** Fund search, detail, NAV history and refresh triggers (spec 3.4 / 3.5). */
+/** 基金搜索、详情、净值历史与刷新触发（spec 3.4 / 3.5）。 */
 
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
@@ -51,13 +51,12 @@ export function useFundNav(code: string | null, range: NavRange) {
 }
 
 /**
- * Cursor paging over the whole NAV history: 30 newest rows first, then older
- * pages as the list reaches its bottom. `before_date` is exclusive, so pages
- * never repeat a trading day.
+ * 全量净值历史的游标分页：先给最新 30 条，列表滚到底再取更早的页。
+ * `before_date` 不含边界，所以相邻的页不会重复同一个交易日。
  */
 export function useFundNavPages(code: string | null, pageSize = 30) {
   return useInfiniteQuery({
-    // pageSize is a request input, so it belongs in the key.
+    // pageSize 是请求入参，所以也要进 queryKey。
     queryKey: queryKeys.fundNavPages(code ?? '', pageSize),
     queryFn: ({ pageParam }) =>
       api.get<NavHistory>(`/funds/${code}/nav`, { limit: pageSize, before_date: pageParam }),
@@ -72,10 +71,9 @@ export function useFundNavPages(code: string | null, pageSize = 30) {
 }
 
 /**
- * Top-ten holdings with quotes, polled while the page is open. 30s is the
- * balance between "实时涨幅" feeling live and hitting the source 3x harder;
- * the backend caches the quarterly disclosure for an hour and only the quote
- * fetch repeats.
+ * 前十大重仓股带行情，页面开着就轮询。30 秒是在“实时涨幅看起来够新鲜”
+ * 与不把数据源打爆之间的折中；后端把季度披露缓存一小时，反复拉的
+ * 只有行情那一截。
  */
 export function useFundHoldings(code: string | null) {
   return useQuery({
@@ -86,15 +84,15 @@ export function useFundHoldings(code: string | null) {
   });
 }
 
-/** Enqueue a provider sync; the fund detail/NAV queries refetch afterwards. */
+/** 把数据源同步任务入队；完成后基金详情与净值查询会重新拉取。 */
 export function useRefreshFund(code: string | null) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => request<components['schemas']['FundSyncStatusResponse']>(`/funds/${code}/refresh`, { method: 'POST' }),
     onSuccess: async () => {
-      // The worker writes asynchronously; give it a moment, then re-read.
+      // worker 是异步落库的；稍等片刻再回读。
       await new Promise((resolve) => setTimeout(resolve, 2500));
-      // Watchlist and holding rows render the same NAV, so they are stale too.
+      // 自选与持仓行渲染的是同一份净值，它们同样已经过期。
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.funds }),
         client.invalidateQueries({ queryKey: queryKeys.watchlist }),
@@ -104,15 +102,15 @@ export function useRefreshFund(code: string | null) {
   });
 }
 
-/** Refresh every held + watchlisted fund's latest NAV in one batched request. */
+/** 一次批量请求，把所有持仓与自选基金的最新净值都刷一遍。 */
 export function useRefreshLatestNavs() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () =>
       request<components['schemas']['FundNavRefreshResponse']>('/funds/refresh-latest', { method: 'POST' }),
     onSuccess: async () => {
-      // The endpoint stores the new NAVs before it answers, so this re-read is
-      // the result the refresh was for rather than another attempt at it.
+      // 这个接口在应答之前已把新净值落库，所以这次重读读到的是刷新的
+      // 成果，而不是对刷新本身再试一次。
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.portfolio }),
         client.invalidateQueries({ queryKey: queryKeys.watchlist }),
@@ -123,17 +121,17 @@ export function useRefreshLatestNavs() {
 }
 
 /**
- * Ask for fresh NAVs whenever the calling screen gains focus.
+ * 调用方页面每次获得焦点就请求一次新净值。
  *
- * Nothing else fires here: react-query's refetch-on-focus binds a browser
- * `visibilitychange` event that does not exist on native, and a tab stays
- * mounted after its first visit, so switching tabs is not a remount either.
+ * 其他时机都不会触发：react-query 的 refetch-on-focus 绑的是浏览器
+ * `visibilitychange` 事件，原生端根本没有这个事件；而标签页首次访问后
+ * 就一直挂着，切换标签页也构不成重新挂载。
  */
 export function useNavRefreshOnFocus() {
-  // Only `mutate` belongs in the dependency list. It is memoized against a
-  // stable observer, while the rest of the result object is rebuilt on every
-  // state change — depending on that would re-run this effect from its own
-  // invalidation and refresh forever.
+  // 依赖表里只该放 `mutate`：它绑定在稳定的 observer 上做了 memo，而结果
+  // 对象的其余部分每次状态变化都会重建——依赖那些的话，
+  // 本 effect 会被自己触发的失效重新运行，
+  // 刷个不停。
   const { mutate, isPending, data } = useRefreshLatestNavs();
   useFocusEffect(
     useCallback(() => {
@@ -144,10 +142,10 @@ export function useNavRefreshOnFocus() {
 }
 
 /**
- * One honest line about the batch refresh; silence is the normal outcome.
+ * 对批量刷新只说一句实话；没话可说才是常态。
  *
- * A cooldown (`throttled`) response ran no request at all and changed nothing,
- * and `ok` with zero updates would read as a failure — so both say nothing.
+ * 冷却期（`throttled`）根本没发请求、什么都没改变，而 `ok` 却是零更新
+ * 说出来会被当成失败——这两种情况都保持沉默。
  */
 export function navRefreshNotice(pending: boolean, result?: FundNavRefresh): string | null {
   if (pending) return '正在刷新净值…';

@@ -1,31 +1,29 @@
-"""Fund name matching: what a screenshot's name is worth against a directory.
+"""基金名称匹配：截图上的名称对着名册能算几分.
 
-Screenshots rarely print the 6-digit code, and the printed name is the app's
-own shorthand — half-width or full-width brackets, an optional (QDII) tag, a
-currency variant, sometimes cut off by an ellipsis. So names are compared on a
-normalized form, and a match is only claimed when exactly one fund survives it.
+截图很少印出 6 位代码，印出来的名称又是 App 自己的简写——半角或全角括号、可有
+可无的 (QDII) 标签、币种变体，有时还被省略号截断。所以比的是归一化之后的名称，
+而且只有归一化后恰好剩一只基金时才说它匹配上了。
 
-Several share classes surviving the comparison is the common case, not an
-error: 支付宝 shows 「广发纳斯达克100ETF联接…」 and A/C/人民币/美元 are four
-different funds. Those come back as candidates for the review page to offer —
-picking one for the user would put the wrong fund's money in his ledger.
+比完还剩好几个份额类别是常态，不是错误：支付宝显示「广发纳斯达克100ETF联接…」，
+而 A/C/人民币/美元 是四只不同的基金。这种结果要带着候选回到复核页让用户挑——
+替他选一只，就是把另一只基金的钱记进了他的流水。
 """
 
 import re
 import unicodedata
 from dataclasses import dataclass
 
-# Words a platform's display name may add or drop without changing which fund
-# it means: 支付宝 writes 「嘉实信息产业股票C」 and 「华泰柏瑞质量成长混合C」 for
-# funds the register calls 「…发起式C」 and 「…质量成长C」. The exchanges went the
-# other way in 2025 and now require ETF short names to carry the manager's name,
-# which is the same lesson: a name is a label, the code is the identity.
+# 平台展示名可能多写或少写一些词，指的还是同一只基金：支付宝写作
+# 「嘉实信息产业股票C」「华泰柏瑞质量成长混合C」，名册里却叫
+# 「…发起式C」「…质量成长C」。2025 年交易所走了相反的方向，
+# 要求 ETF 简称里带上管理人名称，讲的也是同一个道理：
+# 名称只是标签，代码才是身份。
 _STRIP_TAGS = re.compile(
     r"(qdii|qd2|人民币|美元|现汇|现钞|份额|发起式|混合型|混合|股票型|股票|债券型|债券|指数|证券投资基金)"
 )
-# The trailing letter that marks a share class: 混合C, 联接A, 指数E. It must not be
-# the last letter of an acronym — 「招商快线ETF」 has no share class — and trailing
-# brackets are skipped first so 「华夏大盘精选混合A(后端)」 still reads as A.
+# 结尾那个标出份额类别的字母：混合C、联接A、指数E。它不能是一个缩略词的最后一个
+# 字母——「招商快线ETF」并没有份额类别——而且要先把结尾的括号跳掉，
+# 这样「华夏大盘精选混合A(后端)」仍然读得出 A。
 _SHARE_CLASS = re.compile(r"(?<![a-z])([a-f])$")
 _TRAILING_BRACKET = re.compile(r"[()（）\s]+$|[（(][^（）()]*[)）]$")
 _PUNCTUATION = re.compile(r"[\s·•.,，、:：;；'’“”\"()（）\-—_]+")
@@ -33,7 +31,7 @@ _PUNCTUATION = re.compile(r"[\s·•.,，、:：;；'’“”\"()（）\-—_]+
 
 @dataclass(frozen=True)
 class NameMatch:
-    """One directory entry scored against a wanted name."""
+    """名册里的一条记录对着目标名称打出来的分."""
 
     fund_code: str
     fund_name: str
@@ -41,26 +39,26 @@ class NameMatch:
 
     @property
     def share_class(self) -> str | None:
-        """The A/C/E letter this fund's name ends with, if any."""
+        """这只基金名称结尾的 A/C/E 字母，没有就是 None."""
         return share_class_of(self.fund_name)
 
 
 def fold(text: str) -> str:
-    """Lower-case a name and drop the display tags, keeping punctuation.
+    """名称转小写并去掉展示标签，但把标点留着.
 
-    The share-class rule needs the punctuation boundary back to tell 「(LOF)C」
-    (a C class) from 「ETF」 (no class), so it reads this rather than `normalize`.
+    份额类别那条规则要把标点边界拿回来，才能分清「(LOF)C」（C 类）和
+    「ETF」（没有类别），所以它读的是这个结果，而不是 `normalize`。
     """
     return _STRIP_TAGS.sub("", unicodedata.normalize("NFKC", text).lower())
 
 
 def normalize(text: str) -> str:
-    """Fold a name down to the form comparisons happen on."""
+    """把名称折叠成比对真正使用的那个形式."""
     return _PUNCTUATION.sub("", fold(text))
 
 
 def share_class_of(text: str) -> str | None:
-    """The share class letter a name ends with, lower-cased."""
+    """名称结尾的份额类别字母，统一转成小写."""
     folded = fold(text)
     while (trimmed := _TRAILING_BRACKET.sub("", folded)) != folded:
         folded = trimmed
@@ -69,23 +67,23 @@ def share_class_of(text: str) -> str | None:
 
 
 def _common_prefix(left: str, right: str) -> int:
-    """How many leading characters two names share."""
+    """两个名称开头连续相同多少个字符."""
     return next(
         (index for index, (a, b) in enumerate(zip(left, right, strict=False)) if a != b), min(len(left), len(right))
     )
 
 
 def _prefix_score(wanted: str, candidate: str) -> float:
-    """How well a (possibly truncated or misread) name fits a directory name."""
+    """一个可能被截断或读错的名称，与名册里的名称贴合到什么程度."""
     if wanted == candidate:
         return 1.0
     if candidate.startswith(wanted) or wanted.startswith(candidate):
         shorter, longer = sorted((wanted, candidate), key=len)
         missing = (len(longer) - len(shorter)) / max(len(longer), 1)
         return round(0.95 - missing * 0.6, 4)
-    # A row clipped by the bottom of the screen is also the row OCR reads worst:
-    # 「ETF联接C」 came back 「CTC联培C」. The shared stem is still enough to
-    # offer candidates, never enough to auto-accept.
+    # 被屏幕下边缘截掉的那一行，往往也是 OCR 读得最差的一行：
+    # 「ETF联接C」读回来成了「CTC联培C」。共同的前缀够用来给出候选，
+    # 但绝不够用来自动采纳。
     shared = _common_prefix(wanted, candidate)
     if shared >= 4:
         return round(0.9 * shared / max(len(wanted), len(candidate)), 4)
@@ -95,10 +93,10 @@ def _prefix_score(wanted: str, candidate: str) -> float:
 
 
 def score_name(wanted: str, candidate: str) -> float:
-    """Similarity of two fund names, 0 when they are different funds.
+    """两个基金名称的相似度，认定是不同基金时给 0.
 
-    A differing share class is disqualifying: 「联接C」 and 「联接A」 are both
-    prefix-compatible with a truncated 「联接」 name, but never with each other.
+    份额类别不一样就直接出局：「联接C」和「联接A」各自都跟被截断的「联接」对得上，
+    但它俩永远对不上。
     """
     wanted_class = share_class_of(wanted)
     candidate_class = share_class_of(candidate)
@@ -110,13 +108,13 @@ def score_name(wanted: str, candidate: str) -> float:
 def rank_names(
     wanted: str, directory: list[tuple[str, str]], limit: int = 5, min_score: float = 0.5
 ) -> list[NameMatch]:
-    """Score a whole directory against one name, best first.
+    """整个名册对着一个名称逐个打分，最好的排在前面.
 
     Args:
-        wanted: The name as read off the screenshot.
-        directory: (code, name) pairs to search.
-        limit: How many candidates to return.
-        min_score: Anything weaker is noise, not a candidate.
+        wanted: 从截图上读出来的那个名称。
+        directory: 要搜索的 (code, name) 二元组列表。
+        limit: 返回多少个候选。
+        min_score: 低于这个分的是噪音，算不上候选。
     """
     wanted_clean = (wanted or "").strip()
     if not wanted_clean:
@@ -127,20 +125,18 @@ def rank_names(
         value = score_name(wanted_clean, name)
         if value >= min_score:
             matches.append(NameMatch(fund_code=code, fund_name=name, score=value))
-    # Best score first, then the shorter name: 联接C beats 联接C人民币 when both fit.
+    # 分数高的在前，同分时名称短的在前：两个都匹配时，联接C 要压过 联接C人民币。
     matches.sort(key=lambda match: (-match.score, len(match.fund_name), match.fund_code))
     return matches[:limit]
 
 
 def decide(matches: list[NameMatch], auto_accept: float = 0.95) -> NameMatch | None:
-    """The single fund a name resolves to, or None when it must be chosen.
+    """名称唯一解析到的那一只基金；该由用户来挑时返回 None.
 
-    Candidates are compared per fund, not per spelling: the directory carries the
-    register's short name and the synced legal name for the same code on purpose,
-    and once both fold to the same form a fund would otherwise be its own runner-up
-    and stop matching the day its master row appears. Only a *different* code within
-    0.05 is ambiguity — those are share classes, and the difference is real money in
-    the wrong place.
+    候选是按基金比，不是按拼写比：名册里对同一个代码故意同时留着登记的简称和同步
+    来的全称，一旦两者折叠成同一形式，按拼写比这只基金就成了自己的亚军，等它的
+    全称记录落库那天就再也匹配不上了。只有相差 0.05 以内的*另一个代码*才算歧义
+    ——那是份额类别，选错就是把真金白银记到了别的基金账上。
     """
     best_by_code: dict[str, NameMatch] = {}
     for match in matches:

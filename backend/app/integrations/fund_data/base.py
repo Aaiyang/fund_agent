@@ -1,4 +1,4 @@
-"""FundDataProvider protocol — the only data-source seam for fund facts."""
+"""`FundDataProvider` 协议：所有基金事实唯一的取数入口."""
 
 from datetime import date
 from typing import Protocol, runtime_checkable
@@ -16,31 +16,29 @@ from app.integrations.fund_data.models import (
 
 @runtime_checkable
 class FundDataProvider(Protocol):
-    """Async interface every fund data source must implement.
+    """每个基金数据源都必须实现的异步接口.
 
-    Implementations isolate blocking SDK calls (e.g. AKShare's synchronous
-    HTTP) behind bounded concurrency, timeouts and retries so the FastAPI
-    event loop is never blocked (MVP spec 7.6).
+    实现要把阻塞式 SDK 调用（例如 AKShare 的同步 HTTP）隔离在有界并发、超时与
+    重试之后，绝不阻塞 FastAPI 事件循环（MVP spec 7.6）.
     """
 
     async def search_funds(self, keyword: str) -> list[FundExternalRecord]:
-        """Search funds by code, full name, abbreviation or fuzzy name."""
+        """按代码、全称、简称或模糊名称搜索基金."""
         ...
 
     async def get_fund_profile(self, fund_code: str) -> FundExternalProfile | None:
-        """Fetch fund master data (name, type, company, manager, inception)."""
+        """取基金主数据（名称、类型、管理公司、基金经理、成立日期）."""
         ...
 
     async def get_latest_nav(self, fund_code: str) -> FundExternalNav | None:
-        """Fetch the most recent NAV for a fund."""
+        """取某只基金最近一天的净值."""
         ...
 
     async def get_latest_navs(self, fund_codes: list[str], force: bool = False) -> list[FundExternalNav]:
-        """Fetch the latest NAV for many funds at once, for list views.
+        """一次取多只基金的最新净值，供列表页使用.
 
-        `force` ignores the cached source table and re-fetches it, which is what
-        an on-demand quote refresh needs; the default read stays cached because
-        the table is one large request over every fund.
+        `force` 会跳过已缓存的源表并重新拉取，按需刷新报价正需要这样；默认读取
+        走缓存，因为这张表是对全市场基金的一次大请求.
         """
         ...
 
@@ -50,21 +48,21 @@ class FundDataProvider(Protocol):
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[FundExternalNav]:
-        """Fetch historical NAV rows between optional dates."""
+        """取可选日期区间内的历史净值行."""
         ...
 
     async def get_fund_manager(self, fund_code: str) -> FundExternalManager | None:
-        """Fetch the current fund manager."""
+        """取现任基金经理."""
         ...
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
-        """Fetch the fund's disclosed stock holdings, latest two quarters."""
+        """取基金披露的股票持仓，最近两个季度."""
         ...
 
     async def get_stock_quotes(self, stock_codes: list[str]) -> list[StockExternalQuote]:
-        """Quote the held stocks across A-share / HK / US markets."""
+        """给持仓股票跨 A股 / 港股 / 美股取行情."""
         ...
 
     async def get_industry_allocation(self, fund_code: str) -> list[FundExternalIndustry]:
-        """Fetch the latest disclosed industry weights."""
+        """取最新一次披露的行业权重."""
         ...

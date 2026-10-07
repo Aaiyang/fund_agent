@@ -1,4 +1,4 @@
-"""This file contains the main application entry point."""
+"""本文件是应用的主入口."""
 
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -37,14 +37,14 @@ from app.services.memory import memory_service
 from app.workers import fund_sync, screenshot_import  # noqa: F401  register broker tasks
 from app.workers.scheduler import start_periodic_jobs, stop_periodic_jobs
 
-# Load environment variables
+# 加载环境变量
 load_dotenv()
 langfuse_init()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application startup and shutdown events."""
+    """处理应用的启动与关停事件."""
     logger.info(
         "application_startup",
         project_name=settings.PROJECT_NAME,
@@ -52,40 +52,40 @@ async def lifespan(app: FastAPI):
         api_prefix=settings.API_V1_STR,
     )
 
-    # Initialize cache service (connects to Valkey if configured)
+    # 初始化缓存服务（配了 Valkey 才会去建连接）
     try:
         await cache_service.initialize()
     except Exception as e:
         logger.exception("cache_initialization_failed", error=str(e))
 
-    # Pre-warm the LangGraph agent: create graph + connection pool at startup
-    # to avoid cold-start latency on the first request
+    # 预热 LangGraph agent：启动时就建好图和连接池，
+    # 否则第一个请求要承担冷启动延迟
     try:
         await agent.create_graph()
         logger.info("graph_pre_warmed")
     except Exception as e:
         logger.exception("graph_pre_warm_failed", error=str(e))
 
-    # Pre-warm mem0 AsyncMemory: initializes pgvector connection and schema check
-    # so the first search() cache miss or add() doesn't pay the ~130ms cold-init cost
+    # 预热 mem0 AsyncMemory：初始化 pgvector 连接并检查 schema，
+    # 免得第一次 search() 缓存未命中或 add() 时付那 ~130ms 的冷启动开销
     try:
         await memory_service.initialize()
     except Exception as e:
         logger.exception("memory_service_pre_warm_failed", error=str(e))
 
-    # Taskiq broker (Redis) or in-process fallback for background tasks
+    # Taskiq broker（Redis）；没配 Redis 时后台任务走进程内兜底
     try:
         await startup_broker()
     except Exception as e:
         logger.exception("task_broker_startup_failed", error=str(e))
 
-    # Periodic Hot Fund enqueue (spec 7.13)
+    # 周期性入队热门基金同步（spec 7.13）
     try:
         start_periodic_jobs()
     except Exception as e:
         logger.exception("periodic_jobs_startup_failed", error=str(e))
 
-    # Ensure the holding-import temp image directory exists
+    # 保证持仓导入的临时图片目录存在
     try:
         Path(settings.HOLDING_IMPORT_TEMP_DIR).mkdir(parents=True, exist_ok=True)
     except Exception as e:
@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup on shutdown
+    # 关停时做清理
     await stop_periodic_jobs()
     await shutdown_broker()
     await cache_service.close()
@@ -111,40 +111,40 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Set up Prometheus metrics
+# 配置 Prometheus 指标
 setup_metrics(app)
 
-# Add logging context middleware (must be added before other middleware to capture context)
+# 添加日志上下文中间件（必须在其他中间件之前加，才能拿到上下文）
 app.add_middleware(LoggingContextMiddleware)
 
-# Add custom metrics middleware
+# 添加自定义指标中间件
 app.add_middleware(MetricsMiddleware)
 
-# Add profiling middleware (DEBUG only — saves HTML to /tmp on slow requests)
+# 添加剖析中间件（仅 DEBUG 生效 —— 慢请求会把剖析结果存到 /tmp）
 if settings.DEBUG:
     app.add_middleware(ProfilingMiddleware)
 
-# Add correlation ID middleware — must be outermost so request_id is set before all others
+# 添加 correlation ID 中间件 —— 必须处于最外层，这样 request_id 先于其他所有中间件写好
 app.add_middleware(CorrelationIdMiddleware)
 
-# Set up rate limiter exception handler
+# 配置限流异常处理器
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
 
 
-# Add validation exception handler
+# 配置校验异常处理器
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors from request data.
+    """处理请求数据校验失败.
 
     Args:
-        request: The request that caused the validation error
-        exc: The validation error
+        request: 触发校验错误的那个请求
+        exc: 校验错误本身
 
     Returns:
-        JSONResponse: A formatted error response
+        JSONResponse: 格式化后的错误响应
     """
-    # Log the validation error
+    # 记录这条校验错误
     logger.error(
         "validation_error",
         client_host=request.client.host if request.client else "unknown",
@@ -152,7 +152,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         errors=str(exc.errors()),
     )
 
-    # Format the errors to be more user-friendly
+    # 把错误整理成对用户更友好的形式
     formatted_errors = []
     for error in exc.errors():
         loc = " -> ".join([str(loc_part) for loc_part in error["loc"] if loc_part != "body"])
@@ -164,7 +164,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Set up CORS middleware
+# 配置 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -173,14 +173,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API router
+# 挂载 API 路由
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["root"][0])
 async def root(request: Request):
-    """Root endpoint returning basic API information."""
+    """根端点，返回 API 的基本信息."""
     logger.info("root_endpoint_called")
     return {
         "name": settings.PROJECT_NAME,
@@ -195,18 +195,18 @@ async def root(request: Request):
 @app.get("/health")
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["health"][0])
 async def health_check(request: Request) -> JSONResponse:
-    """Health check endpoint with environment-specific information.
+    """健康检查端点，返回随环境而不同的信息.
 
     Returns:
-        JSONResponse: Health status payload, with HTTP 503 when the
-        database is unreachable so load balancers can drop the instance.
+        JSONResponse: 健康状态负载；数据库连不上时返回 HTTP 503，
+        好让负载均衡把这台实例摘掉。
     """
     logger.info("health_check_called")
 
-    # Check database connectivity
+    # 检查数据库连通性
     db_healthy = await database_service.health_check()
-    # Cache is degradable: an unreachable Valkey slows reads, it does not
-    # lose data, so it reports degraded without failing the probe.
+    # 缓存是可降级的：Valkey 连不上只会拖慢读取，不会丢数据，
+    # 所以它只把整体状态标成 degraded，不单独让探针失败。
     cache_healthy = await cache_service.is_healthy()
 
     response = {
@@ -221,7 +221,7 @@ async def health_check(request: Request) -> JSONResponse:
         "timestamp": datetime.now().isoformat(),
     }
 
-    # If DB is unhealthy, set the appropriate status code
+    # 数据库不健康时，返回对应的状态码
     status_code = status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
     return JSONResponse(content=response, status_code=status_code)

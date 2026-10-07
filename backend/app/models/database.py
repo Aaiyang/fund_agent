@@ -1,4 +1,4 @@
-"""Database models for the application."""
+"""应用用到的全部数据库模型."""
 
 from app.models.fund import Fund, FundNav
 from app.models.holding_import import HoldingImport, HoldingImportItem

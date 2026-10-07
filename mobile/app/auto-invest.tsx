@@ -12,7 +12,7 @@ import { formatDate, formatMoney, localToday } from '@/utils/format';
 
 type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly';
 
-/** `max` is the day-number range; 每天 has no day to name, so it has none. */
+/** `max` 是可选扣款日号的上限；“每天”没有要指定的日子，所以不带日号范围。 */
 const FREQUENCIES: { key: Frequency; label: string; max: number | null }[] = [
   { key: 'daily', label: '每天', max: null },
   { key: 'weekly', label: '每周', max: 7 },
@@ -22,7 +22,7 @@ const FREQUENCIES: { key: Frequency; label: string; max: number | null }[] = [
 
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-/** 定投计划: the schedule, and what it has already bought. */
+/** 定投计划页：展示各计划的扣款排期，以及已经扣款买成的部分。 */
 export default function AutoInvestScreen() {
   const accountId = useUiStore((state) => state.accountId);
   const plans = useAutoInvestPlans(accountId);
@@ -100,8 +100,8 @@ function PlanCard({ plan }: { plan: AutoInvestPlan }) {
             loading={remove.isPending}
             onPress={() =>
               remove.mutate(
-                // Installments are money that really moved, so they only go
-                // with the plan when the plan itself was a mistake.
+                // 每期定投都是真实发生的资金流水，只有当计划本身建错了，
+                // 才应该连同流水一起删，所以这里不级联删除。
                 { planId: plan.id, withOrders: false },
                 { onError: (error) => setProblem(describeError(error)) },
               )

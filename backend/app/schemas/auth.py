@@ -1,4 +1,4 @@
-"""This file contains the authentication schema for the application."""
+"""应用的鉴权相关 schema 定义."""
 
 import re
 from datetime import datetime
@@ -15,12 +15,12 @@ from app.schemas.base import BaseResponse
 
 
 class Token(BaseModel):
-    """Token model for authentication.
+    """鉴权 token 模型.
 
     Attributes:
-        access_token: The JWT access token.
-        token_type: The type of token (always "bearer").
-        expires_at: The token expiration timestamp.
+        access_token: 签发的 JWT access token。
+        token_type: token 类型（恒为 "bearer"）。
+        expires_at: token 的过期时间戳。
     """
 
     access_token: str = Field(..., description="The JWT access token")
@@ -29,13 +29,13 @@ class Token(BaseModel):
 
 
 class TokenResponse(BaseResponse):
-    """Response model for login endpoint.
+    """登录端点的响应模型.
 
     Attributes:
-        access_token: The JWT access token
-        token_type: The type of token (always "bearer")
-        expires_at: When the token expires
-        refresh_token: Optional long-lived refresh token (spec 3.1)
+        access_token: 本次登录签发的 JWT access token
+        token_type: token 类型（恒为 "bearer"）
+        expires_at: token 的过期时刻
+        refresh_token: 可选的长效 refresh token（spec 3.1）
     """
 
     access_token: str = Field(..., description="The JWT access token")
@@ -45,12 +45,12 @@ class TokenResponse(BaseResponse):
 
 
 class UserCreate(BaseModel):
-    """Request model for user registration.
+    """用户注册的请求模型.
 
     Attributes:
-        email: User's email address
-        password: User's password
-        username: Optional display name
+        email: 用户邮箱
+        password: 用户密码
+        username: 可选的显示名
     """
 
     email: EmailStr = Field(..., description="User's email address")
@@ -60,20 +60,20 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: SecretStr) -> SecretStr:
-        """Validate password strength.
+        """校验密码强度.
 
         Args:
-            v: The password to validate
+            v: 待校验的密码
 
         Returns:
-            SecretStr: The validated password
+            SecretStr: 校验通过的密码
 
         Raises:
-            ValueError: If the password is not strong enough
+            ValueError: 密码强度不达标时抛出
         """
         password = v.get_secret_value()
 
-        # Check for common password requirements
+        # 逐条检查常规密码强度要求
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
 
@@ -93,11 +93,11 @@ class UserCreate(BaseModel):
 
 
 class UserProfileUpdateRequest(BaseModel):
-    """Request model for PATCH /auth/me. Omitted fields stay unchanged.
+    """PATCH /auth/me 的请求模型；省略的字段保持原值.
 
     Attributes:
-        email: New email address, or None to keep it
-        username: New display name; an empty string clears it
+        email: 新邮箱，None 表示不改
+        username: 新显示名；空字符串表示清空
     """
 
     email: EmailStr | None = Field(default=None, description="New email address")
@@ -105,13 +105,13 @@ class UserProfileUpdateRequest(BaseModel):
 
 
 class UserResponse(BaseResponse):
-    """Response model for user operations.
+    """用户相关操作的响应模型.
 
     Attributes:
-        id: User's ID
-        email: User's email address
-        username: Optional display name
-        token: Authentication token
+        id: 用户 ID
+        email: 用户邮箱
+        username: 可选的显示名
+        token: 鉴权 token
     """
 
     id: int = Field(..., description="User's ID")
@@ -121,13 +121,13 @@ class UserResponse(BaseResponse):
 
 
 class CurrentUserResponse(BaseResponse):
-    """Response model for GET /auth/me (spec 3.1 获取当前用户信息).
+    """GET /auth/me 的响应模型（spec 3.1 获取当前用户信息）.
 
     Attributes:
-        id: User's ID
-        email: User's email address
-        username: Optional display name
-        created_at: When the account was created
+        id: 用户 ID
+        email: 用户邮箱
+        username: 可选的显示名
+        created_at: 账号创建时间
     """
 
     id: int = Field(..., description="User's ID")
@@ -137,12 +137,12 @@ class CurrentUserResponse(BaseResponse):
 
 
 class SessionResponse(BaseResponse):
-    """Response model for session creation.
+    """创建会话的响应模型.
 
     Attributes:
-        session_id: The unique identifier for the chat session
-        name: Name of the session (defaults to empty string)
-        token: The authentication token for the session
+        session_id: 聊天会话的唯一标识
+        name: 会话名称（默认为空字符串）
+        token: 该会话的鉴权 token
     """
 
     session_id: str = Field(..., description="The unique identifier for the chat session")
@@ -152,14 +152,14 @@ class SessionResponse(BaseResponse):
     @field_validator("name")
     @classmethod
     def sanitize_name(cls, v: str) -> str:
-        """Sanitize the session name.
+        """清洗会话名称.
 
         Args:
-            v: The name to sanitize
+            v: 待清洗的名称
 
         Returns:
-            str: The sanitized name
+            str: 清洗后的名称
         """
-        # Remove any potentially harmful characters
+        # 去掉可能有风险的字符
         sanitized = re.sub(r'[<>{}[\]()\'"`]', "", v)
         return sanitized

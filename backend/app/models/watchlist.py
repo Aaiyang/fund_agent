@@ -1,4 +1,4 @@
-"""Watchlist models: user fund watchlist plus user-defined groups."""
+"""自选模型：用户自选基金与用户自定义的自选分组."""
 
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field
@@ -7,7 +7,7 @@ from app.models.base import BaseModel
 
 
 class Watchlist(BaseModel, table=True):
-    """A user's watchlisted fund. Unique per (user_id, fund_code)."""
+    """用户加入自选的一只基金，按 (user_id, fund_code) 唯一."""
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
@@ -18,7 +18,7 @@ class Watchlist(BaseModel, table=True):
 
 
 class WatchlistGroup(BaseModel, table=True):
-    """User-defined watchlist group (e.g. CPO, 创新药)."""
+    """用户自定义的自选分组（例如 CPO、创新药）."""
 
     __tablename__ = "watchlist_group"  # pyright: ignore[reportAssignmentType]
 
@@ -29,7 +29,7 @@ class WatchlistGroup(BaseModel, table=True):
 
 
 class WatchlistGroupItem(BaseModel, table=True):
-    """Association between a watchlist entry and a group."""
+    """自选条目与分组之间的关联."""
 
     __tablename__ = "watchlist_group_item"  # pyright: ignore[reportAssignmentType]
 

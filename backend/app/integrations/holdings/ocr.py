@@ -1,10 +1,8 @@
-"""Local OCR: one screenshot in, text blocks with their boxes out.
+"""本地 OCR：进来一张截图，出去带方框的文本块.
 
-The PP-OCR detection and recognition models run on CPU through ONNX Runtime,
-so a holdings screenshot never leaves the machine and the same file yields the
-same blocks every time. The layout rules downstream are pure geometry, and
-they need that stability — a model that occasionally reads a column header as
-a holding is not a foundation to cluster rows on.
+PP-OCR 的检测与识别模型通过 ONNX Runtime 跑在 CPU 上，所以持仓截图从不出这台
+机器，而且同一个文件每次都给出一样的块。下游的版面规则是纯几何，正需要这份
+稳定——一个偶尔把列表头读成持仓的模型，当不了按行聚类的地基。
 """
 
 import asyncio
@@ -19,7 +17,7 @@ from app.integrations.holdings.ocr_client import OCR_AVAILABLE, RapidOCR
 
 
 class TextBlock(BaseModel):
-    """One run of recognized text and the rectangle it occupied."""
+    """一段被识别出来的文字，以及它占住的矩形框."""
 
     text: str
     x0: float
@@ -30,22 +28,22 @@ class TextBlock(BaseModel):
 
     @property
     def center_x(self) -> float:
-        """Horizontal midpoint, the coordinate columns are assigned by."""
+        """水平中点——把块归到哪一列，看的就是这个坐标."""
         return (self.x0 + self.x1) / 2
 
     @property
     def center_y(self) -> float:
-        """Vertical midpoint, the coordinate rows are clustered by."""
+        """垂直中点——把块聚成哪一行，看的就是这个坐标."""
         return (self.y0 + self.y1) / 2
 
     @property
     def height(self) -> float:
-        """Box height in pixels, used to judge how far apart two lines are."""
+        """框高（像素），用来判断两行隔得有多远."""
         return self.y1 - self.y0
 
 
 class OcrPage(BaseModel):
-    """One image: its pixel size plus every block read off it."""
+    """一张图片：像素尺寸，加上从它上面读出的所有块."""
 
     path: str
     width: float
@@ -54,11 +52,11 @@ class OcrPage(BaseModel):
 
 
 class OcrUnavailableError(RuntimeError):
-    """The optional OCR runtime is not installed in this deployment."""
+    """这个部署没装可选的 OCR 运行时."""
 
 
 def _to_blocks(raw: object) -> list[TextBlock]:
-    """Convert an engine result into blocks, normalizing quad boxes."""
+    """把引擎的返回结果转成块，顺手把四点框归一成外接矩形."""
     texts = getattr(raw, "txts", None)
     boxes = getattr(raw, "boxes", None)
     scores = getattr(raw, "scores", None)
@@ -88,19 +86,19 @@ def _to_blocks(raw: object) -> list[TextBlock]:
 
 
 class ScreenshotOcr:
-    """Lazily-loaded OCR engine, shared for the life of the process."""
+    """惰性加载的 OCR 引擎，整个进程共用一个实例."""
 
     def __init__(self) -> None:
-        """Hold the engine unconstructed until the first screenshot arrives."""
+        """第一张截图到来之前，先把引擎搁着不构造."""
         self._engine: RapidOCR | None = None
 
     @property
     def available(self) -> bool:
-        """Whether this deployment can run OCR at all."""
+        """这个部署到底能不能跑 OCR."""
         return OCR_AVAILABLE
 
     def _engine_or_fail(self) -> RapidOCR:
-        """Create the engine on first use (loading the weights costs ~1s)."""
+        """首次使用时才建引擎（加载权重大约要花 1s）."""
         if not OCR_AVAILABLE or RapidOCR is None:
             raise OcrUnavailableError("ocr_runtime_not_installed")
         if self._engine is None:
@@ -108,7 +106,7 @@ class ScreenshotOcr:
         return self._engine
 
     def _read(self, path: str) -> OcrPage:
-        """Blocking OCR call, run off the event loop."""
+        """会阻塞的 OCR 调用，要放到事件循环之外去跑."""
         with Image.open(path) as image:
             width, height = image.size
         started = time.monotonic()
@@ -125,10 +123,10 @@ class ScreenshotOcr:
         return page
 
     async def read(self, path: str) -> OcrPage:
-        """Recognize one screenshot.
+        """识别一张截图.
 
         Raises:
-            OcrUnavailableError: the optional runtime is not installed.
+            OcrUnavailableError: 可选的 OCR 运行时没装。
         """
         return await asyncio.to_thread(self._read, path)
 

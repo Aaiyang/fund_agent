@@ -1,10 +1,10 @@
-"""Tests for the fund settlement calendar helper."""
+"""基金结算日历工具的测试：确认日落在哪一个交易日."""
 
 from datetime import date
 
 from app.analytics.settlement import holding_days, settlement_date
 
-# 2026-09-21 Monday, 2026-09-25 Friday, 2026-09-26 Saturday.
+# 2026-09-21 是周一，2026-09-25 是周五，2026-09-26 是周六
 MONDAY = date(2026, 9, 21)
 FRIDAY = date(2026, 9, 25)
 SATURDAY = date(2026, 9, 26)

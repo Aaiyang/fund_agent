@@ -1,7 +1,6 @@
 /**
- * Fund input for manual entry: code and name share one box, and the provider's
- * fuzzy search offers pickable matches so the row can submit a real code
- * instead of a name the backend has to resolve later.
+ * 手动录入用的基金输入框：代码与名称共用一个输入框，数据源的模糊搜索
+ * 给出可点选的匹配项，让这一行尽量提交真实代码，而不是留给后端再解析的名称。
  */
 
 import { useDeferredValue } from 'react';
@@ -23,15 +22,15 @@ export function FundQueryField({
   value: string;
   onChangeText: (text: string) => void;
   onPick: (fund: { code: string; name: string }) => void;
-  /** Code already resolved from a pick; shown as a confirmation line. */
+  /** 已从点选项中确定的代码，用来显示一行确认信息。 */
   matchedCode?: string | null;
 }) {
-  // Typing Chinese needs an IME commit; only query the settled text.
+  // 输入中文得等输入法上屏；只对已经稳定的文本发起查询。
   const settled = useDeferredValue(value);
   const search = useFundSearch(settled);
   const keyword = settled.trim();
-  // Gated on the text, never on focus: a tap blurs the input, and a list that
-  // unmounted on blur would swallow the press that selects the suggestion.
+  // 候选列表只看文本、不看焦点：点选会让输入框失焦，若列表在失焦时
+  // 卸载，选中候选的那一下点击就被吞掉了。
   const showList = keyword.length > 0 && !matchedCode;
   const suggestions = showList ? (search.data?.items ?? []).slice(0, MAX_SUGGESTIONS) : [];
 

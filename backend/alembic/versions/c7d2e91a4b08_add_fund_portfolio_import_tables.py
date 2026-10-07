@@ -1,4 +1,4 @@
-"""Add fund, watchlist, portfolio, transaction and holding import tables.
+"""新增基金、自选、账户、流水与持仓导入这批表.
 
 Revision ID: c7d2e91a4b08
 Revises: b25d38b0cd7c
@@ -8,7 +8,7 @@ Create Date: 2026-09-19
 import sqlalchemy as sa
 from alembic import op
 
-# revision identifiers, used by Alembic.
+# 迁移版本号标识，Alembic 靠它串起迁移链
 revision = "c7d2e91a4b08"  # pragma: allowlist secret
 down_revision = "b25d38b0cd7c"  # pragma: allowlist secret
 branch_labels = None
@@ -16,7 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """Create the fund domain tables and their indexes."""
+    """建出基金域的各张表及其索引."""
     op.create_table(
         "fund",
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -208,7 +208,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the fund domain tables in reverse dependency order."""
+    """按依赖关系的反序删掉基金域的各张表."""
     op.drop_table("holding_import_item")
     op.drop_table("holding_import")
     op.drop_table("transaction")

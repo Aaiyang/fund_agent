@@ -1,9 +1,8 @@
 /**
- * Top-ten disclosed holdings of one fund, in the same grid as 自选/持仓.
+ * 展示某基金披露报告中的前十大重仓股，沿用自选/持仓同款表格布局。
  *
- * The disclosure is quarterly and the quotes are live, so the row shows the
- * quote timestamp: during a session it is today's time, otherwise the last
- * closed session's — which is what "开盘看实时、休市看最新" looks like in data.
+ * 持仓披露按季度出、行情是实时的，所以每行带上行情时间戳：盘中是今天的时间，
+ * 休市时是最近一个收盘场次的时间——“开盘看实时、休市看最新”落到数据上就是这样。
  */
 
 import { Stack, useLocalSearchParams } from 'expo-router';
@@ -53,7 +52,7 @@ export default function FundHoldingsScreen() {
         <SectionTitle title={detail.data?.fund_name ?? `基金 ${code ?? ''}`} />
         <Async query={holdings}>
           {(data) => {
-            // The schema defaults `items` to an empty list, so it arrives optional.
+            // schema 里 `items` 的默认值是空列表，所以响应中该字段可能缺席。
             const items = data.items ?? [];
             return (
               <View>

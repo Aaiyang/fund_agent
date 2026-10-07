@@ -1,10 +1,8 @@
-"""Move the 15:00 cutoff from the holding onto the order.
+"""把截止点 15:00 从持仓挪到订单上.
 
-The cutoff only means something to an order — it decides which session prices
-it. A snapshot holding has no order behind it, so storing the cutoff there
-invited the app to derive a cost from a date nobody asserted. Each BUY/SELL row
-now carries the confirm day it resolved to, and the position keeps just the
-earliest one.
+截止点只对订单有意义——它决定这笔订单按哪个交易时段成交。快照式持仓背后并没有订单，
+把截止点存在那儿，等于放任应用拿一个谁也没声明过的日期去推算成本。现在每条 BUY/SELL
+流水都带上它最终落到的确认日，持仓只保留其中最早的那个。
 """
 
 from typing import Sequence, Union
@@ -19,7 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add the order's confirm day and drop both cutoff columns."""
+    """给流水加上确认日，并删掉两处表示截止点的列."""
     op.add_column("transaction", sa.Column("confirm_date", sa.Date(), nullable=True))
     op.execute("UPDATE \"transaction\" SET confirm_date = trade_date WHERE transaction_type IN ('BUY', 'SELL')")
     op.drop_column("portfolio_position", "purchase_after_cutoff")
@@ -27,7 +25,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Restore the cutoff columns and drop the confirm day."""
+    """把两处截止点列加回来，并删掉确认日."""
     op.add_column(
         "portfolio_position",
         sa.Column("purchase_after_cutoff", sa.Boolean(), nullable=False, server_default=sa.false()),

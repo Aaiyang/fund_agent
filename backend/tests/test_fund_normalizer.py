@@ -1,4 +1,4 @@
-"""Third-party column names must never leak past the normalizer (spec 5.5)."""
+"""第三方的列名绝不能越过归一化层泄漏进来（spec 5.5）."""
 
 from datetime import date, datetime
 
@@ -38,9 +38,9 @@ class TestToDate:
         assert to_date(None) is None
 
     def test_survives_pandas_nat_and_nan_sentinels(self) -> None:
-        """A single NaT cell must not take down a whole search (rank rows have them)."""
+        """一个 NaT 单元格不该把整次搜索一起带崩（榜单行里就有 NaT）."""
 
-        class NaTType:  # pandas' NaT raises on any date use
+        class NaTType:  # pandas 的 NaT 一旦被当成日期使用就抛异常
             def date(self) -> date:
                 raise TypeError("'float' object cannot be interpreted as an integer")
 
@@ -104,8 +104,8 @@ class TestNormalizeProfile:
         assert profile.inception_date == date(2021, 1, 4)
 
     def test_reads_the_renamed_inception_cell(self) -> None:
-        # Current AKShare labels this 成立时间; matching only 成立日期 silently
-        # leaves the fund detail page showing "--".
+        # 现在的 AKShare 把这一列标成 成立时间；只认 成立日期 的话，基金详情页会
+        # 一声不吭地一直显示 "--"。
         profile = normalize_profile_rows(
             [
                 {"item": "基金全称", "value": "示例混合型证券投资基金"},

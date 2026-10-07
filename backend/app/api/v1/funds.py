@@ -1,4 +1,4 @@
-"""Fund API endpoints: search, detail, NAV history, performance, refresh."""
+"""基金 API 端点：搜索、详情、净值历史、业绩表现、数据刷新."""
 
 from datetime import date
 
@@ -38,7 +38,7 @@ async def search_funds(
     q: str = Query(min_length=1, max_length=50, description="基金代码 / 名称 / 模糊关键词"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundSearchResponse:
-    """Search funds by code, full name, abbreviation or fuzzy name."""
+    """按代码、全称、简称或模糊名称搜索基金."""
     logger.info("fund_search_requested", session_id=identity.session_id, user_id=identity.user_id)
     items = await fund_service.search(q, user_id=identity.user_id)
     return FundSearchResponse(items=items, total=len(items))
@@ -50,11 +50,10 @@ async def refresh_latest_navs(
     request: Request,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundNavRefreshResponse:
-    """Refresh the latest NAV of every fund the caller holds or watchlists.
+    """刷新调用方持仓与自选里每只基金的最新净值.
 
-    The set comes from the caller's identity rather than a list of codes: the
-    client would have to wait for both of its lists to load before it could ask,
-    and a client-supplied set would let any caller name arbitrary funds.
+    基金集合取自调用方身份，而不是由客户端传一串代码：否则客户端要等两个列表
+    都加载完才能发起请求，而客户端给定的集合会让任何调用方点名刷新任意基金。
     """
     result = await fund_sync_service.refresh_user_latest_navs(identity.user_id)
     logger.info(
@@ -74,7 +73,7 @@ async def get_fund_detail(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundDetailResponse:
-    """Fund overview: identity, latest NAV, computed performance (spec 3.5.1)."""
+    """基金概览：基本资料、最新净值与算好的业绩指标（spec 3.5.1）."""
     detail = await fund_service.get_detail(fund_code, user_id=identity.user_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="fund_not_found")
@@ -93,7 +92,7 @@ async def get_fund_nav_history(
     before_date: date | None = Query(default=None, description="游标：仅返回早于该日期的记录"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundNavHistoryResponse:
-    """Historical NAV series served from PostgreSQL (never live pass-through)."""
+    """历史净值序列全部从 PostgreSQL 读出，绝不做上游实时透传."""
     return await fund_service.get_nav_history(
         fund_code,
         start_date,
@@ -111,7 +110,7 @@ async def get_fund_holdings(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundHoldingsResponse:
-    """Top-ten disclosed holdings with live quotes (spec 3.5.4)."""
+    """披露的前十大持仓，附实时行情报价（spec 3.5.4）."""
     holdings = await fund_service.get_holdings(fund_code)
     logger.info("fund_holdings_requested", fund_code=fund_code, count=len(holdings.items), user_id=identity.user_id)
     return holdings
@@ -124,7 +123,7 @@ async def get_fund_performance(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundPerformanceResponse:
-    """Deterministic period analytics computed by backend Python (spec 5.2)."""
+    """区间收益等确定性指标由后端 Python 算出，结果可复现（spec 5.2）."""
     detail = await fund_service.get_detail(fund_code, user_id=identity.user_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="fund_not_found")
@@ -138,7 +137,7 @@ async def get_related_sectors(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> RelatedSectorsResponse:
-    """Related sectors placeholder — not a hard MVP data dependency (spec 5.7)."""
+    """相关板块占位接口——不是 MVP 的硬数据依赖（spec 5.7）."""
     return RelatedSectorsResponse(fund_code=fund_code)
 
 
@@ -149,7 +148,7 @@ async def refresh_fund_data(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> FundSyncStatusResponse:
-    """Enqueue a background sync for one fund (returns immediately)."""
+    """为单只基金入队一次后台同步，接口立即返回."""
     job_id = await fund_sync_service.enqueue_sync(fund_code)
     logger.info("fund_refresh_requested", fund_code=fund_code, job_id=job_id, user_id=identity.user_id)
     return FundSyncStatusResponse(fund_code=fund_code, queued=True, job_id=job_id)

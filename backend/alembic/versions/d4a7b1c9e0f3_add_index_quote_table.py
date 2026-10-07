@@ -1,4 +1,4 @@
-"""Add the index_quote table: benchmark closes for the fund-detail comparison line."""
+"""新增 index_quote 表：为基金详情页的对比线存基准指数收盘点位."""
 
 from typing import Sequence, Union
 
@@ -12,7 +12,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create index_quote with its lookup indexes and per-day uniqueness."""
+    """建出 index_quote，带上查询索引与按日唯一约束."""
     op.create_table(
         "index_quote",
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -30,7 +30,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop index_quote."""
+    """删掉 index_quote."""
     op.drop_index(op.f("ix_index_quote_trade_date"), table_name="index_quote")
     op.drop_index(op.f("ix_index_quote_index_code"), table_name="index_quote")
     op.drop_table("index_quote")

@@ -29,10 +29,9 @@ const OPERATIONS: {
 ];
 
 /**
- * 加减仓: record one order against the holding he already has. Which operation
- * this is comes from the button that opened the screen — re-asking here only
- * let him change his mind after typing. 定投 fixes its own day to today and
- * prices before the cutoff, so it asks for an amount and nothing else.
+ * 加减仓：在已有的持仓上记一笔订单。是哪种操作由打开本页的按钮决定——
+ * 到这里再问一遍，只会让他填完又改主意。定投把扣款日固定为今天、
+ * 按截止点 15:00 前的净值计价，所以只问金额，其余一概不要。
  */
 export default function TradeScreen() {
   const params = useLocalSearchParams<{ code?: string; account_id?: string; operation?: string }>();
@@ -243,7 +242,7 @@ function describeTradeError(error: unknown, held: number): string {
 
 type PreviewQuery = ReturnType<typeof useTradePreview>;
 
-/** One card per fund the order moves money through — two for a conversion. */
+/** 订单的资金经过几只基金就渲染几张卡片——转换会涉及两只。 */
 function Preview({ query, byMoney }: { query: PreviewQuery; byMoney: boolean }) {
   if (query.isFetching && !query.data) {
     return (
@@ -259,8 +258,8 @@ function Preview({ query, byMoney }: { query: PreviewQuery; byMoney: boolean }) 
     <>
       {data.legs.map((leg) => {
         const carried = leg.cost_after && leg.shares_after ? leg.cost_after / leg.shares_after : null;
-        // What arrived minus the cost that left with it: the ledger carries
-        // cost out at the average, so this difference is this order's result.
+        // 到账金额减去随份额一起结转走的成本：流水按持仓均价把成本转出，
+        // 这个差额就是本单的已实现收益。
         const realized = leg.direction === 'SELL' ? leg.amount - (leg.cost_before - leg.cost_after) : null;
         return (
           <Card key={`${leg.fund_code}-${leg.direction}`}>

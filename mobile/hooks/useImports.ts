@@ -1,9 +1,9 @@
 /**
- * Holding imports: manual entry and screenshot recognition (spec 3.7).
+ * 持仓导入：手动录入与截图识别（spec 3.7）。
  *
- * A screenshot batch is accepted with 202 + import_id and parsed by a worker;
- * the detail query polls while the batch is still UPLOADED/PARSING (spec 7.9).
- * Nothing reaches the real holdings until `confirm`.
+ * 截图批次先以 202 + import_id 收下，再由后台 worker 解析；批次还是
+ * UPLOADED/PARSING 时详情查询就轮询状态（spec 7.9）。确认之前，
+ * 任何东西都不会进到正式持仓。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -53,8 +53,8 @@ export function useCreateManualImport() {
 }
 
 /**
- * Upload 1..N screenshots. Kept as an explicit call rather than `api.post`
- * because the multipart boundary must be set by the runtime.
+ * 上传 1..N 张截图。这里保留为显式调用而不是走 `api.post`，
+ * 因为 multipart 的 boundary 必须交给运行时自己设置。
  */
 export async function uploadScreenshots(params: {
   accountId: number;
@@ -103,7 +103,7 @@ export function useUpdateImportItem() {
   });
 }
 
-/** The only path that writes real holdings (spec 3.7). */
+/** 唯一会真正写入持仓的路径（spec 3.7）。 */
 export function useConfirmImport(importId: string | null) {
   const client = useQueryClient();
   return useMutation({

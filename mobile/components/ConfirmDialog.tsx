@@ -1,4 +1,4 @@
-/** The dialog behind `confirmAction`, rendered by the app rather than the OS. */
+/** `confirmAction` 背后的那个弹窗，由应用自己渲染，而不是调系统原生对话框。 */
 
 import { Modal, Pressable, Text, View } from 'react-native';
 

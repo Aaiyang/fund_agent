@@ -1,9 +1,8 @@
-"""ScreenshotPositionExtractor: image → structured fields.
+"""ScreenshotPositionExtractor：图片 → 结构化字段.
 
-Sits between the ScreenshotImportProvider and the OCR engine so the provider
-stays business-logic-only (MVP spec 3.7.2 component split): the engine reads
-pixels, this turns them into rows, and nothing above it knows which OCR
-library is installed.
+夹在 ScreenshotImportProvider 和 OCR 引擎之间，让 provider 只谈业务逻辑
+（MVP spec 3.7.2 的组件拆分）：引擎负责读像素，这里把像素变成一行行持仓，
+再往上的代码完全不知道装的是哪个 OCR 库。
 """
 
 import asyncio
@@ -18,37 +17,36 @@ from app.integrations.holdings.layout import build_layout
 from app.integrations.holdings.ocr import OcrUnavailableError, screenshot_ocr
 from app.integrations.holdings.rows import read_rows
 
-# ONNX Runtime already spreads one page over its threads; a second page in
-# parallel keeps the worker busy without queuing a third copy of the models.
+# ONNX Runtime 算一页时自己就会把计算铺到多个线程上；并行到第二页足够让
+# worker 一直有活干，再多只会让模型副本跟着排队，并不会更快。
 _CONCURRENCY = 2
 
 
 def image_hash(path: str) -> str:
-    """SHA-256 of the file bytes, for dedup across screenshots."""
+    """文件字节的 SHA-256，用来在多张截图之间去重."""
     return hashlib.sha256(open(path, "rb").read()).hexdigest()[:16]
 
 
 class ScreenshotPositionExtractor:
-    """Extracts raw positions from screenshots with local OCR."""
+    """用本地 OCR 从截图里抽出原始持仓."""
 
     async def extract(self, image_paths: list[str]) -> tuple[list[RawExtractedPosition], list[str], str | None]:
-        """Extract positions from all images.
+        """从所有图片里抽出持仓.
 
         Args:
-            image_paths: Local temp file paths of uploaded screenshots.
+            image_paths: 上传截图在本机的临时文件路径。
 
         Returns:
-            (positions, image_hashes, error_message). Images that fail to parse
-            don't abort the batch — remaining results still return (spec 3.7.2
-            multi-screenshot requirements); the first error is reported
-            alongside.
+            (positions, image_hashes, error_message)。某张图解析失败不会让整批
+            中止——剩下的结果照样返回（spec 3.7.2 的多截图要求），同时把第一条
+            错误一并带回来。
         """
         hashes: list[str] = []
         unique: list[str] = []
         seen: set[str] = set()
         for path in image_paths:
-            # Hashing reads the whole file: up to 8MB per screenshot, so it
-            # must not run on the event loop.
+            # 算哈希要把整个文件读完：单张截图最大 8MB，所以绝不能放在
+            # 事件循环里跑。
             digest = await asyncio.to_thread(image_hash, path)
             hashes.append(digest)
             if digest in seen:
@@ -64,8 +62,8 @@ class ScreenshotPositionExtractor:
                 try:
                     return await self._read_one(path), None
                 except OcrUnavailableError:
-                    # Every image would fail the same way; say it once, loudly,
-                    # instead of a batch of per-file noise.
+                    # 引擎缺失时每张都会以同样的方式失败；说一句清楚的重话，
+                    # 胜过一堆逐文件的噪音。
                     raise
                 except Exception as e:
                     logger.warning("screenshot_extraction_failed", path=path, error=str(e))
@@ -85,10 +83,10 @@ class ScreenshotPositionExtractor:
         return positions, hashes, "; ".join(errors) if errors else None
 
     async def _read_one(self, path: str) -> list[RawExtractedPosition]:
-        """One screenshot: OCR, then structure → rows → fields.
+        """一张截图：先 OCR，再按 版面 → 行 → 字段 逐级结构化.
 
         Raises:
-            OcrUnavailableError: the optional OCR extra is not installed.
+            OcrUnavailableError: 可选的 OCR 附加依赖没装。
         """
         page = await screenshot_ocr.read(path)
         layout = build_layout(page)

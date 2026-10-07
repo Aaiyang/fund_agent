@@ -1,1 +1,1 @@
-"""External integration adapters (fund data providers, holdings import)."""
+"""外部集成适配层：基金行情数据源、持仓导入来源、估值基准，都隔离在各自的 Protocol 后面."""

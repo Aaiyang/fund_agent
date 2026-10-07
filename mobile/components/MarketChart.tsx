@@ -1,15 +1,12 @@
 /**
- * Price chart for one listed instrument: candlesticks with a volume pane, or
- * the current session's minute line.
+ * 单只上市品种的价格图：K 线加成交量副图，或当日分时线。
  *
- * Both modes share one layout: an evenly-spaced slot per point (trading days
- * and minutes are both uniform, and a time axis would leave the lunch break as
- * a hole in the middle of the 分时), a price pane above a volume pane, and a
- * crosshair that follows a press or a drag.
+ * 两种模式共用一套布局：每个点占一个等宽槽位（交易日和分钟本来就是均匀
+ * 离散的，若按真实时间画轴，分时图中间会被午休挖出一个空洞），上半是价格
+ * 区、下半是成交量区，十字光标跟随按压与拖动。
  *
- * react-native-svg only, matching NavChart: the app already draws its own axes
- * there, and the third-party candlestick libraries are built on gesture
- * primitives that do not run on web.
+ * 只用 react-native-svg，与 NavChart 保持同一做法：那边本来就已经自绘坐标轴，
+ * 而第三方 K 线库建立在 web 上跑不起来的手势原语之上。
  */
 
 import { useRef, useState } from 'react';
@@ -34,7 +31,7 @@ export type ChartMinute = {
   price: number;
   volume?: number | null;
   average_price?: number | null;
-  /** Filled by the 五日 series, where the points span several sessions. */
+  /** 只有五日序列会填这个字段，其数据点横跨多个场次。 */
   trade_date?: string | null;
 };
 
@@ -43,16 +40,16 @@ const VOLUME_HEIGHT = 44;
 const GAP = 8;
 const PADDING = 6;
 const CHIP_WIDTH = 116;
-// One candle per trading day, ~3 months across a phone-width card.
+// 一根 K 线对应一个交易日，手机宽的卡片大约摆得下三个月。
 const CANDLE_SLOT_W = 7;
-// A 五日 line is ~1,200 minutes; one volume bar each would be a solid mass, so
-// the bars are summed into at most this many buckets.
+// 五日分时大约 1200 分钟，一分钟一根成交量柱会糊成一片，所以
+// 把连续分钟加总起来，柱数最多到这里这个上限。
 const MAX_VOLUME_BARS = 300;
 
 type Slot = {
   label: string;
   price: number;
-  /** Percent against the previous close, for the crosshair readout. */
+  /** 相对昨收的涨跌幅，供十字光标的读数用。 */
   changePct: number | null;
   volume: number | null;
   up: boolean;
@@ -60,7 +57,7 @@ type Slot = {
   high?: number;
   low?: number;
   average?: number | null;
-  /** First minute of a new session, in the 五日 series. */
+  /** 五日序列里，新场次开始的第一分钟。 */
   newDay?: boolean;
 };
 
@@ -80,12 +77,12 @@ function candleSlots(bars: ChartBar[]): Slot[] {
 
 function minuteSlots(points: ChartMinute[], prevClose: number | null): Slot[] {
   return points.map((point, index) => ({
-    // A single session reads as a clock time; five of them need the date too.
+    // 单个场次看钟点就够；五个场次必须连日期一起显示。
     label: point.trade_date ? `${point.trade_date.slice(5)} ${point.time}` : point.time,
     price: point.price,
     changePct: prevClose ? ((point.price - prevClose) / prevClose) * 100 : null,
     volume: point.volume ?? null,
-    // A minute counts as up when it traded at or above the minute before it.
+    // 一分钟涨没涨，看它是否不低于前一分钟。
     up: index === 0 ? point.price >= (prevClose ?? point.price) : point.price >= points[index - 1].price,
     average: point.average_price ?? null,
     newDay: index === 0 || Boolean(point.trade_date && point.trade_date !== points[index - 1].trade_date),
@@ -98,23 +95,23 @@ export function MarketChart({
   prevClose,
   volumeUnit,
 }: {
-  /** Set for the K-line modes; mutually exclusive with `minutes`. */
+  /** K 线模式传入；与 `minutes` 互斥。 */
   bars?: ChartBar[];
   minutes?: ChartMinute[];
-  /** Session reference for the 分时 axis. */
+  /** 分时坐标轴的参照位（昨收）。 */
   prevClose?: number | null;
-  /** 手 or 股, from the quote: the bars are relative, the readout is not. */
+  /** 来自行情的 手 或 股：量柱只画相对高度，读数文字才需要单位。 */
   volumeUnit?: string | null;
 }) {
   const [width, setWidth] = useState(0);
   const isCandle = Boolean(bars);
   const scrollRef = useRef<ScrollView>(null);
   const anchored = useRef<string | null>(null);
-  // The scroller only exists once the card has been measured, so `width > 0`
-  // doubles as the signal to (re)bind the mouse-drag panning.
+  // 卡片量出宽度之后滚动容器才真实存在，所以 `width > 0` 同时充当
+  // （重新）绑定鼠标拖动平移的信号。
   useDragScroll(scrollRef, isCandle && width > 0);
-  // The pressed point remembers which series it came from, so switching period
-  // or mode drops the stale crosshair instead of pointing at another day.
+  // 按下的点记住自己来自哪条序列：切换周期或模式后，旧光标直接作废，
+  // 而不是指着另一天的数据。
   const [pinned, setPinned] = useState<{ series: string; index: number } | null>(null);
 
   const slots = bars ? candleSlots(bars) : minutes ? minuteSlots(minutes, prevClose ?? null) : [];
@@ -133,24 +130,24 @@ export function MarketChart({
   const prices = slots.flatMap((slot) => [slot.high ?? slot.price, slot.low ?? slot.price]);
   const rawLow = Math.min(...prices);
   const rawHigh = Math.max(...prices);
-  // A 分时 axis is symmetric around the previous close: that is how the two
-  // halves read as "涨了多少 / 跌了多少" at a glance.
+  // 分时轴以昨收为中心上下对称：两半分别对应“涨了多少 / 跌了多少”，
+  // 一眼就能读出来。
   const reference = !isCandle && prevClose ? prevClose : null;
   const deviation = reference ? Math.max(Math.abs(rawHigh - reference), Math.abs(rawLow - reference)) : 0;
   const high = reference ? reference + deviation : rawHigh;
   const low = reference ? reference - deviation : rawLow;
   const span = high - low || Math.abs(high) || 1;
 
-  // Candles keep a fixed slot width and scroll sideways when the window does not
-  // fit, so a 36-bar 月K still fills the card instead of floating in it; the
-  // 分时 line always fits one session into the width.
+  // K 线用固定槽宽，窗口放不下就整体横向滚动，36 根的月K也能铺满
+  // 卡片而不是悬在半空；
+  // 分时线则恒把一个场次压进可视宽度内。
   const slotWidth = isCandle ? Math.max(CANDLE_SLOT_W, width / slots.length) : width / slots.length;
   const plotWidth = slotWidth * slots.length;
   const x = (index: number) => index * slotWidth + slotWidth / 2;
   const y = (price: number) => PADDING + ((high - price) / span) * (PRICE_HEIGHT - PADDING * 2);
 
-  // One bar per point turns a 五日 series into a solid mass, so consecutive
-  // points are summed into at most MAX_VOLUME_BARS buckets.
+  // 一个点一根柱会把五日序列糊成一整片，所以把连续的点加总成
+  // 至多 MAX_VOLUME_BARS 个分组。
   const bucket = Math.max(Math.ceil(slots.length / MAX_VOLUME_BARS), 1);
   const groups: { start: number; volume: number; up: boolean }[] = [];
   for (let index = 0; index < slots.length; index += bucket) {
@@ -170,9 +167,9 @@ export function MarketChart({
   const bodyWidth = Math.max(Math.min(slotWidth * 0.62, 14), 1);
   const marker = pinned && pinned.series === seriesKey ? pinned.index : null;
   const shown = marker === null ? null : slots[marker];
-  // The volume pane's number tracks the crosshair, falling back to the newest
-  // bar; without it the bars show shape but no quantity. It reads the *bucket*
-  // the crosshair lands in, so the figure always matches the bar's height.
+  // 成交量区的数字跟着十字光标走，没按的时候退回最新一根；没有它，
+  // 量柱只有形状没有量。它读的是光标落在的那个*分组*的总量，
+  // 所以数字永远和柱子的高度对得上。
   const readoutIndex = marker ?? slots.length - 1;
   const readout =
     groups.find((group) => readoutIndex >= group.start && readoutIndex < group.start + bucket) ?? groups[groups.length - 1];
@@ -185,7 +182,7 @@ export function MarketChart({
   };
 
   const anchorLatest = () => {
-    // A quote chart opens on the newest bar; the older ones are a drag away.
+    // 行情图打开时停在最新一根，更早的数据往左拖就有。
     if (anchored.current !== seriesKey) {
       anchored.current = seriesKey;
       scrollRef.current?.scrollToEnd({ animated: false });
@@ -206,7 +203,7 @@ export function MarketChart({
   const pricePath = linePath((slot) => slot.price);
   const averagePath = linePath((slot) => slot.average);
 
-  // The readout chip lives inside the plot so it scrolls with the bar it labels.
+  // 读数贴片画在绘图区内部，这样它和自己标注的那根柱子一起滚动。
   const plot = (
     <View
       onLayout={anchorLatest}
@@ -273,7 +270,7 @@ export function MarketChart({
               );
             })}
 
-            {/* Session boundaries, so a five-day line can be read day by day. */}
+            {/* 场次分界线，五日线才能按天一段段地读。 */}
             {multiDay
               ? dayStarts
                   .filter((index) => index > 0)
@@ -364,7 +361,7 @@ export function MarketChart({
           ) : (
             plot
           )}
-          {/* Pinned to the viewport, not the content: the candles scroll under it. */}
+          {/* 钉在视口上而不是内容上：K 线在它底下横向滚过。 */}
           <View
             pointerEvents="none"
             style={{

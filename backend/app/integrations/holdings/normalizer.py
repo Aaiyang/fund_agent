@@ -1,7 +1,7 @@
-"""Normalization and validation of extracted/import positions.
+"""抽取结果与导入持仓的归一化、校验.
 
-Pure functions — unit-testable without any I/O (MVP spec 3.7: Normalizer
-unifies amount/percent/date formats; Validator flags anomalies).
+都是纯函数——不做任何 I/O 也能单测（MVP spec 3.7：Normalizer 把金额/百分比/日期
+格式统一，Validator 把异常标出来）。
 """
 
 import re
@@ -11,12 +11,12 @@ from app.integrations.holdings.base import DraftPositionItem, RawExtractedPositi
 _AMOUNT = re.compile(r"[¥￥$,，\s]")
 _PERCENT = re.compile(r"%\s*$")
 
-# Below this, a fund match needs explicit human confirmation (spec 3.7.2)
+# 匹配分低于这个值，就必须由用户显式确认（spec 3.7.2）
 LOW_CONFIDENCE_THRESHOLD = 0.6
 
 
 def parse_amount(value: str | float | int | None) -> float | None:
-    """Normalize money-like input ('¥1,234.56' / '1234.56' / 1234.56)."""
+    """把金额类的输入归一化（'¥1,234.56' / '1234.56' / 1234.56）."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -31,7 +31,7 @@ def parse_amount(value: str | float | int | None) -> float | None:
 
 
 def parse_percent(value: str | float | int | None) -> float | None:
-    """Normalize percent-like input ('-13.46%' → -13.46, stays in % units)."""
+    """把百分比类的输入归一化（'-13.46%' → -13.46，仍按 % 计）."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -46,7 +46,7 @@ def parse_percent(value: str | float | int | None) -> float | None:
 
 
 def normalize_raw_position(raw: RawExtractedPosition) -> DraftPositionItem:
-    """Convert a raw extracted row into a draft item (no fund resolution)."""
+    """把抽出的一条原始行转成草稿条目（不做基金解析）."""
     return DraftPositionItem(
         raw_fund_name=(raw.fund_name or "").strip() or None,
         market_value=raw.market_value,
@@ -61,15 +61,15 @@ def normalize_raw_position(raw: RawExtractedPosition) -> DraftPositionItem:
 
 
 def _sign(value: float) -> int:
-    """-1 / 0 / 1, so a pair of figures can be compared without float maths."""
+    """给出 -1 / 0 / 1，这样比较两个数同号不用做浮点运算."""
     return (value > 0) - (value < 0)
 
 
 def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
-    """Flag anomalies: unknown fund, missing value, suspicious ranges, dupes.
+    """标出异常：基金没认出来、数值缺失、量级可疑、重复.
 
-    Validation status values: valid / warning / error. Error rows can still
-    be user-corrected on the confirm page; only 'valid' import unedited.
+    validation_status 取值：valid / warning / error。error 行仍然可以在确认页上
+    由用户改对；只有 'valid' 的行会不加修改地直接导入。
     """
     issues: list[str] = []
 
@@ -86,9 +86,9 @@ def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
         issues.append("profit_loss_rate_out_of_range")
     if item.confidence < LOW_CONFIDENCE_THRESHOLD:
         issues.append("low_confidence")
-    # Screenshot-specific: a clipped name is several funds until he picks one.
-    # A row the screen cut off mid-height never gets here at all — the parser
-    # drops it, because a missing figure is not his to fill in.
+    # 截图特有的情况：名称被截断时它还可能指着好几只基金，要等用户选定一只。
+    # 被屏幕截掉半截的行根本到不了这里——解析器直接把它丢了，因为缺的那个数
+    # 本就不该由用户来补。
     if item.truncated:
         issues.append("fund_name_truncated")
     if item.profit_loss is not None and item.profit_loss_rate is not None:
@@ -105,10 +105,9 @@ def validate_draft_item(item: DraftPositionItem) -> DraftPositionItem:
 
 
 def dedupe_by_fund(items: list[DraftPositionItem]) -> list[DraftPositionItem]:
-    """Merge duplicate funds across screenshots, keeping the richer row.
+    """把多张截图里重复的基金并成一条，留下信息更全的那行.
 
-    Later rows fill fields missing from the first occurrence; a differing
-    market_value on the same fund is flagged as a warning.
+    后面的行用来补第一次出现时缺的字段；同一只基金上市值对不上，就标成 warning。
     """
     merged: dict[str, DraftPositionItem] = {}
     unnamed: list[DraftPositionItem] = []

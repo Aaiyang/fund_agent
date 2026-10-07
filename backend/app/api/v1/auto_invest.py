@@ -1,4 +1,4 @@
-"""Auto-invest plan endpoints: list (which settles), create, patch, delete."""
+"""定投计划端点：列表（读取时先结算）、新增、修改、删除."""
 
 from fastapi import (
     APIRouter,
@@ -34,7 +34,7 @@ async def list_plans(
     account_id: int | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AutoInvestPlansResponse:
-    """List plans, settling every installment that has come due first."""
+    """列出定投计划，返回前先把所有已到期的期数结算掉."""
     items, settled = await auto_invest_service.list_plans(identity.user_id, account_id)
     return AutoInvestPlansResponse(items=items, total=len(items), settled=settled)
 
@@ -46,7 +46,7 @@ async def create_plan(
     payload: AutoInvestPlanCreateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AutoInvestPlanItem:
-    """Add a standing purchase schedule."""
+    """新增一份定投计划，即按周期定期买入的安排."""
     try:
         return await auto_invest_service.create_plan(
             identity.user_id,
@@ -72,7 +72,7 @@ async def update_plan(
     payload: AutoInvestPlanUpdateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> AutoInvestPlanItem:
-    """Change the schedule. Installments already written are not restated."""
+    """修改定投安排；已经写入的期数不做回溯重算."""
     try:
         return await auto_invest_service.update_plan(
             identity.user_id,
@@ -98,7 +98,7 @@ async def delete_plan(
     with_orders: bool = Query(default=False, description="同时删掉这个计划生成的定投流水"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> dict[str, bool]:
-    """Remove a plan; `with_orders` also drops the installments it wrote."""
+    """删除计划；`with_orders` 为真时把它已生成的定投流水一并删掉."""
     deleted = await auto_invest_service.delete_plan(identity.user_id, plan_id, with_orders)
     if not deleted:
         raise HTTPException(status_code=404, detail="plan_not_found")

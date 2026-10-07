@@ -1,4 +1,4 @@
-"""Watchlist domain service."""
+"""自选域服务."""
 
 from datetime import date, datetime, timedelta
 
@@ -14,28 +14,28 @@ from app.services.fund_sync_service import fund_sync_service
 from app.utils.clock import business_today, utc_now
 
 _NAV_FRESH_DAYS = 3
-# Covers the longest column the list reports (近1年) plus a stale NAV grace period.
+# 覆盖列表里最长的一个区间（近1年），再留一段净值过期的宽限期。
 _HISTORY_LOOKBACK_DAYS = 400
 _WEEKLY_DAYS = 7
-# A series shorter than the longest displayed window means the fund was only ever
-# reached through search, so its history still has to be pulled.
+# 序列比展示的最长区间还短，说明这只基金只是搜索时顺带进来的，
+# 它的历史仍然需要补拉一次。
 _BACKFILL_WINDOW_DAYS = 366
-# One backfill request per fund per day; the sync lock dedups the job itself.
+# 每只基金每天只请求一次回填；任务本身由同步锁去重。
 _BACKFILL_COOLDOWN_SECONDS = 24 * 3600
 
 
 class WatchlistService:
-    """Async watchlist operations shared by the API and future Agent tools."""
+    """供 API 与后续 Agent 工具共用的异步自选操作."""
 
     async def list_funds(self, user_id: int, group_id: int | None = None) -> list[WatchlistFundItem]:
-        """List watchlisted funds with market data, optionally scoped to a group.
+        """列出自选基金及其行情，可以只看某一个分组.
 
         Args:
-            user_id: Owner id.
-            group_id: Optional group filter (None = all funds).
+            user_id: 所属用户 id。
+            group_id: 可选的分组过滤（None 表示全部基金）。
 
         Returns:
-            Watchlist fund items ordered by sort_order.
+            按 sort_order 排好的自选基金项。
         """
         entries = await watchlist_repository.list_funds(user_id)
         group_map = await watchlist_repository.list_group_map(user_id)
@@ -83,10 +83,10 @@ class WatchlistService:
         return items
 
     async def add_fund(self, user_id: int, fund_code: str, group_ids: list[int] | None = None) -> bool:
-        """Add a fund to the watchlist and optionally to groups.
+        """把基金加进自选，可以顺带加进若干分组.
 
         Returns:
-            True on success; False when the fund code is unknown.
+            成功返回 True；基金代码不存在返回 False。
         """
         fund = await fund_repository.get_fund(fund_code)
         if fund is None:
@@ -100,7 +100,7 @@ class WatchlistService:
         return True
 
     async def remove_fund(self, user_id: int, fund_code: str) -> bool:
-        """Remove a fund from the watchlist (and all groups)."""
+        """把基金从自选里移除（同时移出所有分组）."""
         removed = await watchlist_repository.remove_fund(user_id, fund_code)
         logger.info("watchlist_fund_removed", user_id=user_id, fund_code=fund_code, removed=removed)
         return removed
@@ -112,17 +112,17 @@ class WatchlistService:
         sort_order: int | None = None,
         group_ids: list[int] | None = None,
     ) -> bool:
-        """Update sort order and/or replace group memberships for a watchlisted fund.
+        """修改自选基金的排序，和/或整体替换它的分组归属.
 
         Args:
-            user_id: Owner id.
-            fund_code: Watchlisted fund to edit.
-            sort_order: New order within the watchlist.
-            group_ids: Full desired membership — groups missing from the list
-                drop the fund, so ungrouping is expressible (spec 3.3).
+            user_id: 所属用户 id。
+            fund_code: 要编辑的自选基金。
+            sort_order: 在自选列表里的新顺序。
+            group_ids: 期望的完整归属 —— 没出现在这份列表里的分组，
+                会把这只基金移出去，所以取消分组也能表达（spec 3.3）。
 
         Returns:
-            False when the fund is not on the user's watchlist.
+            该基金不在用户自选里时返回 False。
         """
         if sort_order is not None and await watchlist_repository.update_sort(user_id, fund_code, sort_order) is None:
             return False
@@ -132,7 +132,7 @@ class WatchlistService:
         return True
 
     async def list_groups(self, user_id: int) -> list[WatchlistGroupItem]:
-        """List the user's groups with fund counts."""
+        """列出用户的分组，以及各组的基金数量."""
         groups = await watchlist_repository.list_groups(user_id)
         group_map = await watchlist_repository.list_group_map(user_id)
         counts: dict[int, int] = {}
@@ -150,7 +150,7 @@ class WatchlistService:
         ]
 
     async def create_group(self, user_id: int, name: str, sort_order: int = 0) -> WatchlistGroupItem:
-        """Create a custom group."""
+        """创建自定义分组."""
         group = await watchlist_repository.create_group(user_id, name, sort_order)
         logger.info("watchlist_group_created", user_id=user_id, group_id=group.id)
         return WatchlistGroupItem(id=group.id or 0, name=group.name, sort_order=group.sort_order)
@@ -163,17 +163,17 @@ class WatchlistService:
         sort_order: int | None = None,
         fund_codes: list[str] | None = None,
     ) -> WatchlistGroupItem | None:
-        """Rename or reorder a group, optionally rewriting its members and order.
+        """给分组改名或排序，也可以顺带重写组内成员及成员顺序.
 
         Args:
-            user_id: Owner id.
-            group_id: Group to edit.
-            name: New display name.
-            sort_order: New group order.
-            fund_codes: Desired members in display order (spec 3.3 分组内排序).
+            user_id: 所属用户 id。
+            group_id: 要编辑的分组。
+            name: 新的展示名称。
+            sort_order: 分组之间的新顺序。
+            fund_codes: 期望的成员，按展示顺序给出（spec 3.3 分组内排序）。
 
         Returns:
-            The updated group, or None when it does not exist.
+            更新后的分组；分组不存在时返回 None。
         """
         group = await watchlist_repository.update_group(user_id, group_id, name, sort_order)
         if group is None:
@@ -185,18 +185,18 @@ class WatchlistService:
         return WatchlistGroupItem(id=group.id or 0, name=group.name, sort_order=group.sort_order)
 
     async def delete_group(self, user_id: int, group_id: int) -> bool:
-        """Delete a group; its funds stay watchlisted."""
+        """删除分组；组里的基金仍然留在自选里."""
         deleted = await watchlist_repository.delete_group(user_id, group_id)
         logger.info("watchlist_group_deleted", user_id=user_id, group_id=group_id, deleted=deleted)
         return deleted
 
     @staticmethod
     def _series_is_thin(rows: list[FundNav], end: date, fund: Fund | None) -> bool:
-        """True when the stored series cannot reach back over the longest window.
+        """落库序列撑不到最长区间之前时返回 True.
 
-        A fund reached only through search has a single NAV row, which leaves
-        the period columns empty until the history lands. Funds younger than the
-        window are excluded: no sync can produce their missing rows.
+        只在搜索里出现过的基金只有一条净值行，
+        区间收益那几列会一直空着，直到历史补齐为止。
+        成立晚于该窗区的基金要排除：任何同步都变不出它们缺失的行。
         """
         window_start = end - timedelta(days=_BACKFILL_WINDOW_DAYS)
         if fund is not None and fund.inception_date is not None and fund.inception_date > window_start:
@@ -204,10 +204,10 @@ class WatchlistService:
         return not rows or rows[0].nav_date > window_start
 
     async def _request_history_backfill(self, fund_codes: list[str]) -> None:
-        """Ask the queue to pull NAV history for funds with thin series.
+        """让队列为序列太薄的基金去补拉净值历史.
 
-        The read stays non-blocking: the broker runs the job outside the
-        request, so the next list load fills in the missing columns.
+        这次读取保持不阻塞：任务由 broker 在请求之外执行，
+        所以下一次打开列表时缺的那几列就补上了。
         """
         today = business_today().isoformat()
         for fund_code in fund_codes:
@@ -222,11 +222,11 @@ class WatchlistService:
 
     @staticmethod
     def _period_metrics(rows: list[FundNav], latest: FundNav | None) -> dict[str, float | None]:
-        """Trailing 1-week/1/3/6/12-month returns, in percent points.
+        """回溯一周 / 1、3、6、12 个月的区间收益，单位是百分点.
 
-        The analytics helpers return fractions while the `daily_return` column
-        already holds percent points; both are reported in the column's unit so
-        one formatter handles the whole row (MVP spec 5.2).
+        analytics 里的辅助函数给出的是小数，而 `daily_return` 列存的已经是百分点；
+        两者统一按这一列的单位输出，
+        整行就能用同一个格式化函数处理（MVP spec 5.2）。
         """
         fields = ("weekly_return", "monthly_return", "quarterly_return", "semiannual_return", "annual_return")
         if latest is None:
@@ -247,7 +247,7 @@ class WatchlistService:
 
     @staticmethod
     def _nav_is_fresh(fetched_at: datetime | None, nav_date) -> bool:
-        """True when the NAV was fetched within the freshness window."""
+        """净值的抓取时间落在新鲜度窗口之内时返回 True."""
         if fetched_at is None:
             return False
         fetched_naive = fetched_at.replace(tzinfo=None) if fetched_at.tzinfo else fetched_at

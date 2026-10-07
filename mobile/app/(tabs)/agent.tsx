@@ -5,9 +5,8 @@ import { Card, Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
 
 /**
- * Agent placeholder (spec 4.1). Phase 1 ships no agent capability: the page
- * shows the roadmap and, when entered from a fund detail page, the fund code
- * context it will eventually use.
+ * Agent 占位页（spec 4.1）。第一阶段不上线任何 agent 能力：页面只展示后续规划，
+ * 以及从基金详情页进入时携带的基金代码上下文——将来功能真正上线时会用到它。
  */
 export default function AgentScreen() {
   const { fund_code: fundCode } = useLocalSearchParams<{ fund_code?: string }>();

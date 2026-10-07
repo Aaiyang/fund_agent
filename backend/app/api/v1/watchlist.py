@@ -1,7 +1,7 @@
-"""Watchlist API endpoints: list/add/remove funds and group CRUD.
+"""自选 API 端点：自选基金的查询、加入、移除与分组 CRUD.
 
-Route order matters: static ``/groups`` routes must be registered before the
-dynamic ``/{fund_code}`` routes or "groups" would be captured as a fund code.
+路由顺序不能随意改：静态的 ``/groups`` 必须注册在动态的 ``/{fund_code}`` 之前，
+否则 "groups" 会被当成基金代码捕获。
 """
 
 from fastapi import (
@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Groups (static paths first)
+# 分组相关（静态路径先注册）
 # ---------------------------------------------------------------------------
 
 
@@ -39,7 +39,7 @@ async def list_groups(
     request: Request,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistGroupsResponse:
-    """List the user's watchlist groups."""
+    """列出用户的自选分组."""
     items = await watchlist_service.list_groups(identity.user_id)
     return WatchlistGroupsResponse(items=items, total=len(items))
 
@@ -51,7 +51,7 @@ async def create_group(
     payload: WatchlistGroupCreateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistGroupItem:
-    """Create a custom watchlist group."""
+    """新建一个自定义自选分组."""
     return await watchlist_service.create_group(identity.user_id, payload.name, payload.sort_order)
 
 
@@ -63,7 +63,7 @@ async def update_group(
     payload: WatchlistGroupUpdateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistGroupItem:
-    """Rename, reorder, or rewrite the members of a group."""
+    """改分组名、调排序，或整份重写组内成员."""
     updated = await watchlist_service.update_group(
         identity.user_id, group_id, payload.name, payload.sort_order, payload.fund_codes
     )
@@ -79,7 +79,7 @@ async def delete_group(
     group_id: int,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> dict[str, str]:
-    """Delete a group; member funds stay watchlisted."""
+    """删除分组；组里的基金仍然留在自选里."""
     deleted = await watchlist_service.delete_group(identity.user_id, group_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="group_not_found")
@@ -87,7 +87,7 @@ async def delete_group(
 
 
 # ---------------------------------------------------------------------------
-# Watchlist funds
+# 自选基金
 # ---------------------------------------------------------------------------
 
 
@@ -98,7 +98,7 @@ async def list_watchlist(
     group_id: int | None = None,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistResponse:
-    """List watchlisted funds with latest NAV and daily change."""
+    """列出自选基金，附最新净值与当日涨跌."""
     items = await watchlist_service.list_funds(identity.user_id, group_id=group_id)
     return WatchlistResponse(items=items, total=len(items))
 
@@ -110,7 +110,7 @@ async def add_to_watchlist(
     payload: WatchlistAddRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> WatchlistResponse:
-    """Add a fund to the watchlist (404 when the fund code is unknown)."""
+    """把基金加进自选（基金代码查不到时返回 404）."""
     added = await watchlist_service.add_fund(identity.user_id, payload.fund_code, payload.group_ids)
     if not added:
         raise HTTPException(status_code=404, detail="fund_not_found")
@@ -125,7 +125,7 @@ async def remove_from_watchlist(
     fund_code: str,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> dict[str, str]:
-    """Remove a fund from the watchlist."""
+    """把基金移出自选."""
     removed = await watchlist_service.remove_fund(identity.user_id, fund_code)
     if not removed:
         raise HTTPException(status_code=404, detail="watchlist_entry_not_found")
@@ -140,7 +140,7 @@ async def update_watchlist_entry(
     payload: WatchlistUpdateRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> dict[str, str]:
-    """Update sort order and/or group memberships of a watchlisted fund."""
+    """更新自选基金的排序和（或）所属分组."""
     updated = await watchlist_service.update_fund(
         identity.user_id, fund_code, sort_order=payload.sort_order, group_ids=payload.group_ids
     )

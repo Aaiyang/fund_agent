@@ -1,4 +1,4 @@
-"""Benchmark index endpoints: selectable catalog and range history."""
+"""业绩比较基准指数端点：可选基准目录与区间历史."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -18,7 +18,7 @@ async def list_indexes(
     request: Request,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> IndexCatalogResponse:
-    """Benchmarks the fund-detail comparison line can be switched to."""
+    """基金详情页对比线可以切换到的那几只基准指数."""
     items = market_service.catalog()
     return IndexCatalogResponse(items=items, total=len(items))
 
@@ -29,7 +29,7 @@ async def list_index_quotes(
     request: Request,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> IndexQuotesResponse:
-    """Latest close and day change for every benchmark, for the home tape."""
+    """首页行情条用：每只基准指数的最新收盘价与当日涨跌."""
     items = await market_service.get_quotes()
     return IndexQuotesResponse(items=items, total=len(items))
 
@@ -42,7 +42,7 @@ async def get_index_history(
     range: NavRange = Query(default="1y", description="图表区间：1m/3m/6m/1y/3y/all"),
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> IndexHistoryResponse:
-    """Daily closes for one benchmark, served from PostgreSQL with lazy backfill."""
+    """单只基准指数的日收盘价序列，从 PostgreSQL 读取并在缺数据时惰性回补."""
     history = await market_service.get_history(index_code, range)
     if history is None:
         raise HTTPException(status_code=404, detail="index_not_found")

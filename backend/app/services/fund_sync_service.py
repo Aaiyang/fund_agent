@@ -1,4 +1,4 @@
-"""Fund sync orchestration: lock-guarded, idempotent external data sync."""
+"""基金同步编排：由分布式锁保护、可幂等重跑的外部数据同步."""
 
 import asyncio
 from datetime import timedelta
@@ -18,22 +18,22 @@ from app.schemas.fund import FundNavRefreshResponse
 from app.utils.clock import business_close_utc, business_today, utc_now
 from app.workers import FUND_SYNC_TASK
 
-# The batched quote table carries no row for some funds (whole companies are
-# absent from it), so those fall back to the per-fund sync — which costs three
-# upstream calls and is therefore requested at most once per fund per day.
+# 批量行情表里没有某些基金的行（有的整家公司都不在这张表里），
+# 这些只能退回逐只同步 —— 那条路径要三次上游调用，
+# 因此每只基金每天最多只请求一次。
 _MISSING_NAV_SYNC_COOLDOWN_SECONDS = 24 * 3600
 
 
 def plan_nav_writes(
     codes: list[str], navs: list[FundExternalNav], funds: dict[str, Fund]
 ) -> tuple[list[FundExternalNav], list[str]]:
-    """Split a batched quote payload into rows to write and codes to chase.
+    """把批量行情的返回拆成"要写的行"和"要单独追的代码".
 
-    Two things must not be written: a code the caller did not ask for (the source
-    table covers every fund), and a code with no master row — `fund_nav` has a
-    foreign key onto `fund`, so one orphan would fail the whole chunked upsert
-    and cost the caller every other update in the batch. Both land in `missing`
-    and get the per-fund sync, which creates the master row first.
+    有两类行绝不能写：调用方没要的代码（源表是全市场覆盖的），
+    以及没有主数据行的代码 —— `fund_nav` 外键指向 `fund`，
+    一条孤儿数据就会让整批分块 upsert 全部失败，
+    连累同一批里其他本来能写进去的更新。
+    这两类都归到 `missing`，交给逐只同步处理，那条路径会先把主数据行建出来。
     """
     wanted = set(codes)
     newest: dict[str, FundExternalNav] = {}
@@ -49,26 +49,26 @@ def plan_nav_writes(
 
 
 class FundSyncService:
-    """Syncs one or many funds from the external provider into PostgreSQL.
+    """从外部数据源把单只或一批基金同步进 PostgreSQL.
 
-    Deduplication: a distributed lock keyed by ``fund_sync:{fund_code}:{date}``
-    keeps two workers from syncing the same fund at the same moment. It is
-    released on the way out, so it is a mutex rather than a once-a-day gate:
-    re-syncing a fund deliberately refetches. Upserts make retries idempotent —
-    re-running never duplicates rows.
+    去重：用 ``fund_sync:{fund_code}:{date}`` 作键的分布式锁，
+    避免两个 worker 在同一时刻同步同一只基金。锁在退出时就释放，
+    所以它是互斥锁而不是"一天只放行一次"的闸门：
+    主动重新同步一只基金，就会真的重新抓取一次。
+    写入用 upsert，因此重试是幂等的 —— 重跑不会产生重复行。
     """
 
     async def sync_fund(self, fund_code: str, include_profile: bool = True) -> str:
-        """Sync master data + NAV history for one fund.
+        """同步单只基金的主数据与净值历史.
 
         Args:
-            fund_code: The 6-digit fund code.
-            include_profile: Also fetch basic profile info.
+            fund_code: 6 位基金代码。
+            include_profile: 同时抓取基本信息档案。
 
         Returns:
-            One of "written" (new data stored), "skipped" (another worker holds
-            the lock for this fund/date) or "failed". The worker ledger needs
-            the difference: a skip is not a failure.
+            "written"（写入了新数据）、"skipped"（这个基金/日期的锁被另一个 worker 持有）
+            或 "failed" 三者之一。
+            worker 的任务流水需要区分它们：跳过不等于失败。
         """
         lock_key = f"fund_sync:{fund_code}:{business_today().isoformat()}"
         if not await cache_service.acquire_lock(lock_key, ttl=600):
@@ -90,8 +90,8 @@ class FundSyncService:
                 written = True
 
             if written:
-                # Cache-aside: PostgreSQL is the source of truth, so the hot
-                # entry must not keep serving the pre-sync NAV (spec 7.14).
+                # cache-aside：PostgreSQL 才是唯一可信源，
+                # 热点缓存不能继续提供同步之前的净值（spec 7.14）。
                 await cache_service.delete(cache_key("fund_latest_nav", fund_code))
 
             fund_sync_total.labels(status="written").inc()
@@ -110,14 +110,14 @@ class FundSyncService:
             await cache_service.release_lock(lock_key)
 
     async def sync_funds_bounded(self, fund_codes: list[str], concurrency: int = 5) -> dict[str, int]:
-        """Sync many funds with bounded concurrency (MVP spec 7.7).
+        """以受限的并发量同步一批基金（MVP spec 7.7）.
 
         Args:
-            fund_codes: Fund codes to sync.
-            concurrency: Maximum simultaneous provider calls.
+            fund_codes: 要同步的基金代码。
+            concurrency: 同时进行的数据源调用上限。
 
         Returns:
-            A summary dict: total / written / skipped / failed counts.
+            汇总字典：total / written / skipped / failed 各自的数量。
         """
         semaphore = asyncio.Semaphore(min(concurrency, 10))
 
@@ -136,7 +136,7 @@ class FundSyncService:
         return summary
 
     async def sync_hot_funds(self) -> dict[str, int]:
-        """Sync all Hot Funds (held or watchlisted by any user)."""
+        """同步全部热门基金（被任何用户持有或加进自选的基金）."""
         codes = await fund_repository.get_hot_fund_codes()
         if not codes:
             logger.info("fund_hot_sync_no_targets")
@@ -144,26 +144,26 @@ class FundSyncService:
         return await self.sync_funds_bounded(codes)
 
     async def refresh_user_latest_navs(self, user_id: int) -> FundNavRefreshResponse:
-        """Refresh the latest NAV of every fund this user holds or watchlists.
+        """刷新该用户持有或自选的全部基金的最新净值.
 
-        One batched source table answers the whole set, where the per-fund path
-        would cost three calls each — this is what makes it cheap enough to run
-        when the holdings screen opens. Written rows land in PostgreSQL before
-        the call returns, so the caller can re-read the lists immediately.
+        一次批量源表就能回答整个集合，逐只路径每只要三次调用 ——
+        正因为便宜，才可以在打开持仓页时跑。
+        写入的行在接口返回之前已经落到 PostgreSQL，
+        所以调用方可以立刻重新读列表。
         """
         codes = await fund_repository.list_user_fund_codes(user_id)
         if not codes:
             return FundNavRefreshResponse()
         if not AKSHARE_AVAILABLE:
-            # The provider returns an empty list without the dependency, which
-            # would be reported as "every fund is missing" unless gated here.
+            # 缺少该依赖时数据源会返回空列表，
+            # 不在这里挡住就会被报成"所有基金都缺数据"。
             logger.warning("fund_nav_refresh_unavailable", user_id=user_id, count=len(codes))
             return FundNavRefreshResponse(requested=len(codes), status="unavailable")
         if not await cache_service.acquire_lock(
             cache_key("nav_refresh_user", str(user_id)), ttl=settings.FUND_NAV_REFRESH_COOLDOWN_SECONDS
         ):
-            # A cooldown, not a mutex: never released, so a tab-switching user
-            # cannot stack one 20k-row fetch per focus.
+            # 这是冷却时间而不是互斥锁：锁不释放，
+            # 所以反复切换标签页的用户不会每聚焦一次就拉一次两万行的表。
             logger.debug("fund_nav_refresh_throttled", user_id=user_id, count=len(codes))
             return FundNavRefreshResponse(requested=len(codes), status="throttled")
 
@@ -173,8 +173,8 @@ class FundSyncService:
                 timeout=settings.FUND_NAV_REFRESH_TIMEOUT_SECONDS,
             )
         except Exception as e:
-            # The fetch continues in its executor thread and fills the source
-            # cache, so the next attempt is cheap. Old numbers stay on screen.
+            # 抓取仍在线程池里继续跑并填上源侧缓存，所以下一次尝试很便宜。
+            # 页面上先留着旧的数字。
             logger.exception("fund_nav_refresh_failed", user_id=user_id, count=len(codes), error=str(e))
             return FundNavRefreshResponse(requested=len(codes), status="deferred")
 
@@ -182,8 +182,8 @@ class FundSyncService:
         if writable:
             await fund_write_repository.upsert_navs(writable)
             for nav in writable:
-                # The lists read PostgreSQL, but the detail page caches this key:
-                # without the delete it would serve the pre-refresh NAV.
+                # 列表读的是 PostgreSQL，但详情页会缓存这个键：
+                # 不删掉它就会继续给出刷新之前的净值。
                 await cache_service.delete(cache_key("fund_latest_nav", nav.fund_code))
         for code in missing:
             await self._queue_missing_nav_refresh(code)
@@ -204,11 +204,11 @@ class FundSyncService:
         )
 
     async def _queue_missing_nav_refresh(self, fund_code: str) -> None:
-        """Ask for one fund the batched table did not carry.
+        """为批量表里没有的那只基金单独发起刷新.
 
-        Absent from that table is not "nothing to refresh" — some funds are
-        simply never listed in it — so the per-fund sync takes over. It is
-        requested once per fund per day because that path is three calls.
+        那张表里没有这只基金，不等于"没有要刷新的" ——
+        有些基金根本不上这张表 —— 所以由逐只同步接手。
+        因为那条路径要三次调用，每只基金每天只请求一次。
         """
         acquired = await cache_service.acquire_lock(
             cache_key("nav_refresh_missing", fund_code), ttl=_MISSING_NAV_SYNC_COOLDOWN_SECONDS
@@ -218,17 +218,17 @@ class FundSyncService:
         try:
             await self.enqueue_sync(fund_code)
         except Exception as e:
-            # A queue outage costs one fund's numbers, not the whole refresh.
+            # 队列不可用只影响一只基金的数字，不影响整批刷新。
             logger.warning("fund_nav_refresh_fallback_failed", fund_code=fund_code, error=str(e))
 
     async def enqueue_sync(self, fund_code: str) -> str:
-        """Record a job and hand the sync to the queue; never blocks the caller.
+        """先记一笔任务，再把同步交给队列；不阻塞调用方.
 
         Args:
-            fund_code: The 6-digit fund code to refresh.
+            fund_code: 要刷新的 6 位基金代码。
 
         Returns:
-            The job ledger id, so the caller can report or trace the attempt.
+            任务流水的 id，调用方可以用它上报或追踪这次尝试。
         """
         job = await job_repository.create("FUND_SYNC", subject=fund_code)
         await enqueue(FUND_SYNC_TASK, fund_code=fund_code, job_id=job.id)
@@ -236,13 +236,13 @@ class FundSyncService:
         return job.id
 
     async def is_nav_stale(self, fund_code: str) -> bool:
-        """True when the latest stored NAV is older than the staleness budget."""
+        """最新落库的净值超过陈旧容忍时长时返回 True."""
         latest = await fund_repository.get_latest_nav(fund_code)
         if latest is None:
             return True
         cutoff = utc_now() - timedelta(hours=settings.FUND_NAV_STALE_HOURS)
-        # A row without fetched_at only carries a business date: compare against
-        # that day's market close in UTC, not midnight local.
+        # 没有 fetched_at 的行只带一个业务日期：这时跟当天 UTC 的收盘时刻比，
+        # 而不是跟当地时间的零点比。
         fetched = latest.fetched_at or business_close_utc(latest.nav_date)
         return fetched < cutoff
 

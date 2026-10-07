@@ -1,10 +1,9 @@
-"""Record when a purchase was confirmed.
+"""记下申购被确认在哪一天.
 
-持有天数 had no real source: it counted from the earliest transaction row, which
-is the day the holding was *imported*, not the day it was bought. Funds price an
-order at the same day's NAV before 15:00 and the next session's after, so the
-pair below captures what the user actually knows — a date and which side of the
-cutoff it fell on.
+持有天数原先没有真实来源：它从最早的一条流水开始算，而那是持仓被导入的那天，不
+是真正买入的那天。基金下单落在截止点 15:00 之前按当日净值成交，之后按下一个交易时
+段成交，所以下面这两列记的才是用户真正知道的东西——一个日期，以及它落在截止点的哪
+一侧。
 """
 
 from typing import Sequence, Union
@@ -19,7 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add the confirmation date and its cutoff side."""
+    """加上确认日，以及它落在截止点哪一侧的标记."""
     op.add_column("portfolio_position", sa.Column("purchase_date", sa.Date(), nullable=True))
     op.add_column(
         "portfolio_position",
@@ -28,6 +27,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both columns."""
+    """删掉这两列."""
     op.drop_column("portfolio_position", "purchase_after_cutoff")
     op.drop_column("portfolio_position", "purchase_date")

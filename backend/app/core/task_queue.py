@@ -1,9 +1,9 @@
-"""Taskiq broker and enqueue helpers.
+"""Taskiq broker 与入队辅助函数.
 
-Reliable path: Taskiq + Redis broker with a dedicated worker process
-(`taskiq worker app.core.task_queue:broker`). Degraded fallback (no Redis
-configured): InMemoryBroker executes tasks in-process in the background of
-the event loop — task state stays authoritative in PostgreSQL either way.
+可靠路径是 Taskiq + Redis broker，配一个独立的 worker 进程
+（`taskiq worker app.core.task_queue:broker`）。没配 Redis 时走退化路径：
+InMemoryBroker 在本进程的事件循环后台执行任务 —— 无论走哪条，任务状态都以
+PostgreSQL 里的记录为准。
 """
 
 from typing import Any
@@ -13,7 +13,7 @@ from app.core.logging import logger
 
 
 def _resolve_redis_url() -> str:
-    """Resolve the broker Redis URL from dedicated or Valkey settings."""
+    """推导 broker 的 Redis URL：优先用 TASKIQ_REDIS_URL，否则由 Valkey 配置拼出."""
     if settings.TASKIQ_REDIS_URL:
         return settings.TASKIQ_REDIS_URL
     password_part = f":{settings.VALKEY_PASSWORD}@" if settings.VALKEY_PASSWORD else ""
@@ -21,10 +21,10 @@ def _resolve_redis_url() -> str:
 
 
 def _create_broker() -> Any:
-    """Create the Taskiq broker based on configuration.
+    """按配置创建 Taskiq broker.
 
     Returns:
-        A Taskiq broker instance (Redis-backed when configured, else in-memory).
+        Taskiq broker 实例：配了 Redis 就用 Redis 后端，否则用进程内实现。
     """
     if not settings.VALKEY_HOST and not settings.TASKIQ_REDIS_URL:
         from taskiq import InMemoryBroker
@@ -48,19 +48,19 @@ broker = _create_broker()
 
 
 async def enqueue(task_name: str, **kwargs: Any) -> None:
-    """Hand a task to the broker by name.
+    """按任务名把任务交给 broker.
 
-    Name-based on purpose: worker modules import the services that enqueue them,
-    so a direct import back would close a cycle. Task modules are imported at
-    startup (see app.main) to populate the broker registry.
+    刻意用名字而不是直接 import：worker 模块会去 import 那些负责给它入队的服务，
+    反向再 import 一次就闭环成循环依赖。任务模块在启动时被导入（见 app.main），
+    以此填充 broker 的任务注册表。
 
     Args:
-        task_name: Task id as Taskiq registers it, e.g.
-            "app.workers.fund_sync:sync_fund_task".
-        **kwargs: Task arguments.
+        task_name: Taskiq 注册时使用的任务 id，例如
+            "app.workers.fund_sync:sync_fund_task"。
+        **kwargs: 任务参数。
 
     Raises:
-        RuntimeError: The task was never registered in this process.
+        RuntimeError: 本进程从未注册过这个任务。
     """
     task = broker.find_task(task_name)
     if task is None:
@@ -69,10 +69,10 @@ async def enqueue(task_name: str, **kwargs: Any) -> None:
 
 
 async def startup_broker() -> None:
-    """Initialize the broker for the current process (API or worker)."""
+    """为当前进程（API 或 worker）初始化 broker."""
     await broker.startup()
 
 
 async def shutdown_broker() -> None:
-    """Release broker resources for the current process."""
+    """释放当前进程的 broker 资源."""
     await broker.shutdown()

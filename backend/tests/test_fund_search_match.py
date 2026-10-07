@@ -1,4 +1,4 @@
-"""AKShare rank rows carry Chinese column names; searching them by English keys silently matched nothing."""
+"""AKShare 榜单行的列名是中文：早前用英文 key 去查会一条都匹配不上，且不报错."""
 
 from app.integrations.fund_data.akshare_provider import match_records
 from app.integrations.fund_data.models import FundExternalRecord

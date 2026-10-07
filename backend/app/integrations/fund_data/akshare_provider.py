@@ -1,9 +1,8 @@
-"""AKShare-backed FundDataProvider with bounded concurrency isolation.
+"""基于 AKShare 的 FundDataProvider，用有界并发做隔离.
 
-AKShare calls are synchronous and blocking; every call runs in a worker
-thread via asyncio.to_thread, gated by a semaphore (bounded concurrency), a
-minimum-interval throttle, a per-call timeout and tenacity retries
-(MVP spec 7.6). Configuration comes exclusively from environment variables.
+AKShare 的调用是同步阻塞的，这里把每次调用放到 worker 线程里跑，前面套四道闸
+门：信号量（有界并发）、最小间隔限速、单次调用超时、tenacity 重试
+（MVP spec 7.6）。配置只从环境变量来.
 """
 
 import asyncio
@@ -48,32 +47,32 @@ from app.integrations.fund_data.sina_client import fetch_quotes
 from app.utils.clock import business_today
 from app.utils.sanitization import sanitize_string
 
-# Cache the full open-fund rank table in-process for cheap search + latest NAV
+# 把整张开放式基金排行表缓存在进程里，搜索和取最新净值都很便宜。
 _RANK_CACHE_TTL_SECONDS = 6 * 3600
-# A forced rebuild (the on-demand quote refresh) ignores the TTL above, but two
-# refreshes a minute apart gain nothing: the table is published once a day.
+# 强制重建（按需刷新报价）会无视上面的 TTL；但这张表一天只公布一次，
+# 一分钟内刷两次没有任何收益。
 _RANK_MIN_REFRESH_SECONDS = 60
-# The master (code, name) list changes a few times a month; refreshing it daily
-# keeps a screenshot import from paying for it more than once a day.
+# 代码与名称主数据表一个月才变几次；按天刷新，就能保证截图识别导入
+# 一天最多只为它付一次代价。
 _NAME_DIRECTORY_TTL_SECONDS = 24 * 3600
 
 
 def match_records(records: list[FundExternalRecord], keyword: str) -> list[FundExternalRecord]:
-    """Substring match on code or name.
+    """按代码或名称做子串匹配.
 
-    AKShare's rank endpoint returns the whole table with no query API, so
-    fuzzy search happens here. Chinese names match as substrings, which is
-    what users type ("华泰柏瑞" finds "华泰柏瑞质量成长混合C").
+    AKShare 的排行接口一次返回整张表，没有查询参数，所以模糊搜索只能在这里做。
+    中文名称按子串匹配，正合用户的输入习惯——搜 "华泰柏瑞" 就能命中
+    "华泰柏瑞质量成长混合C".
     """
     lowered = keyword.lower()
     return [record for record in records if lowered in record.fund_code or lowered in record.fund_name.lower()]
 
 
 class AKShareFundProvider:
-    """Bounded-concurrency adapter around AKShare's synchronous fund APIs."""
+    """包住 AKShare 同步基金接口的有界并发适配器."""
 
     def __init__(self) -> None:
-        """Initialize bounded-concurrency primitives and caches."""
+        """初始化有界并发原语和各份缓存."""
         self._semaphore = asyncio.Semaphore(settings.AKSHARE_MAX_CONCURRENCY)
         self._throttle_lock = asyncio.Lock()
         self._last_call_monotonic = 0.0
@@ -85,11 +84,11 @@ class AKShareFundProvider:
         self._name_cached_at = 0.0
 
     # ------------------------------------------------------------------
-    # Public API (FundDataProvider)
+    # 对外接口（FundDataProvider）
     # ------------------------------------------------------------------
 
     async def search_funds(self, keyword: str) -> list[FundExternalRecord]:
-        """Search funds by code substring or fuzzy name from the rank table."""
+        """在排行表里按代码子串或模糊名称搜基金."""
         keyword_clean = sanitize_string(keyword).strip()
         if not keyword_clean:
             return []
@@ -97,17 +96,17 @@ class AKShareFundProvider:
         return match_records(index, keyword_clean)[:50]
 
     async def get_fund_profile(self, fund_code: str) -> FundExternalProfile | None:
-        """Fetch fund master data from the individual basic-info endpoint."""
+        """从单只基金的基本信息接口取主数据."""
         rows = await self._call("fund_individual_basic_info_xq", symbol=fund_code)
         return normalize_profile_rows(rows, fund_code)
 
     async def get_latest_nav(self, fund_code: str) -> FundExternalNav | None:
-        """Fetch the most recent NAV, preferring the rank table then history."""
+        """取最近一天的净值：先查排行表，没有再走历史净值."""
         index = await self._get_rank_index()
         for record in index:
-            # A row with no NAV date is skipped rather than dated "today":
-            # fabricating a date would write a fund_nav point on a possibly
-            # non-trading day and anchor every later window calculation on it.
+            # 没有净值日期的行直接跳过，不能替它补成"今天"：编造日期会把
+            # fund_nav 这点写到可能根本不是交易日的某一天，后面每个区间计算
+            # 都会以这个假日期为锚。
             if record.fund_code == fund_code and record.nav_date is not None:
                 return FundExternalNav(
                     fund_code=fund_code,
@@ -125,7 +124,7 @@ class AKShareFundProvider:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[FundExternalNav]:
-        """Fetch and merge unit/accumulated NAV history."""
+        """拉取单位净值与累计净值，再合并成历史序列."""
         unit_rows = await self._call("fund_open_fund_info_em", symbol=fund_code, indicator="单位净值走势")
         accumulated_rows: list[dict[str, Any]] = []
         try:
@@ -141,10 +140,10 @@ class AKShareFundProvider:
         return navs
 
     async def get_latest_navs(self, fund_codes: list[str], force: bool = False) -> list[FundExternalNav]:
-        """Read the latest NAV for many funds from the rank table.
+        """从排行表一次读多只基金的最新净值.
 
-        One upstream call answers any number of codes, which is why the
-        on-demand quote refresh batches instead of syncing fund by fund.
+        上游一次调用就能覆盖任意多个代码，所以按需刷新报价是批量做的，
+        而不是一只基金一只基金地同步.
         """
         if not fund_codes:
             return []
@@ -163,18 +162,17 @@ class AKShareFundProvider:
         ]
 
     async def get_fund_manager(self, fund_code: str) -> FundExternalManager | None:
-        """Fetch the current manager from the basic-info endpoint."""
+        """从基本信息接口取现任基金经理."""
         profile = await self.get_fund_profile(fund_code)
         if profile is None:
             return None
         return FundExternalManager(fund_code=fund_code, manager_name=profile.manager_name)
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
-        """Fetch the disclosed stock holdings of the two latest reporting quarters.
+        """取最近两个报告期披露的股票持仓.
 
-        The quarter-over-quarter change the UI shows needs the previous
-        disclosure too, and the endpoint is yearly, so the year before is only
-        pulled when the current one has a single quarter published.
+        界面要显示的季度环比离不开上一期披露，而这个接口是按年取数的，
+        所以只有当年只公布了一个季度时才去拉上一年.
         """
         year = business_today().year
         rows: list[dict[str, Any]] = []
@@ -186,23 +184,22 @@ class AKShareFundProvider:
         return normalize_holding_rows(rows, fund_code)
 
     async def get_stock_quotes(self, stock_codes: list[str]) -> list[StockExternalQuote]:
-        """Quote holdings across A-share/HK/US markets in one batched request."""
+        """一次批量请求，给持仓股票跨 A股/港股/美股取行情."""
         symbols = [symbol for symbol in (sina_symbol(code) for code in stock_codes) if symbol]
         if not symbols:
             return []
         try:
             return await fetch_quotes(symbols)
         except Exception as e:
-            # A quote outage costs one column, not the whole holdings page.
+            # 行情源挂掉只损失一列数据，不该拖垮整个持仓页。
             logger.warning("stock_quotes_unavailable", count=len(symbols), error=str(e))
             return []
 
     async def get_industry_allocation(self, fund_code: str) -> list[FundExternalIndustry]:
-        """Fetch the industry weights of the latest disclosure.
+        """取最新一次披露的行业权重.
 
-        The endpoint raises for a year the fund has no disclosure in (a fund
-        newer than the requested year), so each candidate year is tried on its
-        own rather than letting one miss fail the lookup.
+        基金在所查年份里没有披露（成立晚于该年）时接口会抛异常，所以每个候选
+        年份各自试一次，不让一次落空把整个查询判成失败.
         """
         year = business_today().year
         for candidate in (year, year - 1):
@@ -222,13 +219,11 @@ class AKShareFundProvider:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[IndexExternalQuote]:
-        """Fetch a benchmark index's daily closes for the comparison line.
+        """取业绩比较基准指数的日线收盘价，用于画对比线.
 
-        Outside the FundDataProvider protocol: an index is not a fund fact. It
-        shares this adapter only for the guarded transport (throttle, semaphore,
-        timeout, retries). The Sina endpoint returns the whole history in one
-        call, so the range is trimmed here; the Eastmoney index endpoint is
-        unreachable from some networks.
+        这不在 FundDataProvider 协议里：指数不是基金事实，它只是复用这个适配器
+        受保护的传输（限速、信号量、超时、重试）。新浪接口一次就返回全部历史，
+        所以区间过滤在这里做；东财的指数接口在某些网络下连不通.
         """
         rows = await self._call("stock_zh_index_daily", symbol=index_code)
         quotes = normalize_index_rows(rows or [], index_code)
@@ -239,20 +234,20 @@ class AKShareFundProvider:
         return quotes
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # 内部辅助
     # ------------------------------------------------------------------
 
     async def _get_rank_index(self, force: bool = False) -> list[FundExternalRecord]:
-        """Return the open-fund rank table as normalized records, cached.
+        """返回归一化后的开放式基金排行表，带进程内缓存.
 
-        Normalization happens once per refresh: the raw rows carry Chinese
-        column names, and matching on English keys would silently never hit.
+        归一化每次刷新只做一遍：原始行的列名是中文，拿英文键去匹配会静默地
+        永远命中不了.
         """
         if self._rank_is_reusable(force):
             return self._rank_index
         async with self._rank_lock:
-            # The waiter that lost the race still has to re-check: whoever built
-            # the table while we queued has already answered this request.
+            # 抢锁输了的一方仍然要再判一次：排队这段时间里可能已经有人把表建好，
+            # 这次请求也就已经有答案了。
             if self._rank_is_reusable(force):
                 return self._rank_index
             self._rank_attempted_at = time.monotonic()
@@ -265,10 +260,10 @@ class AKShareFundProvider:
             return normalized
 
     def _rank_is_reusable(self, force: bool) -> bool:
-        """Whether the in-process table may answer this read without a fetch.
+        """进程内这张表能不能直接回答本次读取，不用再拉上游.
 
-        The stampede guard is stamped before the call, so an outage costs one
-        attempt per minute rather than one per tab focus.
+        防击穿的标记是在发起调用之前就打的，所以上游挂掉时每分钟只浪费一次尝试，
+        而不是页面每聚焦一次就再试一遍.
         """
         if not self._rank_index:
             return False
@@ -277,11 +272,11 @@ class AKShareFundProvider:
         return (time.monotonic() - self._rank_cached_at) < _RANK_CACHE_TTL_SECONDS
 
     async def get_name_directory(self) -> list[tuple[str, str]]:
-        """Every registered fund's (code, name) pair, cached.
+        """全部在册基金的代码与名称对照表，带缓存.
 
-        The rank table has whole companies missing from it — no 广发纳指 row,
-        for one — so matching a name read off a screenshot needs the master
-        list. It changes slowly and costs one call, so it lives longer.
+        排行表会整家公司都缺——比如根本没有广发纳指那一行——所以截图识别出来的
+        名称要匹配，得靠这份主数据表。它变化很慢、一次调用就能拿全，
+        因此缓存时间放得更长.
         """
         if self._name_directory and (time.monotonic() - self._name_cached_at) < _NAME_DIRECTORY_TTL_SECONDS:
             return self._name_directory
@@ -298,7 +293,7 @@ class AKShareFundProvider:
         return directory
 
     async def _throttle(self) -> None:
-        """Enforce a minimum interval between external calls."""
+        """强制两次外部调用之间留足最小间隔."""
         async with self._throttle_lock:
             elapsed = time.monotonic() - self._last_call_monotonic
             wait = settings.AKSHARE_MIN_INTERVAL_SECONDS - elapsed
@@ -314,20 +309,20 @@ class AKShareFundProvider:
         reraise=True,
     )
     async def _call(self, func_name: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        """Run one AKShare function in a thread with throttle+semaphore+timeout."""
+        """在限速、信号量和超时的保护下，用一个线程跑一个 AKShare 函数."""
         if not AKSHARE_AVAILABLE or ak is None:
             logger.warning("akshare_not_available", func_name=func_name)
             return []
 
-        # The permit is returned by the worker thread's completion callback, not
-        # when this coroutine resumes: a started thread cannot be cancelled, so
-        # releasing on timeout would let real concurrency creep past
-        # AKSHARE_MAX_CONCURRENCY by one stuck call at a time.
+        # 名额要等 worker 线程的完成回调归还，不能在本协程恢复时就还。
+        # 线程一旦启动就取消不掉，超时就放行等于把名额提前放掉：
+        # 每卡住一次调用，实际并发就往上多挪一个，逐次累积下去，
+        # 最终会突破 AKSHARE_MAX_CONCURRENCY 的上限。
         await self._semaphore.acquire()
         try:
-            # run_in_executor forwards positional args only: every AKShare
-            # function here is called with keyword arguments (symbol, indicator),
-            # so they must be bound before the call or the executor rejects them.
+            # run_in_executor 只转发位置参数：这里用到的 AKShare 函数都是关键字
+            # 参数（symbol、indicator）方式调的，必须先把它们绑好，否则 executor
+            # 会拒收。
             future = asyncio.get_running_loop().run_in_executor(
                 None, functools.partial(self._call_sync, func_name, *args, **kwargs)
             )
@@ -353,7 +348,7 @@ class AKShareFundProvider:
         return records
 
     def _call_sync(self, func_name: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        """Blocking AKShare invocation — always runs inside a worker thread."""
+        """阻塞式 AKShare 调用——只在 worker 线程里跑."""
         func = getattr(ak, func_name, None)
         if func is None:
             raise ValueError(f"akshare function not found: {func_name}")

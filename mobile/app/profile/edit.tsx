@@ -8,7 +8,7 @@ import { theme } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth';
 import { formatDateTime } from '@/utils/format';
 
-/** Edit the signed-in user's own profile (spec 3.1). */
+/** 编辑当前登录用户自己的资料（spec 3.1）。 */
 export default function ProfileEditScreen() {
   const user = useAuthStore((state) => state.user);
   const updateProfile = useAuthStore((state) => state.updateProfile);
@@ -25,7 +25,7 @@ export default function ProfileEditScreen() {
       setProblem('请输入邮箱');
       return;
     }
-    // Only send what changed: the endpoint treats an omitted field as "keep".
+    // 只提交改过的字段：接口把省略未传的字段理解为“保持原值”。
     const payload: { username?: string; email?: string } = {};
     if (nextUsername !== (user?.username ?? '')) payload.username = nextUsername;
     if (nextEmail !== (user?.email ?? '')) payload.email = nextEmail;

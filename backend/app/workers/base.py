@@ -1,8 +1,8 @@
-"""Shared execution wrapper for Taskiq workers: bounded retries + PG audit.
+"""Taskiq worker 的共用执行外壳：有限次重试 + PostgreSQL 留痕.
 
-Every durable background task runs through :func:`run_job` so failures carry an
-error code, attempt count and timestamps into PostgreSQL instead of living only
-in logs (MVP spec 7.8, and 7.4 rule 3: retryable work must be durable).
+每个持久化后台任务都要走 :func:`run_job`，这样失败会把错误码、尝试次数和
+各阶段时间戳一并写进 PostgreSQL，而不只留在日志里
+（MVP spec 7.8，以及 7.4 规则 3：可重试的工作必须先做到持久化）。
 """
 
 from collections.abc import Awaitable, Callable
@@ -19,16 +19,16 @@ async def run_job(
     work: Callable[[], Awaitable[None]],
     on_failure: Callable[[Exception], Awaitable[None]] | None = None,
 ) -> str:
-    """Run `work` with a bounded retry budget, recording the outcome.
+    """在有限重试额度内执行 `work`，并把结果写进任务账本.
 
     Args:
-        job_id: Ledger row created before the task was enqueued.
-        work: Coroutine performing the actual task.
-        on_failure: Optional business hook (e.g. mark an import failed).
+        job_id: 任务入队之前就创建好的账本行。
+        work: 真正执行任务的协程。
+        on_failure: 可选的业务侧钩子（例如把导入批次标记为失败）。
 
     Returns:
-        "ok" or "failed". Never raises: a recorded failure must not be
-        redelivered by the broker forever.
+        "ok" 或 "failed"。本函数永不抛异常：失败已经记进账本了，
+        就不该再让 broker 把它无限重投下去。
     """
     await job_repository.mark_running(job_id)
     attempts = max(settings.BACKGROUND_TASK_MAX_ATTEMPTS, 1)

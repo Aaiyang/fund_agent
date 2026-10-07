@@ -1,16 +1,14 @@
 /**
- * Mouse-drag panning for a horizontal ScrollView on the web.
+ * 给 web 端的横向 ScrollView 补上鼠标拖动平移。
  *
- * Browsers pan a scroll box with the wheel and with touch, but a press-and-drag
- * with a mouse does nothing, so a desktop panel cannot reach the items past its
- * right edge. The listeners go on the real DOM scroller because React Native's
- * responder props are not reliably forwarded by ScrollView on web.
+ * 浏览器里滚轮和触摸都能平移滚动容器，但鼠标按住拖动默认什么都不做，
+ * 桌面窗口够不到右边缘之外的条目。监听器要绑在真正的 DOM 滚动节点上，
+ * 因为 web 端 ScrollView 不保证透传 React Native 的 responder props。
  *
- * Native keeps its own pan gesture, so this is a no-op there.
+ * 原生端自带平移手势，这个 hook 在原生端什么都不做。
  *
- * `enabled` doubles as the re-attach trigger: a scroller that only mounts once
- * its container has been measured (a chart waiting on `onLayout`) would else
- * bind to nothing and never retry.
+ * `enabled` 同时充当重新绑定的信号：有些滚动容器要等父容器量出尺寸后才
+ * 挂载（比如等 `onLayout` 的图表），否则这个 hook 会绑了个空、再不重试。
  */
 
 import { type RefObject, useEffect } from 'react';
@@ -33,7 +31,7 @@ export function useDragScroll(ref: RefObject<ScrollView | null>, enabled = true)
     };
     const onMouseMove = (event: MouseEvent) => {
       if (!dragging) return;
-      // The browser clamps the upper bound; the lower one needs the Math.max.
+      // 上界浏览器自己会夹住，下界得靠这个 Math.max 自己守。
       node.scrollLeft = Math.max(startLeft + (startX - event.clientX), 0);
     };
     const stop = () => {

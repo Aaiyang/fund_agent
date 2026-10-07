@@ -1,10 +1,9 @@
 /**
- * Fixed-name-column data grid with one horizontally scrolling block of metric
- * columns, shared by 自选 and 持仓 so both read the same way.
+ * 数据表格：名称列固定不动，指标列作为一整块横向滚动；自选和持仓共用，
+ * 两边看起来口径一致。
  *
- * Per-row horizontal scrollers would let each row drift to its own offset, so
- * the whole right side is a single scroller and the header mirrors it with a
- * `scrollEnabled={false}` replica.
+ * 若每行各带一个横向滚动条，各行会漂到各自的偏移、彼此错位，所以右半侧
+ * 做成单个滚动容器，表头用一个 `scrollEnabled={false}` 的副本跟着镜像滚动。
  */
 
 import { type Href, Link } from 'expo-router';
@@ -31,7 +30,7 @@ export type DataCell = {
   color?: string;
   sub?: string;
   subColor?: string;
-  /** For non-numeric placeholders (新增/未接入) that read better centered. */
+  /** 非数字的占位内容（新增/未接入）居中排更好看。 */
   align?: 'left' | 'center';
 };
 
@@ -40,7 +39,7 @@ export type DataColumn<T> = {
   title: string;
   width: number;
   cell: (item: T) => DataCell;
-  /** Raw value behind the formatted cell; omit it to make the column unsortable. */
+  /** 格式化单元格背后的原始值；不给它就等于该列不可排序。 */
   sortValue?: (item: T) => number | string | null | undefined;
 };
 
@@ -63,16 +62,16 @@ export function DataTable<T>({
 }: {
   items: T[];
   keyOf: (item: T) => string;
-  /** Row target: when set, the name column becomes a link to this route. */
+  /** 行的跳转目标：设置后名称列变成指向该路由的链接。 */
   hrefOf?: (item: T) => Href;
-  /** Left column: fund name plus the small line under it. */
+  /** 左侧列：基金名称加上下面那行小字。 */
   nameOf: (item: T) => { title: string; sub: string };
   columns: DataColumn<T>[];
-  /** Trailing column; omit it when the rows have no per-row command. */
+  /** 尾部操作列；行内没有逐行操作时就不传。 */
   action?: { title: string; label: (item: T) => string; busy: (item: T) => boolean; onPress: (item: T) => void } | null;
-  /** Horizontal inset for grids that are not already inside a padded Card. */
+  /** 表格没有被包在自带内边距的 Card 里时，用它补左右留白。 */
   padded?: boolean;
-  /** Grids living inside a page scroller size to their rows instead. */
+  /** 嵌在页面滚动容器里的表格不再自己滚行，改为按行数撑开。 */
   scrollRows?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -89,7 +88,7 @@ export function DataTable<T>({
     return [...items].sort((left, right) => {
       const a = pick(left);
       const b = pick(right);
-      // A missing figure is not a zero: it stays at the bottom either way.
+      // 缺失的数字不等于 0：不论升序降序都排在最末尾。
       if (a === null || a === undefined) return b === null || b === undefined ? 0 : 1;
       if (b === null || b === undefined) return -1;
       const order =
@@ -121,9 +120,9 @@ export function DataTable<T>({
   );
 
   useEffect(() => {
-    // The header mirrors the grid, so a grid that keeps its offset while the
-    // rows are replaced (group switch, delete) leaves titles over the wrong
-    // columns until the next scroll.
+    // 表头是网格的镜像：换分组、删行导致数据整体替换时，若网格还停在
+    // 旧偏移上，表头就会对错列，
+    // 直到下一次滚动才纠正，所以这里先归零。
     gridRef.current?.scrollTo({ x: 0, y: 0, animated: false });
     headRef.current?.scrollTo({ x: 0, animated: false });
   }, [columnKey]);
@@ -217,8 +216,8 @@ export function DataTable<T>({
 
   const header = (
     <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
-      {/* The name column needs no title: every row already reads fund name +
-          code, so a heading above it is just a second label for the same thing. */}
+      {/* 名称列不需要表头：每行本来就是基金名称加代码，
+          上面再放个标题只是给同一个东西贴第二遍标签。 */}
       <View style={{ width: NAME_W }} />
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <ScrollView ref={headRef} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false}>

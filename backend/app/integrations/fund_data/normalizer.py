@@ -1,7 +1,7 @@
-"""Normalizers converting raw AKShare payloads into internal domain models.
+"""把 AKShare 等上游的原始返回归一化成内部领域模型.
 
-All parsing is defensive: third-party column names and value formats change
-between AKShare versions, so every field is optional and every cast tolerant.
+所有解析都按防御式写：第三方表里的列名和取值格式会随 AKShare 版本变，所以每个
+字段都当成可缺、每次转换都容忍脏值.
 """
 
 import re
@@ -28,7 +28,7 @@ _PERCENT_SUFFIX = re.compile(r"%\s*$")
 
 
 def to_float(value: Any) -> float | None:
-    """Cast a raw cell (number, numeric string, '1.23%', '--') to float."""
+    """把原始单元格（数字、数字字符串、'1.23%'、'--'）转成 float."""
     if _is_missing(value):
         return None
     if isinstance(value, (int, float)):
@@ -43,10 +43,10 @@ def to_float(value: Any) -> float | None:
 
 
 def to_date(value: Any) -> date | None:
-    """Cast a raw date cell (date, datetime, 'YYYY-MM-DD', 'YYYYMMDD') to date.
+    """把原始日期单元格（date、datetime、'YYYY-MM-DD'、'YYYYMMDD'）转成 date.
 
-    Anything unparseable becomes None: pandas hands us NaT for missing dates,
-    and touching a NaT raises rather than returning None.
+    解析不出的一律给 None：pandas 缺日期时交来的是 NaT，去碰它不会返回 None，
+    而是直接抛异常.
     """
     if value is None:
         return None
@@ -66,25 +66,25 @@ def to_date(value: Any) -> date | None:
     return None
 
 
-# Sentinels AKShare/pandas use for "no value"; NaT reaches us as a str() of 'NaT'
-# and NaN as a float that is not equal to itself.
+# AKShare/pandas 用来表示"没有值"的哨兵；NaT 到我们手里时 str() 出来是 'NaT'，
+# NaN 则是一个不等于自身的 float。
 _MISSING_TOKENS = {"", "--", "-", "—", "None", "nan", "NaN", "NaT", "nat"}
 
 
 def _is_missing(value: Any) -> bool:
-    """True for None, NaN, NaT and the placeholder strings AKShare emits."""
+    """None、NaN、NaT 以及 AKShare 吐出的那些占位字符串都算缺值."""
     if value is None:
         return True
     if isinstance(value, float) and value != value:
         return True
     if str(value).strip() in _MISSING_TOKENS:
         return True
-    # pandas NaT is datetime-like but explodes on any real use
+    # pandas 的 NaT 看着像 datetime，真去用它就炸
     return type(value).__name__ == "NaTType"
 
 
 def _pick(record: dict[str, Any], *keys: str) -> Any:
-    """Return the first non-empty value among candidate column names."""
+    """在候选列名里返回第一个有值的."""
     for key in keys:
         value = record.get(key)
         if not _is_missing(value):
@@ -93,7 +93,7 @@ def _pick(record: dict[str, Any], *keys: str) -> Any:
 
 
 def normalize_fund_record(record: dict[str, Any]) -> FundExternalRecord | None:
-    """Normalize one search/rank row into a FundExternalRecord."""
+    """把一行搜索/排行数据归一化成 FundExternalRecord."""
     fund_code = _pick(record, "基金代码", "fund_code", "代码")
     fund_name = _pick(record, "基金简称", "基金全称", "fund_name", "名称")
     if not fund_code:
@@ -110,7 +110,7 @@ def normalize_fund_record(record: dict[str, Any]) -> FundExternalRecord | None:
 
 
 def _text(info: dict[str, Any], limit: int, *keys: str) -> str | None:
-    """First usable value among the candidate keys, trimmed to `limit` characters."""
+    """候选键里第一个能用的值，截到 `limit` 个字符."""
     value = _pick(info, *keys)
     if value is None:
         return None
@@ -119,7 +119,7 @@ def _text(info: dict[str, Any], limit: int, *keys: str) -> str | None:
 
 
 def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundExternalProfile | None:
-    """Normalize fund_individual_basic_info_xq-style item/value rows."""
+    """归一化 `fund_individual_basic_info_xq` 那种 item/value 行."""
     if not rows:
         return None
     info: dict[str, Any] = {}
@@ -133,14 +133,14 @@ def normalize_profile_rows(rows: list[dict[str, Any]], fund_code: str) -> FundEx
         logger.debug("fund_profile_name_missing", fund_code=fund_code)
         return None
 
-    # AKShare renamed this cell across versions: 成立日期 / 成立日期/规模 / 成立时间
-    # all appear in the wild, and a missed key silently yields None.
+    # 这一格在 AKShare 各版本里改过名：成立日期、成立日期/规模、成立时间都真实
+    # 存在过，键名少认一个就会静默地产出 None。
     inception_raw = _pick(info, "成立日期", "成立日期/规模", "成立时间", "发行日期")
     inception = None
     if inception_raw:
         text = str(inception_raw).strip()
-        # "2021-01-01/2.34亿" carries the size after the date; slash-formatted
-        # dates must not be split, so the whole value is tried first.
+        # "2021-01-01/2.34亿" 把规模跟在日期后面；但斜杠分隔的日期不能被拆开，
+        # 所以先拿整个值试一次解析。
         inception = to_date(text) or to_date(text.split("/")[0])
 
     return FundExternalProfile(
@@ -159,7 +159,7 @@ def normalize_nav_rows(
     accumulated_rows: list[dict[str, Any]],
     fund_code: str,
 ) -> list[FundExternalNav]:
-    """Merge unit-NAV and accumulated-NAV rows keyed by NAV date."""
+    """按净值日期把单位净值行和累计净值行合并起来."""
     accumulated_by_date = {
         nav_date: to_float(_pick(row, "累计净值"))
         for row in accumulated_rows
@@ -185,11 +185,10 @@ def normalize_nav_rows(
 
 
 def normalize_index_rows(rows: list[dict[str, Any]], index_code: str) -> list[IndexExternalQuote]:
-    """Convert an index daily frame into ascending (date, close) quotes.
+    """把指数日频表转成按日期升序的行情点，每点只带 date 与 close.
 
-    AKShare's index endpoints disagree on column naming between versions and
-    sources (Sina is lowercase English, Eastmoney is Chinese), so both
-    spellings are accepted and unusable rows are dropped.
+    AKShare 的指数接口在不同版本、不同源之间列名并不统一（新浪是小写英文，东财
+    是中文），所以两种写法都收，用不了的行直接丢掉.
     """
     quotes: list[IndexExternalQuote] = []
     for row in rows:
@@ -206,7 +205,7 @@ _QUARTER_PATTERN = re.compile(r"(\d{4})年(\d)季度")
 
 
 def parse_quarter(label: Any) -> tuple[int, int] | None:
-    """Order key for a reporting period like ``2026年2季度股票投资明细``."""
+    """给报告期排序用的键，形如 ``2026年2季度股票投资明细``."""
     if label is None:
         return None
     match = _QUARTER_PATTERN.search(str(label))
@@ -216,7 +215,7 @@ def parse_quarter(label: Any) -> tuple[int, int] | None:
 
 
 def normalize_holding_rows(rows: list[dict[str, Any]], fund_code: str) -> list[FundExternalHolding]:
-    """Convert ``fund_portfolio_hold_em`` rows into holdings with their quarter."""
+    """把 ``fund_portfolio_hold_em`` 的行转成带报告季度的持仓."""
     holdings: list[FundExternalHolding] = []
     for row in rows:
         stock_code = _pick(row, "股票代码", "证券代码", "stock_code")
@@ -238,11 +237,10 @@ def normalize_holding_rows(rows: list[dict[str, Any]], fund_code: str) -> list[F
 
 
 def sina_symbol(stock_code: str) -> str | None:
-    """Map a holding's code to its quote symbol; markets are encoded in the shape.
+    """把持仓代码换成行情代码；市场信息藏在代码形状里.
 
-    The holdings table carries no market column, so a 6-digit code is a Chinese
-    listing (5/6/9 Shanghai, otherwise Shenzhen), a 5-digit one is Hong Kong, and
-    a lettered ticker is a US listing.
+    持仓表没有市场列，所以 6 位数字是中国内地上市（首位 5/6/9 归上海，其余归
+    深圳），5 位数字是港股，带字母的是美股.
     """
     code = stock_code.strip()
     if code.isdigit():
@@ -260,7 +258,7 @@ _SINA_LINE = re.compile(r'var hq_str_(?P<symbol>\w+)="(?P<body>[^"]*)"')
 
 
 def parse_sina_quotes(payload: str) -> list[StockExternalQuote]:
-    """Parse the batched quote reply; each market has its own field layout."""
+    """解析批量行情返回；每个市场的字段排布都不一样."""
     quotes: list[StockExternalQuote] = []
     for match in _SINA_LINE.finditer(payload):
         symbol = match.group("symbol")
@@ -316,10 +314,10 @@ _CURRENCY = re.compile(r"^[A-Z]{3}$")
 
 
 def _tencent_node(payload: Any, symbol: str) -> dict[str, Any]:
-    """One instrument's object inside a market reply.
+    """行情返回里属于单个标的的那一层对象.
 
-    The feed reports "no data" as a bare ``"data": []`` rather than an empty
-    object, so every level has to be type-checked before it is indexed.
+    接口表示"没有数据"时给的是裸的 ``"data": []``，不是空对象，所以每往下取一层
+    都得先判类型.
     """
     container = payload.get("data") if isinstance(payload, dict) else None
     node = container.get(symbol) if isinstance(container, dict) else None
@@ -327,20 +325,19 @@ def _tencent_node(payload: Any, symbol: str) -> dict[str, Any]:
 
 
 def market_kind(symbol: str) -> str:
-    """Index or stock, from the symbol shape; no listing table carries a market column.
+    """从代码形状判断是指数还是个股；哪张上市表都没有市场列.
 
-    ``sh000*`` and ``sz399*`` are the Shanghai and Shenzhen index ranges. The
-    overlap is deliberate: ``sh000001`` is 上证指数 while ``sz000001`` is 平安银行.
+    ``sh000*`` 和 ``sz399*`` 分别是上交所、深交所的指数号段。号段重叠是有意为之：
+    ``sh000001`` 是上证指数，``sz000001`` 却是平安银行.
     """
     return "index" if symbol.startswith(_INDEX_SYMBOL_PREFIXES) else "stock"
 
 
 def tencent_symbol(stock_code: str) -> str | None:
-    """Map a listing code to Tencent's symbol form.
+    """把上市代码换成腾讯的代码形式.
 
-    Same shape-based market inference as :func:`sina_symbol`, except US tickers
-    keep their upper case because the feed is case-sensitive there, and an
-    already prefixed symbol passes through so callers can round-trip it.
+    市场推断和 :func:`sina_symbol` 一样靠代码形状，区别是美股 ticker 要保持大写
+    （接口在美股这边区分大小写），而已带前缀的代码原样透传，方便调用方来回转.
     """
     code = stock_code.strip()
     if re.fullmatch(r"(?:sh|sz|bj|hk)\d{4,6}|us[A-Z][A-Z.]{0,10}", code):
@@ -357,7 +354,7 @@ def tencent_symbol(stock_code: str) -> str | None:
 
 
 def _quote_time(raw: str) -> str | None:
-    """Normalize the two timestamp shapes the feed uses per market."""
+    """归一化接口在不同市场使用的两种时间戳形状."""
     value = raw.strip()
     if re.fullmatch(r"\d{14}", value):
         return f"{value[0:4]}-{value[4:6]}-{value[6:8]} {value[8:10]}:{value[10:12]}:{value[12:14]}"
@@ -369,12 +366,11 @@ def _field(fields: list[str], index: int) -> float | None:
 
 
 def parse_tencent_quotes(payload: str) -> list[MarketExternalQuote]:
-    """Parse the batched snapshot reply; the field layout varies per market.
+    """解析批量快照返回；字段排布随市场变化.
 
-    Offsets 1-45 line up across A股, 港股, 美股 and 指数. Beyond that the layouts
-    diverge, so the extras are read through the per-market helpers below rather
-    than a single index table. 五档买卖盘 is deliberately not parsed: it is only
-    populated during a session and no screen shows it.
+    下标 1-45 在 A股、港股、美股和指数上是对齐的，再往后就分叉了，所以多出来的
+    字段交给下面按市场各写的辅助函数读，而不是共用一张下标表。五档买卖盘是故意
+    不解析的：只有盘中才有值，也没有哪个页面要显示它.
     """
     quotes: list[MarketExternalQuote] = []
     for match in _TENCENT_LINE.finditer(payload):
@@ -401,11 +397,11 @@ def parse_tencent_quotes(payload: str) -> list[MarketExternalQuote]:
                 change_pct=_field(fields, 32),
                 high=_field(fields, 33),
                 low=_field(fields, 34),
-                # A股 and 指数 pack "price/volume/amount" into 35 with amount in 元;
-                # 港股 and 美股 leave a bare price there and report 元 at 37.
+                # A股和指数把 "price/volume/amount" 挤在第 35 位，成交额单位是元；
+                # 港股和美股那一位只有裸价格，元为单位的成交额在第 37 位。
                 amount=_field(base, 2) if len(base) == 3 else _field(fields, 37),
-                # 港股 leaves 换手率 at a literal 0 and a halted stock reports 0 too;
-                # neither is worth rendering, so both become missing.
+                # 港股把换手率恒置为 0，停牌的股票也报 0；这两种都不值得显示，
+                # 一律当成缺值。
                 turnover_rate=_field(fields, 38) or None,
                 pe=None if kind == "index" else _field(fields, 39),
                 amplitude=_field(fields, 43),
@@ -428,23 +424,23 @@ def _quote_currency(fields: list[str]) -> str | None:
 
 
 def _quote_pb(fields: list[str]) -> float | None:
-    """市净率 sits at 46 for A股; other markets put the English name there."""
+    """市净率在 A股 位于第 46 位；其他市场这一位放的是英文名称."""
     return _field(fields, 46) if len(fields) > 80 else None
 
 
 def _quote_week52(fields: list[str]) -> tuple[float | None, float | None]:
-    """A股 reports 52-week extremes at 67/68, 港股 and 美股 at 48/49."""
+    """52 周最高/最低：A股 在 67/68，港股和美股在 48/49."""
     if len(fields) > 80:
         return _field(fields, 67), _field(fields, 68)
     return _field(fields, 48), _field(fields, 49)
 
 
 def parse_tencent_candles(payload: dict[str, Any], symbol: str) -> list[CandleExternalBar]:
-    """Read one instrument's bar array out of the K-line reply.
+    """从 K 线返回里取出单个标的的 K 线数组.
 
-    The row order is date, open, **close, high**, low, volume — not OHLC. A
-    Hong Kong row may carry a trailing corporate-action dict, which is why the
-    slice is positional from the left rather than "everything but the last".
+    行的顺序是 date, open, **close, high**, low, volume，并不是 OHLC。港股的行尾部
+    还可能多带一个公司行为的 dict，所以取值一律从左边按下标数，不能写成去掉
+    末尾那一项.
     """
     node = _tencent_node(payload, symbol)
     for key in ("qfqday", "day", "qfqweek", "week", "qfqmonth", "month"):
@@ -476,12 +472,11 @@ def parse_tencent_candles(payload: dict[str, Any], symbol: str) -> list[CandleEx
 
 
 def parse_tencent_minutes(payload: dict[str, Any], symbol: str) -> MinuteExternalSeries:
-    """Convert the session's running totals into per-minute points.
+    """把盘中的累计值换算成单分钟点.
 
-    Rows are "HHMM price cumulative_volume cumulative_amount". The reply also
-    embeds the live quote array, which is where the previous close comes from:
-    the minute line is plotted against it, and asking for it separately would
-    cost a second round trip on every refresh.
+    行的格式是 "HHMM price cumulative_volume cumulative_amount"。返回里还嵌着一份
+    实时行情数组，昨收就从那里拿：分时线要以它为基准来画，而每次刷新都单独再问
+    一次昨收要多花一个来回.
     """
     node = _tencent_node(payload, symbol)
     inner = node.get("data") if isinstance(node.get("data"), dict) else None
@@ -498,10 +493,10 @@ def parse_tencent_minutes(payload: dict[str, Any], symbol: str) -> MinuteExterna
 
 
 def _minute_points(rows: Any, symbol: str, trade_date: date | None = None) -> list[MinuteExternalPoint]:
-    """Turn one session's cumulative rows into per-minute points.
+    """把一个交易日的累计行转成单分钟点.
 
-    The running totals restart every session, so the differ is scoped to a day
-    and the five-day series is just five of these stitched oldest-first.
+    累计值每个交易日都重新从头计，所以差分只在当天之内做；五日序列不过就是把
+    五段这样的结果按从早到晚拼起来.
     """
     is_lot = symbol.startswith(("sh", "sz", "bj"))
     has_average = market_kind(symbol) == "stock"
@@ -534,10 +529,10 @@ def _minute_points(rows: Any, symbol: str, trade_date: date | None = None) -> li
 
 
 def parse_tencent_day_query(payload: dict[str, Any], symbol: str) -> MinuteExternalSeries:
-    """Five sessions of minute data, stitched oldest-first.
+    """五个交易日的分时数据，按从早到晚拼接.
 
-    The reply orders the days newest-first and carries no previous close for the
-    whole window, so the caller fills `prev_close` from the daily bars.
+    返回里的日期是新的在前，而且整段都没有基准昨收，所以调用方要从日线自己把
+    `prev_close` 补上.
     """
     days = _tencent_node(payload, symbol).get("data")
     if not isinstance(days, list):
@@ -555,10 +550,10 @@ def parse_tencent_day_query(payload: dict[str, Any], symbol: str) -> MinuteExter
 
 
 def _tencent_quote_array(qt: Any, symbol: str) -> list[str]:
-    """The quote array embedded in a K-line or minute reply.
+    """K 线或分时返回里嵌着的那份行情数组.
 
-    The dict also carries an empty money-flow key and a market-status entry, so
-    the symbol is looked up by name rather than taking the first value.
+    这个 dict 里还有空的资金流键和大盘状态条目，所以要先按代码名找，而不是随便
+    拿第一个值.
     """
     if not isinstance(qt, dict):
         return []
@@ -569,7 +564,7 @@ def _tencent_quote_array(qt: Any, symbol: str) -> list[str]:
 
 
 def normalize_company_rows(payload: dict[str, Any], symbol: str) -> CompanyExternalProfile | None:
-    """Flatten the A股 master-data reply; other markets have no equivalent source."""
+    """摊平 A股 主数据的返回；其他市场没有等价的数据源."""
     rows = (payload.get("result") or {}).get("data") or []
     if not rows:
         return None
@@ -594,11 +589,10 @@ _SWEN_PREFIX = re.compile(r"^\d{1,3}(?=[\u4e00-\u9fff])")
 
 
 def normalize_industry_rows(rows: list[dict[str, Any]], fund_code: str) -> list[FundExternalIndustry]:
-    """Keep the newest disclosure's industry weights, heaviest first.
+    """只留最新一次披露的行业权重，按权重从大到小排.
 
-    One yearly call returns every quarter published so far, and the industry
-    names come with their Shenwan index prefix ("50通信服务"), which is noise to
-    a reader comparing it against the holdings table.
+    按年调一次会返回这一年已经公布的所有季度，得自己挑最新那期；行业名还带着
+    申万指数的数字前缀（"50通信服务"），拿去和持仓表对照时那就是噪声.
     """
     parsed: list[tuple[date | None, str, float | None, float | None]] = []
     for row in rows:

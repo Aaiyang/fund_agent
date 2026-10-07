@@ -1,8 +1,8 @@
-"""Async database engine and session factory.
+"""异步数据库引擎与会话工厂.
 
-New fund/watchlist/portfolio modules use this asyncpg-backed engine per the
-MVP spec (SQLAlchemy Async + asyncpg). The legacy chat/auth services keep
-using the existing sync database_service; both point at the same PostgreSQL.
+按 MVP spec，新的基金/自选/资产组合模块统一使用这套 SQLAlchemy Async + asyncpg
+的引擎；遗留的 chat/auth 服务继续用原有的同步 database_service，两者连的是同一个
+PostgreSQL。
 """
 
 from collections.abc import AsyncIterator
@@ -21,7 +21,7 @@ from app.core.logging import logger
 
 
 def _build_async_url() -> str:
-    """Build the asyncpg connection URL from settings."""
+    """用配置项拼出 asyncpg 的连接 URL."""
     return (
         "postgresql+asyncpg://"
         f"{quote_plus(settings.POSTGRES_USER)}:{quote_plus(settings.POSTGRES_PASSWORD)}"
@@ -48,10 +48,10 @@ async_session_factory = async_sessionmaker(
 
 @asynccontextmanager
 async def get_async_session() -> AsyncIterator[AsyncSession]:
-    """Provide a short-lived async session with commit/rollback handling.
+    """提供短生命周期的异步会话，并负责提交/回滚.
 
     Yields:
-        An AsyncSession. Commits on clean exit, rolls back on exception.
+        一个 AsyncSession。正常退出时提交，抛异常时回滚。
     """
     async with async_session_factory() as session:
         try:
@@ -63,10 +63,10 @@ async def get_async_session() -> AsyncIterator[AsyncSession]:
 
 
 async def async_health_check() -> bool:
-    """Check async engine connectivity with a trivial query.
+    """用最简单的查询探测异步引擎的连通性.
 
     Returns:
-        True when the database responds, False otherwise.
+        数据库有响应返回 True，否则 False。
     """
     from sqlalchemy import text
 

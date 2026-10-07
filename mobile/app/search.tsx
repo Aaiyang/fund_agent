@@ -13,7 +13,7 @@ import { formatNumber, formatReturnPoints } from '@/utils/format';
 
 export default function SearchScreen() {
   const [keyword, setKeyword] = useState('');
-  // Typing Chinese needs an IME commit; only query the settled text.
+  // 输入中文得等输入法上屏；只对已经稳定的文本发起查询。
   const settledKeyword = useDeferredValue(keyword);
   const search = useFundSearch(settledKeyword);
   const watchlist = useWatchlist(null);

@@ -1,4 +1,4 @@
-/** One fund line item, shared by watchlist, search results and holdings. */
+/** 单行基金条目，自选、搜索结果与持仓列表共用一种排版。 */
 
 import { Link } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
@@ -25,15 +25,15 @@ export function FundRow({
   latestNav: number | null | undefined;
   dailyReturn: number | null | undefined;
   navDate?: string | null;
-  /** Secondary line under the name (account, cost, group names…). */
+  /** 名称下方的辅助行（账户、成本、分组名等）。 */
   extra?: string;
   badges?: { label: string; tone?: 'warning' | 'danger' | 'muted' }[];
   /**
-   * Row button rendered *beside* the link, never inside it: on web an
-   * interactive child cannot stop the surrounding anchor from navigating.
+   * 行内按钮渲染在链接的*旁边*、绝不嵌进链接里：web 上内部的可交互元素
+   * 拦不住外层 <a> 跳转。
    */
   action?: FundRowAction;
-  /** Dim the action while its request is in flight. */
+  /** 该按钮的请求在途时把它调暗。 */
   pending?: boolean;
 }) {
   return (

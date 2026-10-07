@@ -32,7 +32,7 @@ import {
 
 const NAV_ROWS_COLLAPSED = 15;
 
-/** Fund detail: overview + holdings context + NAV chart (spec 3.5). */
+/** 基金详情页：概览 + 我的持仓上下文 + 净值走势图（spec 3.5）。 */
 export default function FundDetailScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const [range, setRange] = useState<NavRange>('1y');
@@ -62,7 +62,7 @@ export default function FundDetailScreen() {
       remove.mutate(code, { onError: (error) => setNotice(error.message) });
       return;
     }
-    // Adding is never silent: the caller picks groups, or 不分组, first (spec 3.3).
+    // 加自选从不静默进行：先让用户挑选分组，或明确选择“不分组”（spec 3.3）。
     setPickingGroup(true);
   }
 
@@ -226,7 +226,7 @@ export default function FundDetailScreen() {
 
       <Card>
         <SectionTitle title="我的持仓" action="修改持仓" onAction={() => router.push(`/position/edit?code=${code}&account_id=${accountId ?? ''}`)} />
-        {/* A 404 from this endpoint means "no position in the current view", not an error. */}
+        {/* 这个接口返回 404 只表示“当前视图下没有持仓”，并不是错误。 */}
         {position.isPending ? (
           <LoadingState />
         ) : position.data ? (

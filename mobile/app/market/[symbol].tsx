@@ -1,10 +1,8 @@
 /**
- * Analysis screen for one listed instrument: reached from the home market tape
- * (an index) and from a fund's 重仓股 table (a stock).
+ * 单只上市品种的行情分析页：入口有两个——首页指数条（指数）和基金的重仓股表格（个股）。
  *
- * Sections a market has no data for are dropped rather than rendered as "--":
- * an index has no 市净率, a Hong Kong listing has no company profile on this
- * source. The layout stays identical across the four markets on purpose.
+ * 某个市场没有数据的板块直接不渲染，而不是摆一排 "--"：指数没有市净率，
+ * 该数据源也查不到港股的公司简介。四个市场刻意保持完全相同的布局。
  */
 
 import { Stack, useLocalSearchParams } from 'expo-router';
@@ -45,8 +43,8 @@ const MODES: { key: Mode; label: string }[] = [
   { key: 'month', label: '月K' },
 ];
 
-// The chart pans sideways through this window instead of offering range buttons.
-// Monthly bars need a longer window to be worth looking at.
+// 图表在这个窗口内左右平移，不另设区间按钮。
+// 月K 的窗口要拉得更长才有看头。
 const HISTORY: Record<'day' | 'week' | 'month', { range: NavRange; label: string }> = {
   day: { range: '1y', label: '近1年' },
   week: { range: '1y', label: '近1年' },
@@ -66,10 +64,10 @@ export default function MarketScreen() {
   const data = quote.data;
   const sign = currencySign(data?.currency);
   const profile = company.data?.company;
-  // The feed serves minute lines for A股 and 港股 only, for one session or five;
-  // a US market would offer two tabs that can only fail, so neither is shown.
-  // The symbol shape is checked too so the tabs never appear for one frame
-  // before the quote lands.
+  // 数据源只对 A股 和 港股 供应分钟线，一次覆盖 1 个或 5 个交易日；
+  // 美股挂了这两个标签页也只会拉到失败，所以干脆不显示。
+  // 同时校验代码形态，避免行情到达前标签页闪出
+  // 哪怕一帧。
   const modes = data?.currency === 'USD' || /^us[A-Za-z]/.test(symbol ?? '') ? MODES.slice(2) : MODES;
 
   const refresh = () => {

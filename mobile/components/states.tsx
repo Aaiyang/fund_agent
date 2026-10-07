@@ -1,4 +1,4 @@
-/** Loading / error / empty states, so no screen renders a blank panel (spec Phase 6). */
+/** 加载/失败/空状态三件套，保证每个页面都不致于摆一块空面板（spec Phase 6）。 */
 
 import { type ReactNode } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
@@ -35,7 +35,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-/** Render a query's data, or the right state for it. */
+/** 渲染查询数据；渲染不了就摆出对应的状态。 */
 export function Async<T>({
   query,
   children,
@@ -46,9 +46,9 @@ export function Async<T>({
   empty?: (data: T) => ReactNode;
 }) {
   const data = query.data;
-  // A failed *background* refetch keeps the data already loaded but still flips
-  // isError on, so the error branch must not win over retained data: that would
-  // swap a working screen (and its buttons) for a bare 重试 after any edit.
+  // *后台*重取失败时已加载的数据仍在，但 isError 照样翻真；错误分支不能压过
+  // 保留的数据：否则任何一次编辑之后，可用的页面（连同按钮）都会被
+  // 换成一个孤零零的“重试”。
   if (data === undefined || data === null) {
     if (query.isPending) return <LoadingState />;
     if (query.isError) {

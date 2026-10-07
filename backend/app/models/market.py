@@ -1,4 +1,4 @@
-"""Public market reference data: benchmark index closes."""
+"""公开行情参考数据：业绩比较基准指数的收盘点位."""
 
 from datetime import date, datetime
 
@@ -9,7 +9,7 @@ from app.models.base import BaseModel
 
 
 class IndexQuote(BaseModel, table=True):
-    """One trading day's closing level of a benchmark index."""
+    """基准指数在某一交易日的收盘点位."""
 
     __tablename__ = "index_quote"  # pyright: ignore[reportAssignmentType]
 

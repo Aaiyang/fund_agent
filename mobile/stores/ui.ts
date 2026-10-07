@@ -1,18 +1,18 @@
 /**
- * Cross-screen UI selections (Zustand): which account view and which
- * watchlist group is active. Server data deliberately stays out of here.
+ * 跨页面的 UI 选中状态（Zustand）：当前哪个账户视图、哪个自选分组生效。
+ * 服务器数据刻意不往这里放。
  */
 
 import { create } from 'zustand';
 
 type UiState = {
-  /** null means "全部账户" (aggregate across accounts). */
+  /** null 表示“全部账户”，即跨账户的汇总视图。 */
   accountId: number | null;
-  /** null means "全部" (the spec's default group). */
+  /** null 表示“全部”，即 spec 里那个默认分组。 */
   groupId: number | null;
   setAccountId: (accountId: number | null) => void;
   setGroupId: (groupId: number | null) => void;
-  /** Drop back to the defaults; used when the signed-in user changes. */
+  /** 退回默认选中；切换登录用户时用。 */
   reset: () => void;
 };
 

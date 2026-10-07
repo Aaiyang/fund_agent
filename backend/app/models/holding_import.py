@@ -1,8 +1,7 @@
-"""Holding import models: import batches and their pending items.
+"""持仓导入模型：导入批次与批次下的待确认条目.
 
-These tables drive the parse → review → confirm → apply flow. They are an
-audit surface — the authoritative holdings fact table is portfolio_position.
-Raw screenshot images are never stored here (or anywhere in PostgreSQL).
+这两张表跑的是 解析 → 复核 → 确认 → 应用 这条流程，只算一层审计留痕 —— 持仓的权威
+事实表是 portfolio_position。截图原图不存在这里，也不存在 PostgreSQL 的任何地方。
 """
 
 from datetime import datetime
@@ -19,10 +18,10 @@ def _new_import_id() -> str:
 
 
 class HoldingImport(BaseModel, table=True):
-    """One manual or screenshot holdings import batch.
+    """一次手动录入或截图识别的持仓导入批次.
 
-    Status lifecycle: UPLOADED → PARSING → REVIEW_REQUIRED → CONFIRMED →
-    APPLIED, with PARSE_FAILED / CANCELLED as terminal error states.
+    状态流转：UPLOADED → PARSING → REVIEW_REQUIRED → CONFIRMED → APPLIED，
+    PARSE_FAILED 与 CANCELLED 是表示失败的终态。
     """
 
     __tablename__ = "holding_import"  # pyright: ignore[reportAssignmentType]
@@ -30,7 +29,7 @@ class HoldingImport(BaseModel, table=True):
     id: str = Field(default_factory=_new_import_id, primary_key=True, max_length=32)
     user_id: int = Field(foreign_key="user.id", index=True)
     account_id: int = Field(foreign_key="portfolio_account.id", index=True)
-    import_type: str = Field(max_length=20)  # MANUAL / SCREENSHOT
+    import_type: str = Field(max_length=20)  # 取值：MANUAL（手动录入）/ SCREENSHOT（截图识别）
     status: str = Field(default="UPLOADED", max_length=30, index=True)
 
     image_count: int = Field(default=0)
@@ -49,10 +48,10 @@ class HoldingImport(BaseModel, table=True):
 
 
 class HoldingImportItem(BaseModel, table=True):
-    """One pending holdings entry awaiting user confirmation.
+    """一条等待用户确认的待导入持仓.
 
-    user_action records the user's decision: UPDATE (import), SKIP, or EDIT
-    (user corrected fields before confirming).
+    user_action 记下用户的处置：UPDATE（采纳导入）、SKIP（跳过），或 EDIT
+    （确认前先自己改过字段）。
     """
 
     __tablename__ = "holding_import_item"  # pyright: ignore[reportAssignmentType]

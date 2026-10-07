@@ -1,4 +1,4 @@
-"""The backfill decision must not re-pull a series that already serves the range."""
+"""决定要不要补历史时，库里已经覆盖该区间的那条序列不能再重新拉一次."""
 
 from datetime import date, timedelta
 

@@ -1,8 +1,7 @@
-"""Drop the per-batch 来源应用 label from holding imports.
+"""删掉持仓导入中按批次记录的 来源应用 标签.
 
-Nothing produces it any more — the screenshot screen's text box was the only
-input, and he called it out as pointless. The label that does earn its place
-lives on the account (portfolio_account.source_app) and is untouched.
+已经没有任何入口会写它了——截图导入页的文本框是唯一的输入，而用户明确指出这一项没
+有意义。真正起作用的那份标签记在账户上（portfolio_account.source_app），保持不动。
 """
 
 from typing import Sequence, Union
@@ -17,10 +16,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Remove holding_import.source_app."""
+    """删除 holding_import.source_app."""
     op.drop_column("holding_import", "source_app")
 
 
 def downgrade() -> None:
-    """Bring the column back; the batches that used it are already labelled on the account."""
+    """把列加回来；用过这一标签的批次已经把值记在账户上了."""
     op.add_column("holding_import", sa.Column("source_app", sa.String(length=50), nullable=True))

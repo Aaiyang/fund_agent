@@ -1,9 +1,8 @@
-"""Tests for the Tencent market normalizer.
+"""腾讯行情归一化层的测试.
 
-Fixtures are built index-by-index rather than pasted, because the feed is a
-positional ``~``-separated array whose offsets differ per market — naming every
-index in the test is what keeps the per-market tables honest when the source
-shifts.
+用例是一个下标一个下标拼出来的，而不是直接粘贴真实报文：这个数据源是按位置用
+``~`` 分隔的数组，每个市场的下标偏移都不一样 —— 在测试里逐个点名下标，上游一挪位，
+各市场那张下标表就会立刻暴露出来。
 """
 
 from datetime import date
@@ -86,7 +85,7 @@ class TestQuoteParsing:
         assert quote.name == "贵州茅台"
         assert quote.price == 1237.00
         assert quote.change_pct == -1.14
-        # A股 reports 成交额 inside field 35, already in 元.
+        # A股的 成交额 装在字段 35 里，单位已经是 元。
         assert quote.amount == 3_867_310_920.0
         assert quote.volume_unit == "手"
         assert quote.pb == 6.15
@@ -112,9 +111,9 @@ class TestQuoteParsing:
         assert quote.currency == "HKD"
         assert quote.amount == 253_782_946.0
         assert quote.volume_unit == "股"
-        # Field 46 is the English name on this layout, not 市净率.
+        # 在这套版面里字段 46 是英文简称，不是 市净率。
         assert quote.pb is None
-        # A literal zero 换手率 is "not reported" for 港股.
+        # 港股 的 换手率 给出的是一个真 0，意思是「未披露」。
         assert quote.turnover_rate is None
         assert (quote.week52_high, quote.week52_low) == (156.0, 80.2)
 
@@ -168,8 +167,8 @@ class TestCandleParsing:
         assert [bar.close for bar in parse_tencent_candles(payload, "sh600519")] == [2.0]
 
     def test_monthly_bars_are_read_from_either_key(self) -> None:
-        # A股 gets the adjusted key; indexes, 港股 and 美股 come back plain even
-        # though the request asked for 前复权.
+        # A股 返回的是带复权的那个 key；指数、港股 和 美股 明明请求的是 前复权，
+        # 回来的却是不带复权的 key。
         row = ["2026-09-24", "3979.880", "3888.370", "3995.180", "3842.720", "8924426945.000"]
         for key, symbol in (("qfqmonth", "sh600519"), ("month", "sh000001"), ("month", "hk01810")):
             payload: dict[str, Any] = {"data": {symbol: {key: [row]}}}
@@ -201,7 +200,7 @@ class TestMinuteParsing:
         assert series.prev_close == 1251.24
         assert [point.time for point in series.points] == ["09:30", "09:31"]
         assert series.points[1].volume == 1210.0
-        # 手 → 股 before dividing the cumulative amount by the cumulative volume.
+        # 先把 手 换算成 股，再拿累计成交额除以累计成交量。
         assert series.points[0].average_price == 1250.01
 
     def test_index_sessions_have_no_average_price(self) -> None:
@@ -225,7 +224,7 @@ class TestFiveDayParsing:
         series = parse_tencent_day_query(payload, "sh600519")
         assert [point.trade_date for point in series.points] == [date(2026, 9, 23), date(2026, 9, 24)]
         assert series.trade_date == date(2026, 9, 24)
-        # The reply carries no baseline for a five-session window.
+        # 五日窗口这种回复里不带昨收基准。
         assert series.prev_close is None
 
     def test_running_totals_reset_every_session(self) -> None:
@@ -284,6 +283,6 @@ def _minute_payload(symbol: str, rows: list[str]) -> dict[str, Any]:
 
 
 def _day_payload(symbol: str, sessions: list[tuple[str, list[str]]]) -> dict[str, Any]:
-    """Sessions arrive newest-first from the feed, same as here."""
+    """数据源返回的交易日是最新在前，这里也按同样的顺序拼."""
     days = [{"date": day, "data": rows} for day, rows in sessions]
     return {"data": {symbol: {"data": days}}}

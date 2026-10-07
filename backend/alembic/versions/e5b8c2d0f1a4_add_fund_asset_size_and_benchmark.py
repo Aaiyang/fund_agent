@@ -1,4 +1,4 @@
-"""Add fund.asset_size and fund.benchmark: source-quoted scale and benchmark."""
+"""新增 fund.asset_size 与 fund.benchmark：数据源口径的基金规模与业绩比较基准."""
 
 from typing import Sequence, Union
 
@@ -12,12 +12,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add the two profile columns."""
+    """加上这两列基金档案字段."""
     op.add_column("fund", sa.Column("asset_size", sa.String(length=50), nullable=True))
     op.add_column("fund", sa.Column("benchmark", sa.String(length=300), nullable=True))
 
 
 def downgrade() -> None:
-    """Drop the two profile columns."""
+    """删掉这两列基金档案字段."""
     op.drop_column("fund", "benchmark")
     op.drop_column("fund", "asset_size")

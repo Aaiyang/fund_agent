@@ -1,4 +1,4 @@
-"""Screenshot import provider: screenshots → resolved, validated draft."""
+"""截图导入 provider：截图 → 解析完、校验完的草稿."""
 
 from app.core.logging import logger
 from app.integrations.holdings.base import (
@@ -15,15 +15,15 @@ from app.services.fund_service import fund_service
 
 
 class ScreenshotImportProvider:
-    """Parses third-party app screenshots into a pending draft.
+    """把第三方 App 的截图解析成一份待确认草稿.
 
-    Pipeline per MVP spec 3.7.2:
-    extractor → RawExtractedPosition[] → Fund Resolver → Normalizer →
-    Validator → HoldingImportDraft. Never writes holdings directly.
+    MVP spec 3.7.2 规定的流水线：
+    抽取（extractor）→ RawExtractedPosition[] → 基金解析（Fund Resolver）→ 归一化（Normalizer）
+    → 校验（Validator）→ HoldingImportDraft。绝不绕过确认直接写持仓。
     """
 
     async def parse(self, payload: HoldingImportPayload) -> HoldingImportDraft:
-        """Extract, resolve, normalize and validate all screenshot rows."""
+        """对所有截图行做抽取、解析、归一化和校验."""
         draft = HoldingImportDraft()
 
         raw_positions, hashes, error = await screenshot_position_extractor.extract(payload.image_paths)

@@ -1,4 +1,4 @@
-"""Annualized volatility from daily NAV returns."""
+"""由日收益率算出的年化波动率."""
 
 import math
 from datetime import timedelta
@@ -9,7 +9,7 @@ _TRADING_DAYS_PER_YEAR = 252
 
 
 def daily_returns(points: list[NavPoint]) -> list[float]:
-    """Day-over-day simple returns, skipping zero/invalid NAVs."""
+    """逐日简单收益率，跳过净值为零或非法的数据点."""
     returns: list[float] = []
     for previous, current in zip(points, points[1:], strict=False):
         if previous.nav > 0 and current.nav > 0 and current.date - previous.date <= timedelta(days=7):
@@ -18,9 +18,9 @@ def daily_returns(points: list[NavPoint]) -> list[float]:
 
 
 def annualized_volatility(points: list[NavPoint]) -> float | None:
-    """Annualized standard deviation of daily returns (sample, ddof=1).
+    """日收益率的年化标准差（样本估计，ddof=1）.
 
-    None when fewer than three valid points exist.
+    有效收益率不足三个时返回 None。
     """
     returns = daily_returns(points)
     if len(returns) < 3:

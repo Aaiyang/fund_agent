@@ -1,4 +1,4 @@
-"""Auto-invest plan API schemas."""
+"""定投计划 API 的 schema."""
 
 from datetime import date
 
@@ -9,7 +9,7 @@ from app.schemas.base import BaseResponse
 
 
 class AutoInvestPlanItem(BaseModel):
-    """One standing plan, with the day it is next due."""
+    """一条定投计划，附下一次应扣款的日期."""
 
     id: int
     account_id: int
@@ -26,17 +26,17 @@ class AutoInvestPlanItem(BaseModel):
 
 
 class AutoInvestPlansResponse(BaseResponse):
-    """GET /auto-invest/plans response."""
+    """GET /auto-invest/plans 响应体."""
 
     items: list[AutoInvestPlanItem]
     total: int
-    # Installments written while building this list. Reading the plans is what
-    # catches a plan up, because the worker may not be running.
+    # 组装这份列表期间补写下来的期数。读列表这个动作就是结算时机，
+    # 因为后台 worker 可能压根没在跑。
     settled: int = 0
 
 
 class AutoInvestPlanCreateRequest(BaseModel):
-    """POST /auto-invest/plans request."""
+    """POST /auto-invest/plans 请求体."""
 
     account_id: int
     fund_code: str = Field(min_length=6, max_length=6)
@@ -55,7 +55,7 @@ class AutoInvestPlanCreateRequest(BaseModel):
 
 
 class AutoInvestPlanUpdateRequest(BaseModel):
-    """PATCH /auto-invest/plans/{id} request. A null field leaves it intact."""
+    """PATCH /auto-invest/plans/{id} 请求体；传 null 的字段保持原样."""
 
     amount: float | None = Field(default=None, gt=0)
     frequency: Frequency | None = None

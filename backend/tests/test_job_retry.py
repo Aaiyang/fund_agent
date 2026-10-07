@@ -1,4 +1,4 @@
-"""Durable job wrapper: bounded retries with a PostgreSQL-side ledger (spec 7.8)."""
+"""持久化任务包装器：重试次数有上限，状态由 PostgreSQL 侧的账本记录（spec 7.8）."""
 
 import asyncio
 
@@ -9,7 +9,7 @@ from app.workers import base as worker_base
 
 
 class FakeLedger:
-    """Records the transitions run_job asks for."""
+    """记下 run_job 请求的每一次状态流转."""
 
     def __init__(self) -> None:
         self.events: list[tuple[str, str | None]] = []
@@ -28,7 +28,7 @@ def ledger(monkeypatch: pytest.MonkeyPatch) -> FakeLedger:
     fake = FakeLedger()
     monkeypatch.setattr(worker_base, "job_repository", fake)
     monkeypatch.setattr(worker_base.settings, "BACKGROUND_TASK_MAX_ATTEMPTS", 2)
-    # Keep the retry budget under a second so the suite stays fast
+    # 把重试等待压到一秒以内，整个套件才不会因为等退避而变慢
     monkeypatch.setattr(worker_base, "wait_exponential", lambda **kwargs: wait_fixed(0))
     return fake
 
