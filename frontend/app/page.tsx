@@ -72,7 +72,6 @@ import {
   createSession,
   deleteSession,
   getMessages,
-  getLlmProfiles,
   healthCheck,
   listSessions,
   login,
@@ -355,16 +354,8 @@ function ChatWorkspace({
   const [llm, setLlm] = useState<LlmProfiles | null>(null);
   const [loadingLlm, setLoadingLlm] = useState(false);
 
-  async function openLlmSettings() {
-    setLoadingLlm(true);
-    try {
-      setLlm(await getLlmProfiles(auth.token));
-      setLlmOpen(true);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoadingLlm(false);
-    }
+  function openLlmSettings() {
+    setLlmOpen(true);
   }
 
   async function selectLlm(name: string) {
@@ -745,7 +736,7 @@ function ChatWorkspace({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={loadingLlm || sending}
-                  onClick={() => void openLlmSettings()}
+                  onClick={openLlmSettings}
                 >
                   <Settings /> 模型供应商设置
                 </DropdownMenuItem>

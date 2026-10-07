@@ -138,8 +138,11 @@ export function updateProfile(
   );
 }
 
-export function getLlmProfiles(token: string): Promise<LlmProfiles> {
-  return request<LlmProfiles>('/agent/llm/profiles', {}, token);
+export function getLlmProfiles(
+  token: string,
+  signal?: AbortSignal,
+): Promise<LlmProfiles> {
+  return request<LlmProfiles>('/agent/llm/profiles', { signal }, token);
 }
 
 export function saveLlmSettings(

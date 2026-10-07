@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   type LlmProfileInput,
   type LlmProfiles,
   fetchVendorModels,
+  getLlmProfiles,
   saveLlmSettings,
 } from '@/lib/api';
 
@@ -91,6 +92,42 @@ export function LlmSettingsDialog({
   const [error, setError] = useState('');
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [fetching, setFetching] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    void getLlmProfiles(token, controller.signal)
+      .then((profiles) => {
+        if (cancelled) return;
+        setDrafts(
+          profiles.profiles.map((profile) => ({ ...profile, api_key: '' })),
+        );
+        onSaved(profiles);
+      })
+      .catch((loadError: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          controller.signal.aborted
+            ? '加载超时，请检查后端连接后重新打开设置'
+            : loadError instanceof Error
+              ? loadError.message
+              : '加载供应商配置失败',
+        );
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [open, token, onSaved]);
 
   function applyPreset(vendor: string) {
     const preset =
@@ -240,218 +277,236 @@ export function LlmSettingsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          {drafts.map((draft, index) => (
-            <div
-              key={draft.name}
-              className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {draft.name}
-                  {llm?.active === draft.name && (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                      当前
-                    </span>
-                  )}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {draft.model}
-                  {draft.key_hint && ` · Key ${draft.key_hint}`}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`编辑 ${draft.name}`}
-                onClick={() => startEdit(index)}
-              >
-                <Pencil />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`删除 ${draft.name}`}
-                disabled={drafts.length === 1}
-                onClick={() => removeDraft(index)}
-              >
-                <Trash2 />
-              </Button>
-            </div>
-          ))}
-
-          {editing === null && (
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={startAdd}
-            >
-              <Plus /> 添加供应商
-            </Button>
-          )}
-        </div>
-
-        {editing !== null && (
-          <div className="space-y-4 rounded-lg border border-border p-4">
-            <div className="space-y-2">
-              <Label htmlFor="llm-vendor">厂家</Label>
-              <select
-                id="llm-vendor"
-                value={form.vendor}
-                onChange={(event) => applyPreset(event.target.value)}
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {VENDOR_PRESETS.map((preset) => (
-                  <option key={preset.vendor} value={preset.vendor}>
-                    {preset.vendor}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-name">显示名称</Label>
-              <Input
-                id="llm-name"
-                value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="例如：智谱"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-model">
-                模型
-                {fetchedModels.length > 0 && (
-                  <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                    （该 Key 可用 {fetchedModels.length} 个，下拉选择）
-                  </span>
-                )}
-              </Label>
-              {fetchedModels.length > 0 ? (
-                <select
-                  id="llm-model"
-                  value={form.model}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      model: event.target.value,
-                    }))
-                  }
-                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {!fetchedModels.includes(form.model) && form.model && (
-                    <option value={form.model}>{form.model}（当前）</option>
-                  )}
-                  {fetchedModels.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  id="llm-model"
-                  list="llm-model-suggestions"
-                  value={form.model}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      model: event.target.value,
-                    }))
-                  }
-                  placeholder="例如：glm-5.3-flash；填好 Key 后可点右侧按钮获取"
-                />
-              )}
-              {!fetchedModels.length && (
-                <datalist id="llm-model-suggestions">
-                  {(
-                    VENDOR_PRESETS.find((item) => item.vendor === form.vendor)
-                      ?.models ?? []
-                  ).map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </datalist>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                disabled={fetching}
-                onClick={() => void handleFetchModels()}
-              >
-                {fetching ? (
-                  <RefreshCw className="animate-spin" />
-                ) : (
-                  <RefreshCw />
-                )}
-                {fetching ? '正在查询…' : '获取该 Key 可用的模型列表'}
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-base-url">接口地址（OpenAI 兼容）</Label>
-              <Input
-                id="llm-base-url"
-                value={form.base_url}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    base_url: event.target.value,
-                  }))
-                }
-                placeholder="https://…/v1"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-api-key">API Key</Label>
-              <Input
-                id="llm-api-key"
-                type="password"
-                value={form.api_key}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    api_key: event.target.value,
-                  }))
-                }
-                placeholder={
-                  editing === 'new'
-                    ? '填写厂家提供的 API Key'
-                    : `已配置${drafts[editing]?.key_hint ?? ''}，留空保持不变`
-                }
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={submitForm}>确认该档案</Button>
-              <Button variant="ghost" onClick={() => setEditing(null)}>
-                取消
-              </Button>
-            </div>
-          </div>
+        {loading && (
+          <output className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <RefreshCw className="size-4 animate-spin" /> 正在加载供应商配置…
+          </output>
         )}
-
-        {error && (
+        {loadError && (
           <div
             role="alert"
             className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
           >
-            {error}
+            加载供应商配置失败：{loadError}
           </div>
         )}
+        <div hidden={loading || Boolean(loadError)} className="space-y-4">
+          <div className="space-y-2">
+            {drafts.map((draft, index) => (
+              <div
+                key={draft.name}
+                className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {draft.name}
+                    {llm?.active === draft.name && (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        当前
+                      </span>
+                    )}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {draft.model}
+                    {draft.key_hint && ` · Key ${draft.key_hint}`}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`编辑 ${draft.name}`}
+                  onClick={() => startEdit(index)}
+                >
+                  <Pencil />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`删除 ${draft.name}`}
+                  disabled={drafts.length === 1}
+                  onClick={() => removeDraft(index)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            ))}
+
+            {editing === null && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={startAdd}
+              >
+                <Plus /> 添加供应商
+              </Button>
+            )}
+          </div>
+
+          {editing !== null && (
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <div className="space-y-2">
+                <Label htmlFor="llm-vendor">厂家</Label>
+                <select
+                  id="llm-vendor"
+                  value={form.vendor}
+                  onChange={(event) => applyPreset(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {VENDOR_PRESETS.map((preset) => (
+                    <option key={preset.vendor} value={preset.vendor}>
+                      {preset.vendor}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-name">显示名称</Label>
+                <Input
+                  id="llm-name"
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：智谱"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-model">
+                  模型
+                  {fetchedModels.length > 0 && (
+                    <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                      （该 Key 可用 {fetchedModels.length} 个，下拉选择）
+                    </span>
+                  )}
+                </Label>
+                {fetchedModels.length > 0 ? (
+                  <select
+                    id="llm-model"
+                    value={form.model}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        model: event.target.value,
+                      }))
+                    }
+                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {!fetchedModels.includes(form.model) && form.model && (
+                      <option value={form.model}>{form.model}（当前）</option>
+                    )}
+                    {fetchedModels.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="llm-model"
+                    list="llm-model-suggestions"
+                    value={form.model}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        model: event.target.value,
+                      }))
+                    }
+                    placeholder="例如：glm-5.3-flash；填好 Key 后可点右侧按钮获取"
+                  />
+                )}
+                {!fetchedModels.length && (
+                  <datalist id="llm-model-suggestions">
+                    {(
+                      VENDOR_PRESETS.find((item) => item.vendor === form.vendor)
+                        ?.models ?? []
+                    ).map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </datalist>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={fetching}
+                  onClick={() => void handleFetchModels()}
+                >
+                  {fetching ? (
+                    <RefreshCw className="animate-spin" />
+                  ) : (
+                    <RefreshCw />
+                  )}
+                  {fetching ? '正在查询…' : '获取该 Key 可用的模型列表'}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-base-url">接口地址（OpenAI 兼容）</Label>
+                <Input
+                  id="llm-base-url"
+                  value={form.base_url}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      base_url: event.target.value,
+                    }))
+                  }
+                  placeholder="https://…/v1"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-api-key">API Key</Label>
+                <Input
+                  id="llm-api-key"
+                  type="password"
+                  value={form.api_key}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      api_key: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    editing === 'new'
+                      ? '填写厂家提供的 API Key'
+                      : `已配置${drafts[editing]?.key_hint ?? ''}，留空保持不变`
+                  }
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={submitForm}>确认该档案</Button>
+                <Button variant="ghost" onClick={() => setEditing(null)}>
+                  取消
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
+            >
+              {error}
+            </div>
+          )}
+        </div>
 
         <DialogFooter>
-          <Button onClick={() => void handleSave()} disabled={saving}>
+          <Button
+            onClick={() => void handleSave()}
+            disabled={saving || loading || Boolean(loadError)}
+          >
             {saving ? '正在保存…' : '保存并应用'}
           </Button>
         </DialogFooter>
