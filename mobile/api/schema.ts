@@ -15,14 +15,14 @@ export interface paths {
         put?: never;
         /**
          * Register User
-         * @description Register a new user.
+         * @description 注册新用户.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         user_data: User registration data
+         *         request: 用于限流的 FastAPI request 对象。
+         *         user_data: 用户注册数据
          *
          *     Returns:
-         *         UserResponse: The created user info
+         *         UserResponse: 创建出来的用户信息
          */
         post: operations["register_user_api_v1_auth_register_post"];
         delete?: never;
@@ -42,19 +42,19 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Login a user.
+         * @description 用户登录.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         email: User's email
-         *         password: User's password
-         *         grant_type: Must be "password"
+         *         request: 用于限流的 FastAPI request 对象。
+         *         email: 用户邮箱
+         *         password: 用户密码
+         *         grant_type: 必须为 "password"
          *
          *     Returns:
-         *         TokenResponse: Access token information
+         *         TokenResponse: access token 相关信息
          *
          *     Raises:
-         *         HTTPException: If credentials are invalid
+         *         HTTPException: 凭据无效时抛出
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -74,17 +74,17 @@ export interface paths {
         put?: never;
         /**
          * Refresh Access Token
-         * @description Exchange a refresh token for a new access token (spec 3.1).
+         * @description 用 refresh token 换取新的 access token（spec 3.1）.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         refresh_token: The refresh token issued at login.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         refresh_token: 登录时签发出的 refresh token。
          *
          *     Returns:
-         *         TokenResponse: A fresh access token and a rotated refresh token.
+         *         TokenResponse: 新的 access token，以及轮换后的 refresh token。
          *
          *     Raises:
-         *         HTTPException: 401 when the refresh token is invalid or revoked.
+         *         HTTPException: refresh token 无效或已吊销时返回 401。
          */
         post: operations["refresh_access_token_api_v1_auth_refresh_post"];
         delete?: never;
@@ -104,14 +104,14 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Revoke the caller's refresh tokens (spec 3.1 用户退出).
+         * @description 吊销调用方的全部 refresh token（spec 3.1 用户退出）.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         user: The authenticated user.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         user: 已鉴权的用户。
          *
          *     Returns:
-         *         None: 204 with no body. Access tokens stay valid until they expire.
+         *         None: 204 无响应体；access token 仍会有效到自己过期。
          */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
@@ -129,14 +129,14 @@ export interface paths {
         };
         /**
          * Get Current User Info
-         * @description Return the authenticated user's profile (spec 3.1 获取当前用户信息).
+         * @description 返回已鉴权用户的信息（spec 3.1 获取当前用户信息）.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         user: The authenticated user.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         user: 已鉴权的用户。
          *
          *     Returns:
-         *         CurrentUserResponse: Profile without credentials.
+         *         CurrentUserResponse: 不含任何凭据的用户信息。
          */
         get: operations["get_current_user_info_api_v1_auth_me_get"];
         put?: never;
@@ -146,18 +146,18 @@ export interface paths {
         head?: never;
         /**
          * Update Current User Info
-         * @description Change the signed-in user's display name and/or email (spec 3.1).
+         * @description 修改当前登录用户的显示名和（或）邮箱（spec 3.1）.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         payload: Fields to change; omitted fields keep their current value.
-         *         user: The authenticated user.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         payload: 要改的字段；没传的字段保持原值。
+         *         user: 已鉴权的用户。
          *
          *     Returns:
-         *         CurrentUserResponse: The profile after the update.
+         *         CurrentUserResponse: 更新之后的用户信息。
          *
          *     Raises:
-         *         HTTPException: 400 when the new email already belongs to another user.
+         *         HTTPException: 新邮箱已属于别的用户时返回 400。
          */
         patch: operations["update_current_user_info_api_v1_auth_me_patch"];
         trace?: never;
@@ -173,14 +173,14 @@ export interface paths {
         put?: never;
         /**
          * Create Session
-         * @description Create a new chat session for the authenticated user.
+         * @description 为已鉴权用户新建一个聊天会话.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         user: The authenticated user
+         *         request: 用于限流的 FastAPI request 对象。
+         *         user: 已鉴权的用户
          *
          *     Returns:
-         *         SessionResponse: The session ID, name, and access token
+         *         SessionResponse: 会话 ID、名称与 access token
          */
         post: operations["create_session_api_v1_auth_session_post"];
         delete?: never;
@@ -204,16 +204,16 @@ export interface paths {
         head?: never;
         /**
          * Update Session Name
-         * @description Update a session's name.
+         * @description 修改会话名称.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         session_id: The ID of the session to update
-         *         name: The new name for the session
-         *         current_session: The current session from auth
+         *         request: 用于限流的 FastAPI request 对象。
+         *         session_id: 要更新的会话 ID
+         *         name: 会话的新名称
+         *         current_session: 鉴权得到的当前会话
          *
          *     Returns:
-         *         SessionResponse: The updated session information
+         *         SessionResponse: 更新后的会话信息
          */
         patch: operations["update_session_name_api_v1_auth_session__session_id__name_patch"];
         trace?: never;
@@ -230,12 +230,12 @@ export interface paths {
         post?: never;
         /**
          * Delete Session
-         * @description Delete a session for the authenticated user.
+         * @description 删除当前登录用户名下的一个会话.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         session_id: The ID of the session to delete
-         *         current_session: The current session from auth
+         *         request: 用于限流的 FastAPI request 对象。
+         *         session_id: 要删除的会话 ID
+         *         current_session: 鉴权得到的当前会话
          *
          *     Returns:
          *         None
@@ -255,14 +255,14 @@ export interface paths {
         };
         /**
          * Get User Sessions
-         * @description Get all session IDs for the authenticated user.
+         * @description 取出已鉴权用户的全部会话 ID.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         user: The authenticated user
+         *         request: 用于限流的 FastAPI request 对象。
+         *         user: 已鉴权的用户
          *
          *     Returns:
-         *         List[SessionResponse]: List of session IDs
+         *         List[SessionResponse]: 会话 ID 列表
          */
         get: operations["get_user_sessions_api_v1_auth_sessions_get"];
         put?: never;
@@ -284,18 +284,18 @@ export interface paths {
         put?: never;
         /**
          * Chat
-         * @description Process a chat request using LangGraph.
+         * @description 用 LangGraph 处理一次对话请求.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         chat_request: The chat request containing messages.
-         *         session: The current session from the auth token.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         chat_request: 带消息内容的对话请求。
+         *         session: 由鉴权 token 解析出的当前会话。
          *
          *     Returns:
-         *         ChatResponse: The processed chat response.
+         *         ChatResponse: 处理完成后的对话响应。
          *
          *     Raises:
-         *         HTTPException: If there's an error processing the request.
+         *         HTTPException: 请求处理过程中出现错误时抛出。
          */
         post: operations["chat_api_v1_chatbot_chat_post"];
         delete?: never;
@@ -315,18 +315,18 @@ export interface paths {
         put?: never;
         /**
          * Chat Stream
-         * @description Process a chat request using LangGraph with streaming response.
+         * @description 用 LangGraph 处理对话请求，结果以流式返回.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         chat_request: The chat request containing messages.
-         *         session: The current session from the auth token.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         chat_request: 带消息内容的对话请求。
+         *         session: 由鉴权 token 解析出的当前会话。
          *
          *     Returns:
-         *         StreamingResponse: A streaming response of the chat completion.
+         *         StreamingResponse: 对话结果的流式响应。
          *
          *     Raises:
-         *         HTTPException: If there's an error processing the request.
+         *         HTTPException: 请求处理过程中出现错误时抛出。
          */
         post: operations["chat_stream_api_v1_chatbot_chat_stream_post"];
         delete?: never;
@@ -344,31 +344,31 @@ export interface paths {
         };
         /**
          * Get Session Messages
-         * @description Get all messages for a session.
+         * @description 读取当前会话的全部历史消息.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         session: The current session from the auth token.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         session: 由鉴权 token 解析出的当前会话。
          *
          *     Returns:
-         *         ChatResponse: All messages in the session.
+         *         ChatResponse: 该会话的全部消息。
          *
          *     Raises:
-         *         HTTPException: If there's an error retrieving the messages.
+         *         HTTPException: 读取消息过程中出现错误时抛出。
          */
         get: operations["get_session_messages_api_v1_chatbot_messages_get"];
         put?: never;
         post?: never;
         /**
          * Clear Chat History
-         * @description Clear all messages for a session.
+         * @description 清空当前会话的全部历史消息.
          *
          *     Args:
-         *         request: The FastAPI request object for rate limiting.
-         *         session: The current session from the auth token.
+         *         request: 用于限流的 FastAPI request 对象。
+         *         session: 由鉴权 token 解析出的当前会话。
          *
          *     Returns:
-         *         dict: A message indicating the chat history was cleared.
+         *         dict: 表示聊天记录已清空的提示。
          */
         delete: operations["clear_chat_history_api_v1_chatbot_messages_delete"];
         options?: never;
@@ -385,7 +385,7 @@ export interface paths {
         };
         /**
          * Search Funds
-         * @description Search funds by code, full name, abbreviation or fuzzy name.
+         * @description 按代码、全称、简称或模糊名称搜索基金.
          */
         get: operations["search_funds_api_v1_funds_search_get"];
         put?: never;
@@ -407,11 +407,10 @@ export interface paths {
         put?: never;
         /**
          * Refresh Latest Navs
-         * @description Refresh the latest NAV of every fund the caller holds or watchlists.
+         * @description 刷新调用方持仓与自选里每只基金的最新净值.
          *
-         *     The set comes from the caller's identity rather than a list of codes: the
-         *     client would have to wait for both of its lists to load before it could ask,
-         *     and a client-supplied set would let any caller name arbitrary funds.
+         *     基金集合取自调用方身份，而不是由客户端传一串代码：否则客户端要等两个列表
+         *     都加载完才能发起请求，而客户端给定的集合会让任何调用方点名刷新任意基金。
          */
         post: operations["refresh_latest_navs_api_v1_funds_refresh_latest_post"];
         delete?: never;
@@ -429,7 +428,7 @@ export interface paths {
         };
         /**
          * Get Fund Detail
-         * @description Fund overview: identity, latest NAV, computed performance (spec 3.5.1).
+         * @description 基金概览：基本资料、最新净值与算好的业绩指标（spec 3.5.1）.
          */
         get: operations["get_fund_detail_api_v1_funds__fund_code__get"];
         put?: never;
@@ -449,7 +448,7 @@ export interface paths {
         };
         /**
          * Get Fund Nav History
-         * @description Historical NAV series served from PostgreSQL (never live pass-through).
+         * @description 历史净值序列全部从 PostgreSQL 读出，绝不做上游实时透传.
          */
         get: operations["get_fund_nav_history_api_v1_funds__fund_code__nav_get"];
         put?: never;
@@ -469,7 +468,7 @@ export interface paths {
         };
         /**
          * Get Fund Holdings
-         * @description Top-ten disclosed holdings with live quotes (spec 3.5.4).
+         * @description 披露的前十大持仓，附实时行情报价（spec 3.5.4）.
          */
         get: operations["get_fund_holdings_api_v1_funds__fund_code__holdings_get"];
         put?: never;
@@ -489,7 +488,7 @@ export interface paths {
         };
         /**
          * Get Fund Performance
-         * @description Deterministic period analytics computed by backend Python (spec 5.2).
+         * @description 区间收益等确定性指标由后端 Python 算出，结果可复现（spec 5.2）.
          */
         get: operations["get_fund_performance_api_v1_funds__fund_code__performance_get"];
         put?: never;
@@ -509,7 +508,7 @@ export interface paths {
         };
         /**
          * Get Related Sectors
-         * @description Related sectors placeholder — not a hard MVP data dependency (spec 5.7).
+         * @description 相关板块占位接口——不是 MVP 的硬数据依赖（spec 5.7）.
          */
         get: operations["get_related_sectors_api_v1_funds__fund_code__related_sectors_get"];
         put?: never;
@@ -531,7 +530,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh Fund Data
-         * @description Enqueue a background sync for one fund (returns immediately).
+         * @description 为单只基金入队一次后台同步，接口立即返回.
          */
         post: operations["refresh_fund_data_api_v1_funds__fund_code__refresh_post"];
         delete?: never;
@@ -549,7 +548,7 @@ export interface paths {
         };
         /**
          * List Indexes
-         * @description Benchmarks the fund-detail comparison line can be switched to.
+         * @description 基金详情页对比线可以切换到的那几只基准指数.
          */
         get: operations["list_indexes_api_v1_indexes_get"];
         put?: never;
@@ -569,7 +568,7 @@ export interface paths {
         };
         /**
          * List Index Quotes
-         * @description Latest close and day change for every benchmark, for the home tape.
+         * @description 首页行情条用：每只基准指数的最新收盘价与当日涨跌.
          */
         get: operations["list_index_quotes_api_v1_indexes_quotes_get"];
         put?: never;
@@ -589,7 +588,7 @@ export interface paths {
         };
         /**
          * Get Index History
-         * @description Daily closes for one benchmark, served from PostgreSQL with lazy backfill.
+         * @description 单只基准指数的日收盘价序列，从 PostgreSQL 读取并在缺数据时惰性回补.
          */
         get: operations["get_index_history_api_v1_indexes__index_code__history_get"];
         put?: never;
@@ -609,7 +608,7 @@ export interface paths {
         };
         /**
          * Get Symbol Quote
-         * @description Realtime snapshot: price, session range, turnover, valuation and caps.
+         * @description 实时快照：现价、当日高低区间、成交额、估值与市值.
          */
         get: operations["get_symbol_quote_api_v1_markets__symbol__quote_get"];
         put?: never;
@@ -629,7 +628,7 @@ export interface paths {
         };
         /**
          * Get Symbol History
-         * @description Adjusted OHLCV bars for the requested window.
+         * @description 返回请求区间的复权 OHLCV K 线.
          */
         get: operations["get_symbol_history_api_v1_markets__symbol__history_get"];
         put?: never;
@@ -649,9 +648,9 @@ export interface paths {
         };
         /**
          * Get Symbol Intraday
-         * @description Minute line for one session, or for the last five stitched together.
+         * @description 返回单个交易日的分时线，或把最近 5 个交易日拼接起来.
          *
-         *     The response's `prev_close` is the reference the chart measures against.
+         *     响应里的 `prev_close` 就是图表计算涨跌所参照的前收盘价。
          */
         get: operations["get_symbol_intraday_api_v1_markets__symbol__intraday_get"];
         put?: never;
@@ -671,7 +670,7 @@ export interface paths {
         };
         /**
          * Get Symbol Company
-         * @description Company master data. Empty for indexes and non-A股 listings.
+         * @description 上市公司主数据；指数和 A 股以外的标的返回空.
          */
         get: operations["get_symbol_company_api_v1_markets__symbol__company_get"];
         put?: never;
@@ -691,13 +690,13 @@ export interface paths {
         };
         /**
          * List Groups
-         * @description List the user's watchlist groups.
+         * @description 列出用户的自选分组.
          */
         get: operations["list_groups_api_v1_watchlist_groups_get"];
         put?: never;
         /**
          * Create Group
-         * @description Create a custom watchlist group.
+         * @description 新建一个自定义自选分组.
          */
         post: operations["create_group_api_v1_watchlist_groups_post"];
         delete?: never;
@@ -718,14 +717,14 @@ export interface paths {
         post?: never;
         /**
          * Delete Group
-         * @description Delete a group; member funds stay watchlisted.
+         * @description 删除分组；组里的基金仍然留在自选里.
          */
         delete: operations["delete_group_api_v1_watchlist_groups__group_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Group
-         * @description Rename, reorder, or rewrite the members of a group.
+         * @description 改分组名、调排序，或整份重写组内成员.
          */
         patch: operations["update_group_api_v1_watchlist_groups__group_id__patch"];
         trace?: never;
@@ -739,13 +738,13 @@ export interface paths {
         };
         /**
          * List Watchlist
-         * @description List watchlisted funds with latest NAV and daily change.
+         * @description 列出自选基金，附最新净值与当日涨跌.
          */
         get: operations["list_watchlist_api_v1_watchlist_get"];
         put?: never;
         /**
          * Add To Watchlist
-         * @description Add a fund to the watchlist (404 when the fund code is unknown).
+         * @description 把基金加进自选（基金代码查不到时返回 404）.
          */
         post: operations["add_to_watchlist_api_v1_watchlist_post"];
         delete?: never;
@@ -766,14 +765,14 @@ export interface paths {
         post?: never;
         /**
          * Remove From Watchlist
-         * @description Remove a fund from the watchlist.
+         * @description 把基金移出自选.
          */
         delete: operations["remove_from_watchlist_api_v1_watchlist__fund_code__delete"];
         options?: never;
         head?: never;
         /**
          * Update Watchlist Entry
-         * @description Update sort order and/or group memberships of a watchlisted fund.
+         * @description 更新自选基金的排序和（或）所属分组.
          */
         patch: operations["update_watchlist_entry_api_v1_watchlist__fund_code__patch"];
         trace?: never;
@@ -787,7 +786,7 @@ export interface paths {
         };
         /**
          * Get Portfolio Summary
-         * @description Asset summary: total value, P/L, daily P/L, per-account list (spec 3.2).
+         * @description 资产总览：总市值、收益、当日收益，外加按账户拆分的清单（spec 3.2）.
          */
         get: operations["get_portfolio_summary_api_v1_portfolio_summary_get"];
         put?: never;
@@ -807,7 +806,7 @@ export interface paths {
         };
         /**
          * List Positions
-         * @description List positions with derived metrics; optional account filter.
+         * @description 列出持仓及其派生指标，可用 account_id 限定到单个账户.
          */
         get: operations["list_positions_api_v1_portfolio_positions_get"];
         put?: never;
@@ -827,10 +826,10 @@ export interface paths {
         };
         /**
          * Preview Trade
-         * @description Price an order on its confirm day and show the resulting holding.
+         * @description 按确认日的净值给订单试算，并展示成交之后的持仓.
          *
-         *     Declared before ``POST /positions/{fund_code}/trades`` in spirit but on a
-         *     distinct path, so no literal segment can be swallowed by the fund code.
+         *     相当于 ``POST /positions/{fund_code}/trades`` 的预演，但单独走一条路径，
+         *     这样就没有字面量路径段会被 `{fund_code}` 吞掉。
          */
         get: operations["preview_trade_api_v1_portfolio_positions__fund_code__trades_preview_get"];
         put?: never;
@@ -852,7 +851,7 @@ export interface paths {
         put?: never;
         /**
          * Record Trade
-         * @description Record a purchase or redemption and re-project the holding from the ledger.
+         * @description 记一笔买入或赎回，并用流水重新投影出该持仓.
          */
         post: operations["record_trade_api_v1_portfolio_positions__fund_code__trades_post"];
         delete?: never;
@@ -870,26 +869,25 @@ export interface paths {
         };
         /**
          * Get Position
-         * @description One position; `account_id` narrows it to a single account (spec 9.3).
+         * @description 查询单个持仓；传 `account_id` 就收窄到一个账户内（spec 9.3）.
          */
         get: operations["get_position_api_v1_portfolio_positions__fund_code__get"];
         put?: never;
         post?: never;
         /**
          * Delete Position
-         * @description Erase one fund from an account: holding, ledger and 定投 plans.
+         * @description 把某只基金从账户里清掉：持仓、流水和定投计划一起删.
          */
         delete: operations["delete_position_api_v1_portfolio_positions__fund_code__delete"];
         options?: never;
         head?: never;
         /**
          * Upsert Position
-         * @description 同步持仓: restate what the holdings screen shows (spec 3.7.1).
+         * @description 同步持仓：按持仓页面上看到的结果重述（spec 3.7.1）.
          *
-         *     Updates require `expected_version`; a stale version returns 409 so a
-         *     concurrent screenshot import can never silently overwrite user edits. On a
-         *     fund with a trade ledger, 份额/成本/收益 are dropped by the service — only
-         *     持有金额 and 首次购买日期 come through this door.
+         *     更新必须带 `expected_version`，版本陈旧就返回 409，这样并发的截图识别导入
+         *     绝不可能悄悄覆盖用户的手工修改。对已有交易流水的基金，服务层会丢弃
+         *     份额/成本/收益——这条通道只放行持有金额与首次购买日期。
          */
         patch: operations["upsert_position_api_v1_portfolio_positions__fund_code__patch"];
         trace?: never;
@@ -903,13 +901,13 @@ export interface paths {
         };
         /**
          * List Accounts
-         * @description List the user's portfolio accounts with import status.
+         * @description 列出用户名下的账户，附带各自的导入状态.
          */
         get: operations["list_accounts_api_v1_accounts_get"];
         put?: never;
         /**
          * Create Account
-         * @description Create a portfolio account; the name must be new for this user.
+         * @description 新建账户，账户名在该用户下必须尚未被占用.
          */
         post: operations["create_account_api_v1_accounts_post"];
         delete?: never;
@@ -927,21 +925,21 @@ export interface paths {
         };
         /**
          * Get Account
-         * @description Get one account with its latest import status.
+         * @description 查询单个账户，含其最近一次导入状态.
          */
         get: operations["get_account_api_v1_accounts__account_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete Account
-         * @description Delete an account and its positions / transactions / import records.
+         * @description 删除账户，并连带删除其持仓、流水与导入记录.
          */
         delete: operations["delete_account_api_v1_accounts__account_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Account
-         * @description Rename an account or change its source label.
+         * @description 修改账户名称或来源标签.
          */
         patch: operations["update_account_api_v1_accounts__account_id__patch"];
         trace?: never;
@@ -955,7 +953,7 @@ export interface paths {
         };
         /**
          * List Transactions
-         * @description List transactions/adjustments, newest first (spec 3.8).
+         * @description 按时间倒序列出流水与调整记录（spec 3.8）.
          */
         get: operations["list_transactions_api_v1_transactions_get"];
         put?: never;
@@ -975,7 +973,7 @@ export interface paths {
         };
         /**
          * List Import History
-         * @description The user's import batches, newest first (spec 3.6 导入记录).
+         * @description 按时间倒序列出该用户的导入批次（spec 3.6 导入记录）.
          */
         get: operations["list_import_history_api_v1_holding_imports_history_get"];
         put?: never;
@@ -997,7 +995,7 @@ export interface paths {
         put?: never;
         /**
          * Create Manual Import
-         * @description Manual holdings entry — parsed and parked for confirmation.
+         * @description 手动录入持仓：解析入库后挂起，等用户确认.
          */
         post: operations["create_manual_import_api_v1_holding_imports_manual_post"];
         delete?: never;
@@ -1017,9 +1015,9 @@ export interface paths {
         put?: never;
         /**
          * Create Screenshot Import
-         * @description Upload 1..N holdings screenshots; parsing runs in the worker queue.
+         * @description 上传 1..N 张持仓截图，解析工作交给后台 worker 队列.
          *
-         *     Returns 202 + import_id immediately; poll GET /{import_id} for status.
+         *     立即返回 202 与 import_id，之后轮询 GET /{import_id} 取进度。
          */
         post: operations["create_screenshot_import_api_v1_holding_imports_screenshots_post"];
         delete?: never;
@@ -1037,14 +1035,14 @@ export interface paths {
         };
         /**
          * Get Import Detail
-         * @description Import status + pending items with current-vs-imported diff fields.
+         * @description 导入进度 + 待确认条目，条目带上“当前持仓/导入结果”的差异字段.
          */
         get: operations["get_import_detail_api_v1_holding_imports__import_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete Import
-         * @description Cancel a non-applied import; temp images are deleted.
+         * @description 取消尚未应用的导入批次，同时删掉临时图片.
          */
         delete: operations["delete_import_api_v1_holding_imports__import_id__delete"];
         options?: never;
@@ -1067,7 +1065,7 @@ export interface paths {
         head?: never;
         /**
          * Update Import Item
-         * @description Correct or decide on one pending item before confirmation.
+         * @description 在确认之前修正某条待确认条目，或对它做出裁决.
          */
         patch: operations["update_import_item_api_v1_holding_imports__import_id__items__item_id__patch"];
         trace?: never;
@@ -1083,7 +1081,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm Import
-         * @description Apply confirmed items to official positions (the only write path).
+         * @description 把已确认的条目写进正式持仓（唯一的写入路径）.
          */
         post: operations["confirm_import_api_v1_holding_imports__import_id__confirm_post"];
         delete?: never;
@@ -1101,13 +1099,13 @@ export interface paths {
         };
         /**
          * List Plans
-         * @description List plans, settling every installment that has come due first.
+         * @description 列出定投计划，返回前先把所有已到期的期数结算掉.
          */
         get: operations["list_plans_api_v1_auto_invest_plans_get"];
         put?: never;
         /**
          * Create Plan
-         * @description Add a standing purchase schedule.
+         * @description 新增一份定投计划，即按周期定期买入的安排.
          */
         post: operations["create_plan_api_v1_auto_invest_plans_post"];
         delete?: never;
@@ -1128,16 +1126,39 @@ export interface paths {
         post?: never;
         /**
          * Delete Plan
-         * @description Remove a plan; `with_orders` also drops the installments it wrote.
+         * @description 删除计划；`with_orders` 为真时把它已生成的定投流水一并删掉.
          */
         delete: operations["delete_plan_api_v1_auto_invest_plans__plan_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Plan
-         * @description Change the schedule. Installments already written are not restated.
+         * @description 修改定投安排；已经写入的期数不做回溯重算.
          */
         patch: operations["update_plan_api_v1_auto_invest_plans__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/valuation/estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate Funds
+         * @description 按代码批量给出盘中估值（百分点）.
+         *
+         *     估值是公开数据的现算，没有按用户的部分；要鉴权只是不让任何人拿这个接口免费
+         *     驱动上游抓取。缺依据的基金在 `items` 里以 `available=False` 返回，不报错。
+         */
+        post: operations["estimate_funds_api_v1_valuation_estimates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/agent/llm/profiles": {
@@ -1149,7 +1170,7 @@ export interface paths {
         };
         /**
          * List Llm Profiles
-         * @description List the configured LLM provider profiles and the active one.
+         * @description 列出已配置的 LLM 供应商档案以及当前生效的那个.
          */
         get: operations["list_llm_profiles_api_v1_agent_llm_profiles_get"];
         put?: never;
@@ -1171,11 +1192,10 @@ export interface paths {
         put?: never;
         /**
          * Update Llm Settings
-         * @description Replace the provider profile list from the settings UI.
+         * @description 用设置页提交的列表整体替换供应商档案.
          *
-         *     Persists to the server-side profile file and hot-rebuilds the registry;
-         *     the active profile survives when it still exists. A blank ``api_key`` on
-         *     an existing profile keeps the stored key.
+         *     写入服务端的档案文件并热重建注册表；只要原生效档案仍在新列表里就继续生效。
+         *     已存在的档案若 ``api_key`` 留空，则沿用服务端已存的那把 Key。
          */
         post: operations["update_llm_settings_api_v1_agent_llm_settings_post"];
         delete?: never;
@@ -1195,7 +1215,7 @@ export interface paths {
         put?: never;
         /**
          * Switch Llm Profile
-         * @description Switch the active LLM provider profile at runtime (global, no restart).
+         * @description 运行时切换生效的 LLM 供应商档案（全局生效，无需重启）.
          */
         post: operations["switch_llm_profile_api_v1_agent_llm_switch_post"];
         delete?: never;
@@ -1215,11 +1235,10 @@ export interface paths {
         put?: never;
         /**
          * List Vendor Models
-         * @description Query a vendor's OpenAI-compatible ``/models`` endpoint.
+         * @description 查询某厂家 OpenAI 兼容的 ``/models`` 接口.
          *
-         *     Lets the settings UI offer the models this key can actually use instead
-         *     of a hardcoded guess. The caller-supplied base_url is forwarded as-is —
-         *     acceptable for the local single-user workbench, do not expose publicly.
+         *     让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。调用方传入的
+         *     base_url 会原样转发——本地单用户工作台可以接受，不要把该接口公开暴露出去。
          */
         post: operations["list_vendor_models_api_v1_agent_llm_models_post"];
         delete?: never;
@@ -1239,7 +1258,7 @@ export interface paths {
         put?: never;
         /**
          * Agent Chat
-         * @description Reserved agent endpoint — returns 501 until Phase 7 (spec 4.2).
+         * @description 预留的 agent 端点——Phase 7 之前一律返回 501（spec 4.2）.
          */
         post: operations["agent_chat_api_v1_agent_chat_post"];
         delete?: never;
@@ -1257,10 +1276,10 @@ export interface paths {
         };
         /**
          * Health Check
-         * @description Health check endpoint.
+         * @description 健康检查端点.
          *
          *     Returns:
-         *         dict: Health status information.
+         *         dict: 健康状态信息。
          */
         get: operations["health_check_api_v1_health_get"];
         put?: never;
@@ -1280,7 +1299,7 @@ export interface paths {
         };
         /**
          * Root
-         * @description Root endpoint returning basic API information.
+         * @description 根端点，返回 API 的基本信息.
          */
         get: operations["root__get"];
         put?: never;
@@ -1300,11 +1319,11 @@ export interface paths {
         };
         /**
          * Health Check
-         * @description Health check endpoint with environment-specific information.
+         * @description 健康检查端点，返回随环境而不同的信息.
          *
          *     Returns:
-         *         JSONResponse: Health status payload, with HTTP 503 when the
-         *         database is unreachable so load balancers can drop the instance.
+         *         JSONResponse: 健康状态负载；数据库连不上时返回 HTTP 503，
+         *         好让负载均衡把这台实例摘掉。
          */
         get: operations["health_check_health_get"];
         put?: never;
@@ -1321,7 +1340,7 @@ export interface components {
     schemas: {
         /**
          * AccountCreateRequest
-         * @description POST /accounts request.
+         * @description POST /accounts 请求体.
          */
         AccountCreateRequest: {
             /** Name */
@@ -1341,7 +1360,7 @@ export interface components {
         };
         /**
          * AccountItem
-         * @description One portfolio account (source_app is only a label).
+         * @description 一个资产组合账户（source_app 只是一个标签）.
          */
         AccountItem: {
             /** Id */
@@ -1361,7 +1380,7 @@ export interface components {
         };
         /**
          * AccountUpdateRequest
-         * @description PATCH /accounts/{id} request.
+         * @description PATCH /accounts/{id} 请求体.
          */
         AccountUpdateRequest: {
             /** Name */
@@ -1371,7 +1390,7 @@ export interface components {
         };
         /**
          * AccountsResponse
-         * @description GET /accounts response.
+         * @description GET /accounts 响应体.
          */
         AccountsResponse: {
             /**
@@ -1387,7 +1406,7 @@ export interface components {
         };
         /**
          * AutoInvestPlanCreateRequest
-         * @description POST /auto-invest/plans request.
+         * @description POST /auto-invest/plans 请求体.
          */
         AutoInvestPlanCreateRequest: {
             /** Account Id */
@@ -1418,7 +1437,7 @@ export interface components {
         };
         /**
          * AutoInvestPlanItem
-         * @description One standing plan, with the day it is next due.
+         * @description 一条定投计划，附下一次应扣款的日期.
          */
         AutoInvestPlanItem: {
             /** Id */
@@ -1454,7 +1473,7 @@ export interface components {
         };
         /**
          * AutoInvestPlanUpdateRequest
-         * @description PATCH /auto-invest/plans/{id} request. A null field leaves it intact.
+         * @description PATCH /auto-invest/plans/{id} 请求体；传 null 的字段保持原样.
          */
         AutoInvestPlanUpdateRequest: {
             /** Amount */
@@ -1472,7 +1491,7 @@ export interface components {
         };
         /**
          * AutoInvestPlansResponse
-         * @description GET /auto-invest/plans response.
+         * @description GET /auto-invest/plans 响应体.
          */
         AutoInvestPlansResponse: {
             /**
@@ -1520,7 +1539,7 @@ export interface components {
         };
         /**
          * CandleExternalBar
-         * @description One OHLCV bar; ``volume`` keeps the quote's own unit.
+         * @description 一根 OHLCV K 线；``volume`` 沿用行情自身的单位.
          */
         CandleExternalBar: {
             /**
@@ -1541,10 +1560,10 @@ export interface components {
         };
         /**
          * ChatRequest
-         * @description Request model for chat endpoint.
+         * @description chat 端点的请求模型.
          *
          *     Attributes:
-         *         messages: List of messages in the conversation.
+         *         messages: 本次对话的消息列表。
          */
         ChatRequest: {
             /**
@@ -1555,10 +1574,10 @@ export interface components {
         };
         /**
          * ChatResponse
-         * @description Response model for chat endpoint.
+         * @description chat 端点的响应模型.
          *
          *     Attributes:
-         *         messages: List of messages in the conversation.
+         *         messages: 本次对话的消息列表。
          */
         ChatResponse: {
             /**
@@ -1575,7 +1594,7 @@ export interface components {
         };
         /**
          * CompanyExternalProfile
-         * @description Listed company master data (A股 only; other markets return no profile).
+         * @description 上市公司主数据（只有 A股 有；其他市场拿不到档案）.
          */
         CompanyExternalProfile: {
             /** Symbol */
@@ -1604,13 +1623,13 @@ export interface components {
         };
         /**
          * CurrentUserResponse
-         * @description Response model for GET /auth/me (spec 3.1 获取当前用户信息).
+         * @description GET /auth/me 的响应模型（spec 3.1 获取当前用户信息）.
          *
          *     Attributes:
-         *         id: User's ID
-         *         email: User's email address
-         *         username: Optional display name
-         *         created_at: When the account was created
+         *         id: 用户 ID
+         *         email: 用户邮箱
+         *         username: 可选的显示名
+         *         created_at: 账号创建时间
          */
         CurrentUserResponse: {
             /**
@@ -1642,7 +1661,7 @@ export interface components {
         };
         /**
          * FundDetailResponse
-         * @description GET /funds/{fund_code} response — fund overview (spec 3.5.1).
+         * @description GET /funds/{fund_code} 响应——基金概览（spec 3.5.1）.
          */
         FundDetailResponse: {
             /**
@@ -1695,8 +1714,35 @@ export interface components {
             nav_fetched_at?: string | null;
         };
         /**
+         * FundEstimateItem
+         * @description 一只基金的盘中估值，以及"为什么是这个口径"或"为什么没有".
+         */
+        FundEstimateItem: {
+            /** Fund Code */
+            fund_code: string;
+            /**
+             * Available
+             * @default false
+             */
+            available?: boolean;
+            /**
+             * Method
+             * @default unavailable
+             * @enum {string}
+             */
+            method?: "index" | "penetration" | "unavailable";
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Basis */
+            basis?: string | null;
+            /** Quote Date */
+            quote_date?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * FundHoldingItem
-         * @description One disclosed holding with its quote and quarter-over-quarter change.
+         * @description 一条披露持仓，带行情报价和较上期变动.
          */
         FundHoldingItem: {
             /** Stock Code */
@@ -1723,7 +1769,7 @@ export interface components {
         };
         /**
          * FundHoldingsResponse
-         * @description GET /funds/{fund_code}/holdings response (top ten by disclosed weight).
+         * @description GET /funds/{fund_code}/holdings 响应（按披露权重取前十）.
          */
         FundHoldingsResponse: {
             /**
@@ -1753,7 +1799,7 @@ export interface components {
         };
         /**
          * FundIndustryItem
-         * @description One industry's share of the fund, from the same disclosure cycle.
+         * @description 某行业占该基金的份额，取自同一期披露.
          */
         FundIndustryItem: {
             /** Industry */
@@ -1763,7 +1809,7 @@ export interface components {
         };
         /**
          * FundNavHistoryResponse
-         * @description GET /funds/{fund_code}/nav response.
+         * @description GET /funds/{fund_code}/nav 响应体.
          */
         FundNavHistoryResponse: {
             /**
@@ -1791,7 +1837,7 @@ export interface components {
         };
         /**
          * FundNavPoint
-         * @description One NAV series point for charting.
+         * @description 净值序列里的一个点，用于画图.
          */
         FundNavPoint: {
             /**
@@ -1808,12 +1854,11 @@ export interface components {
         };
         /**
          * FundNavRefreshResponse
-         * @description POST /funds/refresh-latest response.
+         * @description POST /funds/refresh-latest 响应体.
          *
-         *     `status` is the only field a client has to branch on, and every value short
-         *     of `unavailable` is a normal outcome rather than an error: a fund the source
-         *     table does not carry gets queued individually, and a refresh already running
-         *     for this user is reported as `throttled`. The counts are for the read-out.
+         *     客户端唯一需要分支的字段是 `status`，除 `unavailable` 之外都属正常结果而非
+         *     错误：全量表里没有的基金会被逐个单独入队补刷，同一用户已有刷新在跑时报
+         *     `throttled`。那几个计数只是给前端看的结果播报。
          */
         FundNavRefreshResponse: {
             /**
@@ -1848,7 +1893,7 @@ export interface components {
         };
         /**
          * FundPerformance
-         * @description Deterministic analytics computed by backend Python (spec 5.2).
+         * @description 由后端 Python 确定性算出的业绩指标（spec 5.2）.
          */
         FundPerformance: {
             /** Return 1M */
@@ -1870,7 +1915,7 @@ export interface components {
         };
         /**
          * FundPerformanceResponse
-         * @description GET /funds/{fund_code}/performance response.
+         * @description GET /funds/{fund_code}/performance 响应体.
          */
         FundPerformanceResponse: {
             /**
@@ -1885,7 +1930,7 @@ export interface components {
         };
         /**
          * FundSearchItem
-         * @description One search result row with the caller's relationship flags.
+         * @description 一条搜索结果，附调用方与它的关系标记（自选/持有）.
          */
         FundSearchItem: {
             /** Fund Code */
@@ -1913,7 +1958,7 @@ export interface components {
         };
         /**
          * FundSearchResponse
-         * @description GET /funds/search response.
+         * @description GET /funds/search 响应体.
          */
         FundSearchResponse: {
             /**
@@ -1929,7 +1974,7 @@ export interface components {
         };
         /**
          * FundSyncStatusResponse
-         * @description POST /funds/{fund_code}/refresh response.
+         * @description POST /funds/{fund_code}/refresh 响应体.
          */
         FundSyncStatusResponse: {
             /**
@@ -1952,7 +1997,7 @@ export interface components {
         };
         /**
          * ImportCandidate
-         * @description One fund a screenshot name could still be, offered for one-tap choice.
+         * @description 截图名称仍可能指到的某一只基金，供确认页一键选择.
          */
         ImportCandidate: {
             /** Fund Code */
@@ -1964,7 +2009,7 @@ export interface components {
         };
         /**
          * ImportConfirmResponse
-         * @description POST /holding-imports/{import_id}/confirm response.
+         * @description POST /holding-imports/{import_id}/confirm 响应体.
          */
         ImportConfirmResponse: {
             /**
@@ -1982,7 +2027,7 @@ export interface components {
         };
         /**
          * ImportDetail
-         * @description One import batch with optional item payloads.
+         * @description 一个导入批次，可带上明细条目.
          */
         ImportDetail: {
             /** Id */
@@ -2026,7 +2071,7 @@ export interface components {
         };
         /**
          * ImportDetailResponse
-         * @description GET /holding-imports/{import_id} and manual-import responses.
+         * @description GET /holding-imports/{import_id} 以及手动导入的响应体.
          */
         ImportDetailResponse: {
             /**
@@ -2039,7 +2084,7 @@ export interface components {
         };
         /**
          * ImportHistoryResponse
-         * @description GET /holding-imports/history response.
+         * @description GET /holding-imports/history 响应体.
          */
         ImportHistoryResponse: {
             /**
@@ -2055,7 +2100,7 @@ export interface components {
         };
         /**
          * ImportItemOut
-         * @description One pending import row with diff fields for the confirm page.
+         * @description 一条待确认的导入明细，带确认页要用的差异字段.
          */
         ImportItemOut: {
             /** Id */
@@ -2101,7 +2146,7 @@ export interface components {
         };
         /**
          * ImportItemUpdateRequest
-         * @description PATCH /holding-imports/{import_id}/items/{item_id} request.
+         * @description PATCH /holding-imports/{import_id}/items/{item_id} 请求体.
          */
         ImportItemUpdateRequest: {
             /** User Action */
@@ -2123,7 +2168,7 @@ export interface components {
         };
         /**
          * IndexCatalogItem
-         * @description One selectable benchmark.
+         * @description 一个可供选择的业绩比较基准.
          */
         IndexCatalogItem: {
             /** Index Code */
@@ -2133,7 +2178,7 @@ export interface components {
         };
         /**
          * IndexCatalogResponse
-         * @description GET /indexes response.
+         * @description GET /indexes 响应体.
          */
         IndexCatalogResponse: {
             /**
@@ -2149,7 +2194,7 @@ export interface components {
         };
         /**
          * IndexHistoryResponse
-         * @description GET /indexes/{index_code}/history response.
+         * @description GET /indexes/{index_code}/history 响应体.
          */
         IndexHistoryResponse: {
             /**
@@ -2171,7 +2216,7 @@ export interface components {
         };
         /**
          * IndexPoint
-         * @description One trading day's closing level.
+         * @description 某个交易日的指数收盘点位.
          */
         IndexPoint: {
             /**
@@ -2184,7 +2229,7 @@ export interface components {
         };
         /**
          * IndexQuoteItem
-         * @description One index's latest close and its day change.
+         * @description 一只指数的最新收盘点位与当日涨跌.
          */
         IndexQuoteItem: {
             /** Index Code */
@@ -2200,7 +2245,7 @@ export interface components {
         };
         /**
          * IndexQuotesResponse
-         * @description GET /indexes/quotes response.
+         * @description GET /indexes/quotes 响应体.
          */
         IndexQuotesResponse: {
             /**
@@ -2216,7 +2261,7 @@ export interface components {
         };
         /**
          * LlmModelsRequest
-         * @description POST /agent/llm/models request — probe a vendor's model list.
+         * @description POST /agent/llm/models 请求——探测某厂家的模型列表.
          */
         LlmModelsRequest: {
             /**
@@ -2232,7 +2277,7 @@ export interface components {
         };
         /**
          * LlmModelsResponse
-         * @description POST /agent/llm/models response — model ids the key can actually use.
+         * @description POST /agent/llm/models 响应——该 Key 实际可用的模型 id.
          */
         LlmModelsResponse: {
             /**
@@ -2249,7 +2294,7 @@ export interface components {
         };
         /**
          * LlmProfileItem
-         * @description One switchable provider profile. API keys are masked, never returned.
+         * @description 一个可切换的供应商档案；API Key 只做掩码，绝不回传明文.
          */
         LlmProfileItem: {
             /**
@@ -2272,7 +2317,7 @@ export interface components {
         };
         /**
          * LlmProfileUpdate
-         * @description One profile in a settings save. Blank api_key keeps the stored key.
+         * @description 保存设置时提交的单个档案。api_key 留空表示沿用已存的 Key.
          */
         LlmProfileUpdate: {
             /**
@@ -2295,7 +2340,7 @@ export interface components {
         };
         /**
          * LlmProfilesResponse
-         * @description GET /agent/llm/profiles response — profiles plus the active one.
+         * @description GET /agent/llm/profiles 响应——档案列表加上当前生效的那一个.
          */
         LlmProfilesResponse: {
             /**
@@ -2314,7 +2359,7 @@ export interface components {
         };
         /**
          * LlmSettingsUpdate
-         * @description POST /agent/llm/settings request — replaces the whole profile list.
+         * @description POST /agent/llm/settings 请求——整份替换现有档案列表.
          */
         LlmSettingsUpdate: {
             /**
@@ -2328,7 +2373,7 @@ export interface components {
         };
         /**
          * LlmSwitchRequest
-         * @description POST /agent/llm/switch request.
+         * @description POST /agent/llm/switch 请求体.
          */
         LlmSwitchRequest: {
             /**
@@ -2342,7 +2387,7 @@ export interface components {
         };
         /**
          * ManualImportRequest
-         * @description POST /holding-imports/manual request.
+         * @description POST /holding-imports/manual 请求体.
          */
         ManualImportRequest: {
             /** Account Id */
@@ -2352,7 +2397,7 @@ export interface components {
         };
         /**
          * ManualPositionInput
-         * @description One manually entered holding row.
+         * @description 一条手动录入的持仓.
          */
         ManualPositionInput: {
             /** Fund Code */
@@ -2374,11 +2419,11 @@ export interface components {
         };
         /**
          * Message
-         * @description Message model for chat endpoint.
+         * @description chat 端点的消息模型.
          *
          *     Attributes:
-         *         role: The role of the message sender (user or assistant).
-         *         content: The content of the message.
+         *         role: 消息发送方角色（user 或 assistant）。
+         *         content: 消息正文。
          */
         Message: {
             /**
@@ -2395,12 +2440,11 @@ export interface components {
         };
         /**
          * MinuteExternalPoint
-         * @description One minute of a trading session.
+         * @description 交易时段内的一个分钟点.
          *
-         *     ``volume`` and ``amount`` are per-minute, derived from the source's running
-         *     totals; ``average_price`` is only meaningful for stocks. ``trade_date`` stays
-         *     None for a single session and is filled for the five-day series, where the
-         *     points span several days.
+         *     ``volume`` 和 ``amount`` 是单分钟的值，由上游的累计量、累计额差分得到；
+         *     ``average_price`` 只对个股有意义。单日分时的 ``trade_date`` 保持 None，
+         *     五日序列因为点跨了好几天才要填上.
          */
         MinuteExternalPoint: {
             /** Time */
@@ -2418,7 +2462,7 @@ export interface components {
         };
         /**
          * PortfolioSummary
-         * @description Asset summary across one or all accounts (spec 3.2).
+         * @description 单个或全部账户的资产总览（spec 3.2）.
          */
         PortfolioSummary: {
             /**
@@ -2453,7 +2497,7 @@ export interface components {
         };
         /**
          * PortfolioSummaryResponse
-         * @description GET /portfolio/summary response.
+         * @description GET /portfolio/summary 响应体.
          */
         PortfolioSummaryResponse: {
             /**
@@ -2468,7 +2512,7 @@ export interface components {
         };
         /**
          * PositionDeleteResponse
-         * @description DELETE position response.
+         * @description DELETE 持仓的响应体.
          */
         PositionDeleteResponse: {
             /** Deleted */
@@ -2476,7 +2520,7 @@ export interface components {
         };
         /**
          * PositionItem
-         * @description One holding with query-time derived metrics (never stored).
+         * @description 一笔持仓，派生指标在查询时算出（绝不落库）.
          */
         PositionItem: {
             /** Id */
@@ -2559,12 +2603,11 @@ export interface components {
         };
         /**
          * PositionUpsertRequest
-         * @description 同步持仓: restate what a holdings screen shows (partial allowed).
+         * @description 同步持仓：按持仓页面显示的结果重述（允许只填一部分）.
          *
-         *     The screen pairs its numbers differently depending on which side he reads
-         *     from, so the form offers two 口径: 持有金额 goes with 持有收益, 持有份额 goes
-         *     with 持仓成本价. Either pair fixes all four money figures; the one that is
-         *     not an input is derived and any stale stored value for it is retired.
+         *     页面从不同侧读这些数字，配对方式并不唯一，所以表单给两种口径：持有金额配
+         *     持有收益，持有份额配持仓成本价。任一组都能把四个金额全部定住；没当作输入
+         *     的那项改为推算得出，原先存着的旧值随之作废。
          */
         PositionUpsertRequest: {
             /** Account Id */
@@ -2601,7 +2644,7 @@ export interface components {
         };
         /**
          * PositionsResponse
-         * @description GET /portfolio/positions response.
+         * @description GET /portfolio/positions 响应体.
          */
         PositionsResponse: {
             /**
@@ -2617,7 +2660,7 @@ export interface components {
         };
         /**
          * RelatedSectorsResponse
-         * @description GET /funds/{fund_code}/related-sectors response (placeholder).
+         * @description GET /funds/{fund_code}/related-sectors 响应（占位实现）.
          */
         RelatedSectorsResponse: {
             /**
@@ -2643,7 +2686,7 @@ export interface components {
         };
         /**
          * ScreenshotImportAccepted
-         * @description POST /holding-imports/screenshots response (HTTP 202).
+         * @description POST /holding-imports/screenshots 响应体（HTTP 202）.
          */
         ScreenshotImportAccepted: {
             /**
@@ -2661,12 +2704,12 @@ export interface components {
         };
         /**
          * SessionResponse
-         * @description Response model for session creation.
+         * @description 创建会话的响应模型.
          *
          *     Attributes:
-         *         session_id: The unique identifier for the chat session
-         *         name: Name of the session (defaults to empty string)
-         *         token: The authentication token for the session
+         *         session_id: 聊天会话的唯一标识
+         *         name: 会话名称（默认为空字符串）
+         *         token: 该会话的鉴权 token
          */
         SessionResponse: {
             /**
@@ -2691,11 +2734,10 @@ export interface components {
         };
         /**
          * SymbolCompanyResponse
-         * @description GET /markets/{symbol}/company response.
+         * @description GET /markets/{symbol}/company 响应体.
          *
-         *     ``company`` is None for the indexes and non-A股 listings that have no record
-         *     in the source, which the screen renders as a hidden section rather than an
-         *     error, so one flaky upstream cannot break the chart above it.
+         *     指数以及上游没有记录的 A 股以外标的，``company`` 为 None——页面把这种情况
+         *     渲染成隐藏整个板块而不是报错，于是单个上游抖动拖不垮上方的图表。
          */
         SymbolCompanyResponse: {
             /**
@@ -2710,7 +2752,7 @@ export interface components {
         };
         /**
          * SymbolHistoryResponse
-         * @description GET /markets/{symbol}/history response.
+         * @description GET /markets/{symbol}/history 响应体.
          */
         SymbolHistoryResponse: {
             /**
@@ -2742,7 +2784,7 @@ export interface components {
         };
         /**
          * SymbolIntradayResponse
-         * @description GET /markets/{symbol}/intraday response.
+         * @description GET /markets/{symbol}/intraday 响应体.
          */
         SymbolIntradayResponse: {
             /**
@@ -2771,11 +2813,11 @@ export interface components {
         };
         /**
          * SymbolQuoteResponse
-         * @description GET /markets/{symbol}/quote response.
+         * @description GET /markets/{symbol}/quote 响应体.
          *
-         *     Inherits the snapshot's fields verbatim. Units follow the house rule:
-         *     ``change_pct``, ``turnover_rate`` and ``amplitude`` are percent points,
-         *     ``amount`` is in whole currency units and the two market caps are in 亿.
+         *     快照字段原样继承。单位遵守本项目的统一口径：``change_pct``、
+         *     ``turnover_rate``、``amplitude`` 是百分点，``amount`` 是元，
+         *     两个市值字段单位是亿。
          */
         SymbolQuoteResponse: {
             /** Symbol */
@@ -2835,12 +2877,12 @@ export interface components {
         };
         /**
          * Token
-         * @description Token model for authentication.
+         * @description 鉴权 token 模型.
          *
          *     Attributes:
-         *         access_token: The JWT access token.
-         *         token_type: The type of token (always "bearer").
-         *         expires_at: The token expiration timestamp.
+         *         access_token: 签发的 JWT access token。
+         *         token_type: token 类型（恒为 "bearer"）。
+         *         expires_at: token 的过期时间戳。
          */
         Token: {
             /**
@@ -2863,13 +2905,13 @@ export interface components {
         };
         /**
          * TokenResponse
-         * @description Response model for login endpoint.
+         * @description 登录端点的响应模型.
          *
          *     Attributes:
-         *         access_token: The JWT access token
-         *         token_type: The type of token (always "bearer")
-         *         expires_at: When the token expires
-         *         refresh_token: Optional long-lived refresh token (spec 3.1)
+         *         access_token: 本次登录签发的 JWT access token
+         *         token_type: token 类型（恒为 "bearer"）
+         *         expires_at: token 的过期时刻
+         *         refresh_token: 可选的长效 refresh token（spec 3.1）
          */
         TokenResponse: {
             /**
@@ -2903,7 +2945,7 @@ export interface components {
         };
         /**
          * TradeCreateRequest
-         * @description 加减仓: record one purchase, redemption, installment or conversion.
+         * @description 加减仓：记一笔买入、赎回、定投期数或转换.
          */
         TradeCreateRequest: {
             /** Account Id */
@@ -2943,7 +2985,7 @@ export interface components {
         };
         /**
          * TradeLeg
-         * @description One fund's side of an order, priced on the confirm day.
+         * @description 一笔订单在某只基金那一侧的腿，按确认日净值定价.
          */
         TradeLeg: {
             /** Fund Code */
@@ -2975,7 +3017,7 @@ export interface components {
         };
         /**
          * TradePreviewResponse
-         * @description GET .../trades/preview: what this order would do to the holding.
+         * @description GET .../trades/preview：这单会怎样改动持仓.
          */
         TradePreviewResponse: {
             /**
@@ -3006,7 +3048,7 @@ export interface components {
         };
         /**
          * TransactionItem
-         * @description One transaction or adjustment record.
+         * @description 一条流水或一笔人工调整记录.
          */
         TransactionItem: {
             /** Id */
@@ -3043,7 +3085,7 @@ export interface components {
         };
         /**
          * TransactionsResponse
-         * @description GET /transactions response.
+         * @description GET /transactions 响应体.
          */
         TransactionsResponse: {
             /**
@@ -3059,12 +3101,12 @@ export interface components {
         };
         /**
          * UserCreate
-         * @description Request model for user registration.
+         * @description 用户注册的请求模型.
          *
          *     Attributes:
-         *         email: User's email address
-         *         password: User's password
-         *         username: Optional display name
+         *         email: 用户邮箱
+         *         password: 用户密码
+         *         username: 可选的显示名
          */
         UserCreate: {
             /**
@@ -3087,11 +3129,11 @@ export interface components {
         };
         /**
          * UserProfileUpdateRequest
-         * @description Request model for PATCH /auth/me. Omitted fields stay unchanged.
+         * @description PATCH /auth/me 的请求模型；省略的字段保持原值.
          *
          *     Attributes:
-         *         email: New email address, or None to keep it
-         *         username: New display name; an empty string clears it
+         *         email: 新邮箱，None 表示不改
+         *         username: 新显示名；空字符串表示清空
          */
         UserProfileUpdateRequest: {
             /**
@@ -3107,13 +3149,13 @@ export interface components {
         };
         /**
          * UserResponse
-         * @description Response model for user operations.
+         * @description 用户相关操作的响应模型.
          *
          *     Attributes:
-         *         id: User's ID
-         *         email: User's email address
-         *         username: Optional display name
-         *         token: Authentication token
+         *         id: 用户 ID
+         *         email: 用户邮箱
+         *         username: 可选的显示名
+         *         token: 鉴权 token
          */
         UserResponse: {
             /**
@@ -3150,8 +3192,46 @@ export interface components {
             type: string;
         };
         /**
+         * ValuationEstimateRequest
+         * @description POST /valuation/estimates 请求体.
+         */
+        ValuationEstimateRequest: {
+            /**
+             * Codes
+             * @description 基金代码，一次最多 50 只
+             */
+            codes: string[];
+        };
+        /**
+         * ValuationEstimatesResponse
+         * @description POST /valuation/estimates 响应体.
+         */
+        ValuationEstimatesResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /**
+             * Items
+             * @default []
+             */
+            items?: components["schemas"]["FundEstimateItem"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total?: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+        };
+        /**
          * WatchlistAddRequest
-         * @description POST /watchlist request.
+         * @description POST /watchlist 请求体.
          */
         WatchlistAddRequest: {
             /** Fund Code */
@@ -3161,9 +3241,9 @@ export interface components {
         };
         /**
          * WatchlistFundItem
-         * @description One watchlisted fund with market data and relationship flags.
+         * @description 一只自选基金，带行情数据与关系标记.
          *
-         *     All `*_return` fields are percent points (2.2 means +2.2%).
+         *     所有 `*_return` 字段的单位都是百分点（2.2 即 +2.2%）。
          */
         WatchlistFundItem: {
             /** Fund Code */
@@ -3216,7 +3296,7 @@ export interface components {
         };
         /**
          * WatchlistGroupCreateRequest
-         * @description POST /watchlist/groups request.
+         * @description POST /watchlist/groups 请求体.
          */
         WatchlistGroupCreateRequest: {
             /** Name */
@@ -3229,7 +3309,7 @@ export interface components {
         };
         /**
          * WatchlistGroupItem
-         * @description One watchlist group.
+         * @description 一个自选分组.
          */
         WatchlistGroupItem: {
             /** Id */
@@ -3246,7 +3326,7 @@ export interface components {
         };
         /**
          * WatchlistGroupUpdateRequest
-         * @description PATCH /watchlist/groups/{group_id} request.
+         * @description PATCH /watchlist/groups/{group_id} 请求体.
          */
         WatchlistGroupUpdateRequest: {
             /** Name */
@@ -3261,7 +3341,7 @@ export interface components {
         };
         /**
          * WatchlistGroupsResponse
-         * @description GET /watchlist/groups response.
+         * @description GET /watchlist/groups 响应体.
          */
         WatchlistGroupsResponse: {
             /**
@@ -3277,7 +3357,7 @@ export interface components {
         };
         /**
          * WatchlistResponse
-         * @description GET /watchlist response.
+         * @description GET /watchlist 响应体.
          */
         WatchlistResponse: {
             /**
@@ -3293,7 +3373,7 @@ export interface components {
         };
         /**
          * WatchlistUpdateRequest
-         * @description PATCH /watchlist/{fund_code} request.
+         * @description PATCH /watchlist/{fund_code} 请求体.
          */
         WatchlistUpdateRequest: {
             /** Sort Order */
@@ -5166,6 +5246,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoInvestPlanItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_funds_api_v1_valuation_estimates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValuationEstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValuationEstimatesResponse"];
                 };
             };
             /** @description Validation Error */

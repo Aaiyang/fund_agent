@@ -5,6 +5,7 @@
 import { DataTable, type DataColumn } from '@/components/DataTable';
 import { theme } from '@/constants/theme';
 import type { WatchlistFund } from '@/hooks/useWatchlist';
+import { estimateHint, type FundEstimate } from '@/hooks/useValuation';
 import { formatDate, formatNumber, formatReturnPoints, trendColor } from '@/utils/format';
 
 /** 滚动窗口收益列的公共工厂，近1周/近1月/近3月/近6月/近1年共用。 */
@@ -42,15 +43,44 @@ const COLUMNS: DataColumn<WatchlistFund>[] = [
   periodColumn('annual', '近1年', (item) => item.annual_return),
 ];
 
+/**
+ * 预估涨幅列：有数按涨跌上色，没数要说清是哪一种「没有」.
+ *
+ * 与持仓表那一列同一套判据：QDII 的空白是口径决定，不是接口坏了。
+ */
+function estimateColumn(estimates: Record<string, FundEstimate>): DataColumn<WatchlistFund> {
+  return {
+    key: 'estimate',
+    title: '预估涨幅',
+    width: 84,
+    sortValue: (item) => estimates[item.fund_code]?.change_pct,
+    cell: (item) => {
+      const estimate = estimates[item.fund_code];
+      const value = estimate?.available ? estimate.change_pct : null;
+      return {
+        text: formatReturnPoints(value),
+        color: trendColor(value),
+        sub: estimate?.available ? formatDate(estimate.quote_date) : estimateHint(estimate),
+        subColor: theme.textFaint,
+      };
+    },
+  };
+}
+
 export function WatchlistTable({
   items,
   onRemove,
   pendingCode,
+  estimates = {},
 }: {
   items: WatchlistFund[];
   onRemove: (fundCode: string) => void;
   pendingCode?: string;
+  estimates?: Record<string, FundEstimate>;
 }) {
+  // 占位列留在原位（读不到估值时它才是对的），拿到结果后按 key 换成实时那一列。
+  const columns = COLUMNS.map((column) => (column.key === 'estimate' ? estimateColumn(estimates) : column));
+
   return (
     <DataTable
       items={items}
@@ -67,7 +97,7 @@ export function WatchlistTable({
           .filter(Boolean)
           .join(' · '),
       })}
-      columns={COLUMNS}
+      columns={columns}
       action={{
         title: '操作',
         busy: (item) => pendingCode === item.fund_code,

@@ -1,7 +1,7 @@
 """API v1 路由装配.
 
 本模块创建主 API 路由，并挂载 auth、chatbot、funds、watchlist、portfolio、
-accounts、transactions、持仓导入以及 agent 占位这些子路由。
+accounts、transactions、持仓导入、估值以及 agent 占位这些子路由。
 """
 
 from fastapi import APIRouter
@@ -17,6 +17,7 @@ from app.api.v1.indexes import router as indexes_router
 from app.api.v1.markets import router as markets_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.transactions import router as transactions_router
+from app.api.v1.valuation import router as valuation_router
 from app.api.v1.watchlist import router as watchlist_router
 from app.core.logging import logger
 
@@ -34,6 +35,7 @@ api_router.include_router(accounts_router, prefix="/accounts", tags=["Accounts"]
 api_router.include_router(transactions_router, prefix="/transactions", tags=["Transactions"])
 api_router.include_router(holding_imports_router, prefix="/holding-imports", tags=["Holding Imports"])
 api_router.include_router(auto_invest_router, prefix="/auto-invest", tags=["Auto Invest"])
+api_router.include_router(valuation_router, prefix="/valuation", tags=["Valuation"])
 api_router.include_router(agent_router, prefix="/agent", tags=["Agent"])
 
 

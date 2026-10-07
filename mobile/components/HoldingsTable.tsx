@@ -7,6 +7,7 @@
 import { DataTable, type DataColumn } from '@/components/DataTable';
 import { theme } from '@/constants/theme';
 import type { PositionItem } from '@/hooks/usePortfolio';
+import { estimateHint, type FundEstimate } from '@/hooks/useValuation';
 import { formatDate, formatMoney, formatNumber, formatRate, formatReturnPoints, formatSignedMoney, trendColor } from '@/utils/format';
 
 const COLUMNS: DataColumn<PositionItem>[] = [
@@ -73,7 +74,40 @@ const COLUMNS: DataColumn<PositionItem>[] = [
   },
 ];
 
-export function HoldingsTable({ items }: { items: PositionItem[] }) {
+/**
+ * 预估涨幅列：有数按涨跌上色，没数要说清是哪一种「没有」.
+ *
+ * 副行放行情日期而不是披露日期——这一格说的是"截至那次行情"的推算值，
+ * 和左边「最新涨幅」依据的净值日期不是同一天是常事（QDII 尤其如此）。
+ */
+function estimateColumn(estimates: Record<string, FundEstimate>): DataColumn<PositionItem> {
+  return {
+    key: 'estimate',
+    title: '预估涨幅',
+    width: 84,
+    sortValue: (item) => estimates[item.fund_code]?.change_pct,
+    cell: (item) => {
+      const estimate = estimates[item.fund_code];
+      const value = estimate?.available ? estimate.change_pct : null;
+      return {
+        text: formatReturnPoints(value),
+        color: trendColor(value),
+        sub: estimate?.available ? formatDate(estimate.quote_date) : estimateHint(estimate),
+        subColor: theme.textFaint,
+      };
+    },
+  };
+}
+
+export function HoldingsTable({
+  items,
+  estimates = {},
+}: {
+  items: PositionItem[];
+  estimates?: Record<string, FundEstimate>;
+}) {
+  // 占位列留在原位（读不到估值时它才是对的），拿到结果后按 key 换成实时那一列。
+  const columns = COLUMNS.map((column) => (column.key === 'estimate' ? estimateColumn(estimates) : column));
   return (
     <DataTable
       items={items}
@@ -85,7 +119,7 @@ export function HoldingsTable({ items }: { items: PositionItem[] }) {
         title: item.fund_name ?? item.fund_code,
         sub: `${item.fund_code} · ${formatMoney(item.market_value)}`,
       })}
-      columns={COLUMNS}
+      columns={columns}
     />
   );
 }

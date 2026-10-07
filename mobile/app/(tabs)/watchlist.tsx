@@ -9,12 +9,14 @@ import { WatchlistTable } from '@/components/WatchlistTable';
 import { theme } from '@/constants/theme';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import { useRemoveWatchlistFund, useWatchlist, useWatchlistGroups } from '@/hooks/useWatchlist';
+import { estimatesByCode, useValuationEstimates } from '@/hooks/useValuation';
 import { useUiStore } from '@/stores/ui';
 
 export default function WatchlistScreen() {
   const groupId = useUiStore((state) => state.groupId);
   const setGroupId = useUiStore((state) => state.setGroupId);
   const list = useWatchlist(groupId);
+  const valuations = useValuationEstimates((list.data?.items ?? []).map((item) => item.fund_code));
   const groups = useWatchlistGroups();
   const remove = useRemoveWatchlistFund();
   const groupsRef = useRef<ScrollView>(null);
@@ -64,6 +66,7 @@ export default function WatchlistScreen() {
               items={data.items}
               onRemove={(fundCode) => remove.mutate(fundCode)}
               pendingCode={remove.variables ?? undefined}
+              estimates={estimatesByCode(valuations.data?.items)}
             />
           )}
         </Async>

@@ -10,6 +10,7 @@ import { useIndexQuotes } from '@/hooks/useIndexes';
 import { navRefreshNotice, useNavRefreshOnFocus } from '@/hooks/useFunds';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import { useAccounts, usePortfolioSummary, usePositions } from '@/hooks/usePortfolio';
+import { estimatesByCode, useValuationEstimates } from '@/hooks/useValuation';
 import { useUiStore } from '@/stores/ui';
 import {
   formatDateTime,
@@ -26,6 +27,7 @@ export default function HoldingsScreen() {
   const setAccountId = useUiStore((state) => state.setAccountId);
   const summary = usePortfolioSummary(accountId);
   const positions = usePositions(accountId);
+  const valuations = useValuationEstimates((positions.data?.items ?? []).map((item) => item.fund_code));
   const accounts = useAccounts();
   const quotes = useIndexQuotes();
   const nav = useNavRefreshOnFocus();
@@ -118,7 +120,7 @@ export default function HoldingsScreen() {
             ) : null
           }
         >
-          {(data) => <HoldingsTable items={data.items} />}
+          {(data) => <HoldingsTable items={data.items} estimates={estimatesByCode(valuations.data?.items)} />}
         </Async>
       </Card>
     </Screen>
