@@ -39,7 +39,7 @@ export function estimatesByCode(items?: FundEstimate[]): Record<string, FundEsti
 export function estimateHint(estimate?: FundEstimate): string {
   if (!estimate) return '';
   if (estimate.available) return '';
-  if (estimate.reason === 'offshore_calendar') return '境外口径';
+  if (estimate.reason === 'cross_timezone_calendar') return '境外收盘后';
   if (estimate.reason === 'thin_disclosure') return '披露太稀';
   if (estimate.reason === 'no_quotable_basis') return '无估值依据';
   return '未接入';

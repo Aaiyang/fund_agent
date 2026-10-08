@@ -6,7 +6,7 @@ from app.integrations.valuation.benchmark import parse_benchmark
 from app.models.fund import Fund
 from app.schemas.fund import FundHoldingItem, FundHoldingsResponse
 from app.schemas.market import IndexQuoteItem
-from app.services.valuation_service import _benchmark_ready, _is_offshore_calendar, estimate_one
+from app.services.valuation_service import _benchmark_ready, _is_cross_timezone_calendar, estimate_one
 
 DAY = date(2026, 9, 30)
 
@@ -14,6 +14,10 @@ CSI300_BENCHMARK = "沪深300指数收益率×95%＋银行活期存款利率（�
 # 011452 原文：A 股主动基金带 20% 港股基准，主口径仍在 A 股。
 QUALITY_BENCHMARK = "中证800指数收益率*60%+恒生指数收益率（使用估值汇率折算）*20%+上证国债指数收益率*20%"
 NASDAQ_BENCHMARK = "经汇率调整的纳斯达克100指数收益率*95%+活期存款利率（税后）*5%"
+# 023597 原文：跟踪中证港股通创新药。港股与 A 股同一个交易时段，不该按境外处理。
+HK_PHARMA_BENCHMARK = "中证港股通创新药指数收益率*95%+银行活期存款利率(税后)*5%"
+# 恒生科技指数是腾讯有实时价的那条（hkHSTECH），基准法当场就能出数。
+HSTECH_BENCHMARK = "恒生科技指数收益率*95%＋银行活期存款利率（税后）×5%"
 
 
 def _fund(code: str, name: str, fund_type: str | None = None) -> Fund:
@@ -51,10 +55,10 @@ class TestOffshoreCalendar:
         """
         fund = _fund("011452", "华泰柏瑞质量成长C", "混合型-偏股")
 
-        assert not _is_offshore_calendar(fund, parse_benchmark(QUALITY_BENCHMARK))
+        assert not _is_cross_timezone_calendar(fund, parse_benchmark(QUALITY_BENCHMARK))
 
     def test_the_dominant_benchmark_index_decides_the_calendar(self) -> None:
-        assert _is_offshore_calendar(
+        assert _is_cross_timezone_calendar(
             _fund("012752", "建信纳斯达克100指数(QDII)人民币C"), parse_benchmark(NASDAQ_BENCHMARK)
         )
 
@@ -65,10 +69,51 @@ class TestOffshoreCalendar:
         """
         fund = _fund("539001", "建信纳斯达克100指数(QDII)A人民币", None)
 
-        assert _is_offshore_calendar(fund, parse_benchmark(None))
+        assert _is_cross_timezone_calendar(fund, parse_benchmark(None))
 
 
-class TestBenchmarkReady:
+class TestSameTimezoneCalendar:
+    def test_a_hang_kong_dominant_fund_is_not_refused(self) -> None:
+        """港股与 A 股同时段：大头在港股不构成否决.
+
+        早先的版本把"恒生/港股"一起当境外词，023597 这种中证港股通创新药的联接基金
+        被静默判成"境外口径"，界面永远是一个空。
+        """
+        fund = _fund("023597", "景顺长城中证港股通创新药ETF联接A", "指数型-股票")
+
+        assert parse_benchmark(HK_PHARMA_BENCHMARK).dominant_market == "hk"
+        assert not _is_cross_timezone_calendar(fund, parse_benchmark(HK_PHARMA_BENCHMARK))
+
+    def test_a_hang_seng_tech_index_fund_gets_a_number(self) -> None:
+        """基准里那条恒生科技一旦取到价，走的就是误差最小的基准法.
+
+        解析器把「恒生科技指数收益率」吃成「恒生科技」，所以行情键也是这个去尾形式。
+        """
+        fund = _fund("013309", "恒生科技ETF联接A", "QDII")
+        quotes = _quotes()
+        quotes["恒生科技"] = _quote("恒生科技", -2.89)
+
+        item = estimate_one("013309", fund=fund, plan=parse_benchmark(HSTECH_BENCHMARK), quotes=quotes, holdings=None)
+
+        assert item.available and item.method == "index"
+        assert item.change_pct is not None and item.change_pct < 0
+
+    def test_a_cross_timezone_name_still_refuses_without_a_benchmark(self) -> None:
+        """基准读不懂时，名字里有跨时区市场词仍然按不可估处理."""
+        assert _is_cross_timezone_calendar(
+            _fund("539001", "建信纳斯达克100指数(QDII)A人民币", None), parse_benchmark(None)
+        )
+
+    def test_a_hang_kong_name_does_not_refuse_without_a_benchmark(self) -> None:
+        """同理，名字里只有港股词的，不该被一起误伤."""
+        fund = _fund("013309", "华夏恒生科技ETF联接A", "QDII")
+
+        assert not _is_cross_timezone_calendar(fund, parse_benchmark(None))
+
+    def test_an_unrecognisable_qdii_stays_refused(self) -> None:
+        """基准与名称都说不出市场时，QDII 按最保守的处理：不给数."""
+        assert _is_cross_timezone_calendar(_fund("000001", "某境外主题精选混合", "QDII"), parse_benchmark(None))
+
     def test_every_index_of_the_benchmark_must_be_quotable(self) -> None:
         plan = parse_benchmark(QUALITY_BENCHMARK)
 
@@ -118,7 +163,7 @@ class TestEstimateOne:
 
         assert not item.available
         assert item.method == "unavailable"
-        assert item.reason == "offshore_calendar"
+        assert item.reason == "cross_timezone_calendar"
         assert item.change_pct is None
 
     def test_a_thin_disclosure_is_not_extrapolated(self) -> None:

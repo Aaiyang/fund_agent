@@ -18,6 +18,7 @@ from datetime import date
 from app.analytics.valuation import HoldingWeight, benchmark_change, choose_method, penetration_change
 from app.core.logging import logger
 from app.integrations.valuation.benchmark import BenchmarkPlan, parse_benchmark
+from app.integrations.valuation.hk_quotes import fetch_hk_index_quotes
 from app.integrations.valuation.profile import fetch_benchmark_text
 from app.models.fund import Fund
 from app.repositories.fund_repository import fund_repository
@@ -32,15 +33,14 @@ from app.utils.clock import utc_now
 # 上游调用都带节流，但一次请求里也别把并发打满。
 _FETCH_CONCURRENCY = 5
 
-# 名称里出现这些词基本就是境外口径的基金。单看名称不可靠（会漏），所以它只是
-# `_is_offshore_calendar` 三条证据之一。
-_OFFSHORE_NAME_TOKENS = (
-    "QDII",
+# 名称里出现这些词说明它跟的是**跨时区**市场（美股/欧股/日股）：那边在我们收盘之后
+# 才出数，盘中给数等于预测另一个交易日。单看名称不可靠（会漏、也会误伤），所以它
+# 只是 `_is_cross_timezone_calendar` 的证据之一。
+_CROSS_TIMEZONE_NAME_TOKENS = (
     "纳指",
     "纳斯达克",
     "标普",
     "道琼斯",
-    "恒生",
     "日经",
     "东证",
     "中概",
@@ -50,27 +50,36 @@ _OFFSHORE_NAME_TOKENS = (
     "德国",
     "法国",
     "英国",
+    "越南",
+    "印度",
 )
+# 这些词说明跟的是港股——与 A 股同一个交易时段，可以估。判序在跨时区之后：
+# "中概恒生"这种两个都占的名字，宁可按不能估处理。
+_SAME_TIMEZONE_NAME_TOKENS = ("恒生", "港股", "H股", "红筹", "国企")
 
 
-def _is_offshore_calendar(fund: Fund | None, plan: BenchmarkPlan) -> bool:
-    """判断这只基金的净值是不是跟着境外收盘出的——是的话就不给盘中估值.
+def _is_cross_timezone_calendar(fund: Fund | None, plan: BenchmarkPlan) -> bool:
+    """判断这只基金的净值是不是跟着跨时区收盘出的——是的话不给盘中估.
 
-    三条证据取并集，因为任何一条单独都不可靠：`fund_type` 最准但库里多数行是 NULL
-    （539001 建信纳斯达克100(QDII)A人民币 就没有类型）；名称关键词覆盖率高但会漏；
-    基准里权重最大的那条指数在境外，是三者里最稳的信号。
+    港股不构成否决：港股与 A 股同时段，盘中估的就是今晚要用那次收盘。要挡的是
+    美/欧/日——精度再高也是时间口径错。
 
-    反过来，"基准里出现了恒生"不能作为否决理由：A 股主动基金常配 10%~20% 的港股
-    基准，它们的主口径仍在 A 股，穿透照样能估。
+    证据按可靠性排：基准里权重最大的那条指数在哪个市场最准；`fund_type` 是 QDII
+    只说明它投境外（港股通基金也挂 QDII），所以它单独不能否决，只在**认不出市场**
+    时兜底；名称词表覆盖率高但会误伤，只留跨时区那些词。
     """
-    if plan.dominant_offshore:
-        return True
+    market = plan.dominant_market
+    if market != "cn":
+        return market == "cross_tz"
     if fund is None:
         return False
-    if str(fund.fund_type or "").upper().startswith("QDII"):
-        return True
     name = str(fund.fund_name or "").upper()
-    return any(token.upper() in name for token in _OFFSHORE_NAME_TOKENS)
+    if any(token in name for token in _CROSS_TIMEZONE_NAME_TOKENS):
+        return True
+    if any(token in name for token in _SAME_TIMEZONE_NAME_TOKENS):
+        return False
+    # 基准读不懂、名称也认不出市场时，QDII 只能按最保守的处理：不给数。
+    return str(fund.fund_type or "").upper().startswith("QDII")
 
 
 def _benchmark_ready(plan: BenchmarkPlan, quotes: Mapping[str, IndexQuoteItem]) -> bool:
@@ -133,9 +142,9 @@ def estimate_one(
             quote_times.append(item.quote_time)
     coverage = sum(weight for _, weight, _ in usable)
     ready = _benchmark_ready(plan, quotes)
-    offshore = _is_offshore_calendar(fund, plan)
+    cross_timezone = _is_cross_timezone_calendar(fund, plan)
     method = choose_method(
-        offshore_calendar=offshore,
+        cross_timezone_calendar=cross_timezone,
         benchmark_ready=ready,
         disclosed_coverage_pp=coverage,
     )
@@ -185,7 +194,7 @@ def estimate_one(
     return FundEstimateItem(
         fund_code=fund_code,
         method="unavailable",
-        reason="offshore_calendar" if offshore else "no_quotable_basis",
+        reason="cross_timezone_calendar" if cross_timezone else "no_quotable_basis",
     )
 
 
@@ -196,18 +205,24 @@ class ValuationService:
         """按代码批量算盘中估值.
 
         取披露持仓是这批里最贵的动作（每只 2~4 次上游调用），所以只对**用不上基准法
-        且不是境外口径**的基金去做：指数型基金有基准就够了。
+        且不是跨时区口径**的基金去做：指数型基金有基准就够了。
         """
         ordered = list(dict.fromkeys(codes))
         funds = await fund_repository.get_funds(ordered)
-        quotes = {quote.name: quote for quote in await market_service.get_quotes()}
         benchmarks = await self._benchmarks(ordered, funds)
         plans = {code: parse_benchmark(benchmarks.get(code)) for code in ordered}
+
+        quotes = {quote.name: quote for quote in await market_service.get_quotes()}
+        # 基准里的港股系指数不在 A 股那份目录里，按名字补一次实时价。取不到就留给
+        # 降级链：行情源挂了不该让整批估值一起空掉。
+        wanted_names = {part.index_name for plan in plans.values() for part in plan.parts}
+        quotes.update(await fetch_hk_index_quotes(wanted_names - quotes.keys()))
 
         needs_holdings = [
             code
             for code in ordered
-            if not _is_offshore_calendar(funds.get(code), plans[code]) and not _benchmark_ready(plans[code], quotes)
+            if not _is_cross_timezone_calendar(funds.get(code), plans[code])
+            and not _benchmark_ready(plans[code], quotes)
         ]
         holdings = await self._holdings(needs_holdings)
 

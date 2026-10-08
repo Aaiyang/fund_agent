@@ -61,22 +61,29 @@ class TestPenetrationChange:
 
 
 class TestChooseMethod:
-    def test_offshore_calendar_funds_are_never_estimated(self) -> None:
+    def test_cross_timezone_calendar_funds_are_never_estimated(self) -> None:
         """口径先于精度：QDII 的盘中数是在预测境外今晚的收盘."""
-        assert choose_method(offshore_calendar=True, benchmark_ready=True, disclosed_coverage_pp=95.0) == "unavailable"
+        assert (
+            choose_method(cross_timezone_calendar=True, benchmark_ready=True, disclosed_coverage_pp=95.0)
+            == "unavailable"
+        )
 
     def test_a_usable_benchmark_wins_over_penetration(self) -> None:
         """基准法实测 0.07pp 量级，穿透 0.4~0.5pp，能前者就不用后者."""
-        assert choose_method(offshore_calendar=False, benchmark_ready=True, disclosed_coverage_pp=92.5) == "index"
+        assert (
+            choose_method(cross_timezone_calendar=False, benchmark_ready=True, disclosed_coverage_pp=92.5) == "index"
+        )
 
     def test_penetration_is_the_fallback_for_active_holdings(self) -> None:
         assert (
-            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=92.5) == "penetration"
+            choose_method(cross_timezone_calendar=False, benchmark_ready=False, disclosed_coverage_pp=92.5)
+            == "penetration"
         )
 
     def test_thin_or_absent_data_stays_blank(self) -> None:
         assert (
-            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=1.8) == "unavailable"
+            choose_method(cross_timezone_calendar=False, benchmark_ready=False, disclosed_coverage_pp=1.8)
+            == "unavailable"
         )
 
     def test_an_a_share_fund_with_an_offshore_benchmark_part_still_gets_penetration(self) -> None:
@@ -86,5 +93,6 @@ class TestChooseMethod:
         84%~95%，把它们一并否决是错的。
         """
         assert (
-            choose_method(offshore_calendar=False, benchmark_ready=False, disclosed_coverage_pp=94.6) == "penetration"
+            choose_method(cross_timezone_calendar=False, benchmark_ready=False, disclosed_coverage_pp=94.6)
+            == "penetration"
         )

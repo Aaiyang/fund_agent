@@ -36,12 +36,14 @@ _CASH_TOKENS = ("活期存款", "银行存款", "定期存款", "同期存款", 
 # 017489、022287 都是），它们的持仓照样能穿透估。真正"不能估"的判据是基金本身的
 # 类型（QDII 的净值按境外日历公布），那由服务层按 fund_type 判。
 # 基准里的境外指数最终会不会被用，取决于行情目录里有没有它——取不到价自然落空。
-_OVERSEAS_TOKENS = (
-    "恒生",
-    "港股",
-    "H股",
-    "中华港股",
+# 港股与 A 股在同一个交易时段（9:30–16:00，UTC+8）。"基准大头在港股"因此不构成
+# 盘中估的否决理由——盘中估出来的就是今晚要用那次收盘，时间口径是同一个。
+# 真正不能估的是跨时区市场：美股/欧股/日股在我们收盘之后才出数，盘中给数等于
+# 预测另一个交易日，精度再高也是定义错。
+_SAME_TIMEZONE_TOKENS = ("恒生", "港股", "H股", "中华港股", "红筹", "国企")
+_CROSS_TIMEZONE_TOKENS = (
     "纳斯达克",
+    "纳指",
     "标普",
     "道琼斯",
     "罗素",
@@ -60,6 +62,7 @@ _OVERSEAS_TOKENS = (
     "印度",
     "泰国",
 )
+_OVERSEAS_TOKENS = _SAME_TIMEZONE_TOKENS + _CROSS_TIMEZONE_TOKENS
 
 # 文本里声明了汇率折算：说明该基准的收益已经含了人民币口径的汇率影响。
 _FX_TOKENS = ("经汇率调整", "汇率折算", "使用估值汇率", "人民币计")
@@ -99,19 +102,35 @@ class BenchmarkPlan:
         return sum(part.weight for part in self.parts)
 
     @property
-    def dominant_offshore(self) -> bool:
-        """权重最大的那条指数在境外，因此这只基金的净值按境外时段结算.
+    def dominant_index_name(self) -> str | None:
+        """权重最大的那条指数名，用来判这只基金跟着哪个市场结算."""
+        if not self.parts:
+            return None
+        return max(self.parts, key=lambda part: part.weight).index_name
+
+    @property
+    def dominant_market(self) -> str:
+        """大头指数所在的市场：`cross_tz`（跨时区）/ `hk`（港股）/ `cn`."""
+        name = self.dominant_index_name
+        if not name:
+            return "cn"
+        if any(token in name for token in _CROSS_TIMEZONE_TOKENS):
+            return "cross_tz"
+        if any(token in name for token in _SAME_TIMEZONE_TOKENS):
+            return "hk"
+        return "cn"
+
+    @property
+    def dominant_cross_timezone(self) -> bool:
+        """净值跟着**跨时区**收盘出，因此不给盘中估.
 
         这是判"能不能盘中估"最可靠的信号：`fund.fund_type` 在多数行里是 NULL
         （库里 539001 建信纳斯达克100(QDII)A人民币 就没有类型），靠类型判会
         静默失效。而基准里"带一句恒生"不算——A 股主动基金常配 10%~20% 港股，
-        它的主口径仍在 A 股。只有**占大头的那条指数**在境外，净值才是跟着
-        境外收盘出的。
+        它的主口径仍在 A 股。只有**占大头的那条指数**在跨时区市场，净值才是
+        跟着另一个交易日的收盘出的。
         """
-        if not self.parts:
-            return False
-        dominant = max(self.parts, key=lambda part: part.weight)
-        return any(token in dominant.index_name for token in _OVERSEAS_TOKENS)
+        return self.dominant_market == "cross_tz"
 
 
 def parse_benchmark(text: str | None) -> BenchmarkPlan:

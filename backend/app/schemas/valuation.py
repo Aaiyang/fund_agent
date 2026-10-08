@@ -48,7 +48,7 @@ class FundEstimateItem(BaseModel):
     basis: str | None = None
     # 估值所依据行情的交易日：指数收盘日或持仓行情快照日。
     quote_date: date | None = None
-    # 没有值时的原因码（fund_not_found / offshore_calendar / no_quotable_basis /
+    # 没有值时的原因码（fund_not_found / cross_timezone_calendar / no_quotable_basis /
     # thin_disclosure），界面按它决定是显示 `--` 还是显示一句解释。
     reason: str | None = None
 
