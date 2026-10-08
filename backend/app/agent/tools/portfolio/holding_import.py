@@ -1,4 +1,4 @@
-"""图片持仓工具：读取识别草稿，并等待独立人工端点完成确认，模型自身不能写持仓."""
+"""组合域图片持仓工具：读取识别草稿，等待独立人工端点确认；模型自身不能写持仓."""
 
 from langchain_core.tools import tool
 from langgraph.types import interrupt

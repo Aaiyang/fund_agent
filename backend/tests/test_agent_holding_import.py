@@ -13,7 +13,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from PIL import Image
 
 from app.agent.graph.agent import LangGraphAgent
-from app.agent.tools.holding_import import get_holding_import, request_holding_import_confirmation
+from app.agent.tools.portfolio import get_holding_import, request_holding_import_confirmation
 from app.agent.tools.registry import DEFAULT_AGENT_TOOLS
 from app.agent.tools.runtime import ToolRuntimeContext, set_tool_runtime
 from app.api.v1 import chatbot

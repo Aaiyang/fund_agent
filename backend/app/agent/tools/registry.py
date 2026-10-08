@@ -17,8 +17,12 @@ from app.agent.tools.fund import (
     search_funds,
 )
 from app.agent.tools.market import get_market_context
-from app.agent.tools.holding_import import get_holding_import, request_holding_import_confirmation
-from app.agent.tools.portfolio import get_portfolio, get_positions
+from app.agent.tools.portfolio import (
+    get_portfolio,
+    get_positions,
+    get_holding_import,
+    request_holding_import_confirmation,
+)
 
 # 工具集版本：仅当工具增删或 Schema 变化时升级（KV Cache 全局前缀组成部分）
 TOOLS_VERSION = "v3"
