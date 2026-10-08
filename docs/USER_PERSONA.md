@@ -30,14 +30,14 @@ Stale changes return 409; another user's proposal returns 404. Repeating a compl
 
 The tool never confirms or erases a profile; ordinary chat approval cannot apply changes. Clients retrieve pending_proposals, show evidence and proposed changes, and call the separate human decision API.
 
-Every chat node reads confirmed fields into the dynamic context tail, covering streaming, non-streaming and resumed runs. Pending proposals, raw evidence and audit records are excluded. Existing mem0 session snapshots retain their behavior. Missing fields remain unknown; database failures produce an explicit unavailable marker. A current user correction takes priority over old profile data.
+Every chat node reads confirmed fields into the dynamic context tail, covering streaming, non-streaming and resumed runs. Pending proposals, raw evidence and audit records are excluded. Semantic memories now use query-specific dynamic-tail recall. Missing fields remain unknown; database failures produce an explicit unavailable marker. A current user correction takes priority over old profile data.
 
 Evidence checks prove origin, not correctness. Human review must check assumptions, negation and scope. Clearing a profile does not erase mem0 memories or checkpoints, or revoke in-flight LLM requests. Stale edits/confirmations cannot restore erased fields.
 
 ## Deployment
 
-Apply migration `d31f9a6b8204` with `alembic upgrade head`, then restart the backend. USER_PERSONA_ENABLED=true by default enables automatic injection; false leaves management APIs available. Tool version v4; system prompt fund-agent-v6.
+Apply migration `d31f9a6b8204` with `alembic upgrade head`, then restart the backend. USER_PERSONA_ENABLED=true by default enables automatic injection; false leaves management APIs available. Tool version v4; current system prompt fund-agent-v7.
 
 The existing LangGraph/Langfuse pipeline selects proposals without an additional extraction LLM. Unit/API/Graph tests cover validation, authentication, evidence and graceful degradation. Opt-in PostgreSQL tests (`FUND_TEST_POSTGRES=true`, tests/test_user_persona_postgres.py) cover isolation, idempotence, version conflicts, erasure and rollback. Temporary data is rolled back.
 
-Existing mem0 behavior is preserved. Incremental extraction, durable memory jobs and query-specific recall remain separate follow-up work.
+Incremental extraction, durable memory jobs, query-specific recall and owner corrections are implemented; see [Semantic memory](SEMANTIC_MEMORY.md). Ungoverned legacy mem0 records are quarantined rather than promoted into profiles.
