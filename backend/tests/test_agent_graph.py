@@ -6,7 +6,9 @@
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
+import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
@@ -86,7 +88,7 @@ def _build_agent(monkeypatch, scripted: list[AIMessage]) -> tuple[LangGraphAgent
 async def test_plain_response_round_trip(monkeypatch):
     from app.core.config import settings
 
-    # 会话快照策略下，记忆检索只在会话首次调用时发生
+    # 每轮检索，当前真实用户消息在 chat 节点先登记。
     monkeypatch.setattr(settings, "LONG_TERM_MEMORY_ENABLED", True)
     agent, fake_llm, fake_memory = _build_agent(monkeypatch, [AIMessage(content="hello there")])
     config = {"configurable": {"thread_id": "t1"}}
@@ -101,12 +103,13 @@ async def test_plain_response_round_trip(monkeypatch):
     # 只发起了一次 LLM 调用，记忆检索用的就是用户这句话。
     assert len(fake_llm.calls) == 1
     assert fake_memory.searched == [("u1", "hi")]
-    # 记忆写入在后台进行，喂进去的是最终那份 openai 风格的消息。
+    # 只登记新增用户消息，助手输出不进入事实提取。
     await _drain_background_tasks()
     assert len(fake_memory.added) == 1
     added_user_id, added_messages = fake_memory.added[0]
     assert added_user_id == "u1"
-    assert [m["role"] for m in added_messages] == ["user", "assistant"]
+    assert [m["role"] for m in added_messages] == ["user"]
+    assert added_messages[0]["id"]
 
     # checkpointer 留下了这条会话线：历史一直存到 state 里。
     state = await agent._graph.aget_state(config)
@@ -186,3 +189,31 @@ async def test_ask_human_interrupt_and_resume(monkeypatch):
     tool_messages = [m for m in fake_llm.calls[1] if m.get("type") == "tool"]
     assert len(tool_messages) == 1
     assert tool_messages[0]["content"] == "yes please"
+
+
+async def test_new_message_is_staged_even_when_chat_llm_fails(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LONG_TERM_MEMORY_ENABLED", True)
+    agent, fake_llm, memory = _build_agent(monkeypatch, [])
+    monkeypatch.setattr(fake_llm, "call", AsyncMock(side_effect=ConnectionError("model failed")))
+    with pytest.raises(Exception, match="failed to get llm response"):
+        await agent.get_response([Message(role="user", content="比较基金时优先看回撤")], "t-failed", user_id="7")
+    assert len(memory.added) == 1
+    assert memory.added[0][1][0]["content"] == "比较基金时优先看回撤"
+
+
+async def test_tool_loop_refreshes_memory_and_stages_user_only_once(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LONG_TERM_MEMORY_ENABLED", True)
+    agent, llm, memory = _build_agent(
+        monkeypatch, [_tool_call_message("missing_tool", {}, "call-refresh"), AIMessage(content="已使用当前记忆")]
+    )
+    memory.search = AsyncMock(side_effect=["过期记忆", "纠正后的记忆"])
+    await agent.get_response([Message(role="user", content="按我的偏好比较基金")], "t-fresh", user_id="7")
+    assert len(memory.added) == 1 and memory.search.await_count == 2
+    first = "\n".join(str(item.get("content", "")) for item in llm.calls[0])
+    second = "\n".join(str(item.get("content", "")) for item in llm.calls[1])
+    assert "过期记忆" in first and "纠正后的记忆" in second and "过期记忆" not in second
+    assert "过期记忆" not in str(llm.calls[0][0])  # 稳定系统前缀不携带动态记忆。

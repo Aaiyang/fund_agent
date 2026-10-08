@@ -16,6 +16,7 @@ from app.models.job import BackgroundJob  # noqa: F401
 from app.models.market import IndexQuote  # noqa: F401
 from app.models.portfolio import PortfolioAccount, PortfolioPosition, Transaction  # noqa: F401
 from app.models.session import Session  # noqa: F401
+from app.models.semantic_memory import MemoryAccount, MemoryFact, MemoryWriteJob  # noqa: F401
 from app.models.thread import Thread  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_llm_settings import UserLlmSettings  # noqa: F401

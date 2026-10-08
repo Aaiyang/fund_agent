@@ -16,6 +16,7 @@ from app.api.v1.imports import router as holding_imports_router
 from app.api.v1.indexes import router as indexes_router
 from app.api.v1.markets import router as markets_router
 from app.api.v1.portfolio import router as portfolio_router
+from app.api.v1.semantic_memory import router as semantic_memory_router
 from app.api.v1.transactions import router as transactions_router
 from app.api.v1.valuation import router as valuation_router
 from app.api.v1.user_persona import router as user_persona_router
@@ -39,6 +40,7 @@ api_router.include_router(auto_invest_router, prefix="/auto-invest", tags=["Auto
 api_router.include_router(valuation_router, prefix="/valuation", tags=["Valuation"])
 api_router.include_router(agent_router, prefix="/agent", tags=["Agent"])
 api_router.include_router(user_persona_router, prefix="/agent/user-profile", tags=["User Profile"])
+api_router.include_router(semantic_memory_router, prefix="/agent/memories", tags=["Memory"])
 
 
 @api_router.get("/health")

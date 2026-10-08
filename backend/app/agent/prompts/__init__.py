@@ -5,7 +5,8 @@
 # v4：节假日与调休查询必须使用日历工具，禁止联网搜索兜底
 # v5：图片持仓识别与结构化人工确认
 # v6：已确认用户画像与候选人工确认边界
-SYSTEM_PROMPT_VERSION = "fund-agent-v6"
+# v7：可治理语义记忆范围、逐问题召回和异步写入状态
+SYSTEM_PROMPT_VERSION = "fund-agent-v7"
 
 import os
 from typing import Optional

@@ -241,6 +241,18 @@ class Settings:
         self.EMBEDDING_DIM = int(os.getenv("FUND_EMBEDDING_DIM", "1536"))
         self.EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("FUND_EMBEDDING_TIMEOUT_SECONDS", "60"))
         self.LONG_TERM_MEMORY_COLLECTION_NAME = os.getenv("LONG_TERM_MEMORY_COLLECTION_NAME", "longterm_memory")
+        self.MEMORY_SEARCH_TIMEOUT_SECONDS = max(0.1, float(os.getenv("FUND_MEMORY_SEARCH_TIMEOUT_SECONDS", "6")))
+        self.MEMORY_STAGE_TIMEOUT_SECONDS = max(0.1, float(os.getenv("FUND_MEMORY_STAGE_TIMEOUT_SECONDS", "3")))
+        self.MEMORY_WRITE_TIMEOUT_SECONDS = max(1, int(os.getenv("FUND_MEMORY_WRITE_TIMEOUT_SECONDS", "90")))
+        self.MEMORY_EXTRACTION_MAX_TOKENS = max(
+            256, min(16384, int(os.getenv("FUND_MEMORY_EXTRACTION_MAX_TOKENS", "8192")))
+        )
+        self.MEMORY_SEARCH_MAX_DISTANCE = min(2, max(0, float(os.getenv("FUND_MEMORY_SEARCH_MAX_DISTANCE", "0.55"))))
+        self.MEMORY_SEARCH_TOP_K = min(20, max(1, int(os.getenv("FUND_MEMORY_SEARCH_TOP_K", "6"))))
+        self.MEMORY_CONTEXT_TOKEN_BUDGET = max(100, int(os.getenv("FUND_MEMORY_CONTEXT_TOKEN_BUDGET", "1000")))
+        self.MEMORY_INPUT_MAX_CHARS = max(240, int(os.getenv("FUND_MEMORY_INPUT_MAX_CHARS", "8000")))
+        self.MEMORY_EVENT_TTL_DAYS = max(1, int(os.getenv("FUND_MEMORY_EVENT_TTL_DAYS", "180")))
+        self.MEMORY_RECOVERY_INTERVAL_SECONDS = max(5, int(os.getenv("FUND_MEMORY_RECOVERY_INTERVAL_SECONDS", "15")))
         # JWT Configuration
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

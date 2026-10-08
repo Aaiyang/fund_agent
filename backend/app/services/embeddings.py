@@ -25,6 +25,7 @@ class OpenAICompatibleEmbedding(EmbeddingBase):
             api_key=api_key,
             base_url=base_url,
             timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
     @override
@@ -34,7 +35,12 @@ class OpenAICompatibleEmbedding(EmbeddingBase):
         memory_action: Optional[Literal["add", "search", "update"]] = None,
     ) -> list[float]:
         """返回给定文本对应的向量."""
-        response = self.client.embeddings.create(
+        client = self.client
+        if memory_action == "search":
+            client = client.with_options(
+                timeout=min(settings.EMBEDDING_TIMEOUT_SECONDS, settings.MEMORY_SEARCH_TIMEOUT_SECONDS)
+            )
+        response = client.embeddings.create(
             input=[text.replace("\n", " ")],
             model=self._model,
             dimensions=self._embedding_dims,

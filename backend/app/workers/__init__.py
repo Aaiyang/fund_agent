@@ -10,3 +10,4 @@ worker 会 import 服务，直接反向 import 就形成了一个环——
 FUND_SYNC_TASK = "app.workers.fund_sync:sync_fund_task"
 HOT_FUND_SYNC_TASK = "app.workers.fund_sync:sync_hot_funds_task"
 SCREENSHOT_IMPORT_TASK = "app.workers.screenshot_import:process_screenshot_import_task"
+MEMORY_WRITE_TASK = "app.workers.memory_write:process_memory_user_task"

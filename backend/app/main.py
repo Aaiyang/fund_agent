@@ -34,7 +34,7 @@ from app.core.observability import langfuse_init
 from app.core.task_queue import shutdown_broker, startup_broker
 from app.services.database import database_service
 from app.services.memory import memory_service
-from app.workers import fund_sync, screenshot_import  # noqa: F401  register broker tasks
+from app.workers import fund_sync, memory_write, screenshot_import  # noqa: F401  register broker tasks
 from app.workers.scheduler import start_periodic_jobs, stop_periodic_jobs
 
 # 加载环境变量
@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
     # 关停时做清理
     await stop_periodic_jobs()
     await shutdown_broker()
+    await memory_service.close()
     await cache_service.close()
     if agent._connection_pool:
         await agent._connection_pool.close()

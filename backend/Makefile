@@ -20,7 +20,7 @@ dev:
 	@$(call run_with_env,uv run python scripts/run_local.py --reload)
 
 worker:
-	@$(call run_with_env,uv run taskiq worker app.core.task_queue:broker app.workers.fund_sync app.workers.screenshot_import)
+	@$(call run_with_env,uv run taskiq worker app.core.task_queue:broker app.workers.fund_sync app.workers.screenshot_import app.workers.memory_write)
 
 staging:
 	@$(call run_with_env,$(MAKE) _serve ENV=staging)

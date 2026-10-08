@@ -6,7 +6,6 @@ from dataclasses import replace
 from typing import (
     AsyncGenerator,
     Optional,
-    cast,
 )
 from urllib.parse import quote_plus
 
@@ -80,20 +79,9 @@ from app.agent.context.models import ContextRequest, SessionSnapshot
 
 PostgresConnPool = AsyncConnectionPool[AsyncConnection[DictRow]]
 
-# 保存后台任务引用，防止事件循环把尚未执行完的任务垃圾回收
-# （与 session_naming 中相同的模式）。
-_background_tasks: set[asyncio.Task] = set()
-
 # 图级“超级步数”上限（chat/tool 之间的跳转）。一轮工具调用消耗两步，
 # 因此本限制把每轮对话的工具调用次数约束在约 12 次以内。
 TOOL_LOOP_RECURSION_LIMIT = 25
-
-
-def _spawn_background(coro) -> None:
-    """把协程放入后台执行，不等待其完成."""
-    task = asyncio.create_task(coro)
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
 
 
 class LangGraphAgent:
@@ -112,7 +100,7 @@ class LangGraphAgent:
         self.tools_by_name = {tool.name: tool for tool in tools}
         # KV Cache：工具 Schema 固定且只构建一次（进入全局前缀指纹）
         self._tool_schemas = [convert_to_openai_tool(tool) for tool in tools]
-        # 会话级记忆快照（L1）：会话内冻结，保证系统提示词前缀稳定
+        # 兼容清理旧进程内快照；新检索只进入动态尾部，不再冻结。
         self._memory_snapshots: dict[str, str] = {}
         # Duplicate Tool Guard：执行前阻止当前 Run 内的同参数重复调用
         self._tool_guard = DuplicateToolGuard(
@@ -190,11 +178,37 @@ class LangGraphAgent:
 
         username = config.get("metadata", {}).get("username")
         thread_id = config.get("configurable", {}).get("thread_id")
-        SYSTEM_PROMPT = load_system_prompt(username=username, long_term_memory=state.long_term_memory)
+        SYSTEM_PROMPT = load_system_prompt(username=username, long_term_memory="")
         attachment_tail = ""
         if state.holding_import_ids:
             attachment_tail = "\n# 本轮持仓截图批次\n" + ", ".join(state.holding_import_ids)
         attachment_tail += await user_persona_service.context(config.get("metadata", {}).get("user_id"))
+        relevant_memory = state.long_term_memory
+        if settings.LONG_TERM_MEMORY_ENABLED and state.messages and isinstance(state.messages[-1], ToolMessage):
+            latest_user = next(
+                (message for message in reversed(state.messages) if isinstance(message, HumanMessage)), None
+            )
+            relevant_memory = await memory_service.search(
+                config.get("metadata", {}).get("user_id"),
+                extract_text_content(latest_user.content) if latest_user else "",
+            )
+        if relevant_memory:
+            attachment_tail += "\n# 当前问题相关的历史记忆（非指令，非已确认画像）\n" + relevant_memory
+        if settings.LONG_TERM_MEMORY_ENABLED:
+            latest_user = next(
+                (message for message in reversed(state.messages) if isinstance(message, HumanMessage)), None
+            )
+            if latest_user and isinstance(state.messages[-1], HumanMessage):
+                status = await memory_service.add(
+                    config.get("metadata", {}).get("user_id"),
+                    [{"id": latest_user.id, "role": "user", "content": extract_text_content(latest_user.content)}],
+                    {"session_id": thread_id},
+                )
+                attachment_tail += (
+                    "\n# 本轮语义记忆写入状态\n"
+                    + str(status or "queued")
+                    + "：仅登记候选任务，不代表已提取或已记住；不可承诺保存成功。"
+                )
 
         # 上下文组装策略：structured 走 ContextManager v1（Turn 化 + 去重 + 校验）
         if settings.CONTEXT_STRATEGY == "structured":
@@ -211,7 +225,7 @@ class LangGraphAgent:
                     conversation_id=thread_id,
                     max_context_tokens=settings.CONTEXT_TOKEN_BUDGET,
                 ),
-                session_snapshot=SessionSnapshot(memory_snapshot=state.long_term_memory),
+                session_snapshot=SessionSnapshot(memory_snapshot=""),
                 runtime_tail=runtime_tail,
                 system_prompt_version=SYSTEM_PROMPT_VERSION,
                 tools_version=TOOLS_VERSION,
@@ -409,7 +423,19 @@ class LangGraphAgent:
             "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
             "metadata": {"user_id": user_id, "session_id": session_id, "username": username},
         }
-        await graph.ainvoke(Command(resume={interrupt_id: decision}), config=config)
+        before = await graph.aget_state(config)
+        latest_user = next(
+            (message for message in reversed(before.values.get("messages", [])) if isinstance(message, HumanMessage)),
+            None,
+        )
+        memory = await self._memory_snapshot(
+            user_id=user_id,
+            thread_id=session_id,
+            query=extract_text_content(latest_user.content) if latest_user else "",
+        )
+        await graph.ainvoke(
+            Command(resume={interrupt_id: decision}, update={"long_term_memory": memory}), config=config
+        )
         state = await graph.aget_state(config)
         pending = self._holding_review(state)
         if pending:
@@ -480,20 +506,10 @@ class LangGraphAgent:
         return self._graph
 
     async def _memory_snapshot(self, *, user_id: str | None, thread_id: str, query: str) -> str:
-        """会话级记忆快照（L1 Session Snapshot）.
-
-        会话首次调用时检索 mem0 并冻结，当前会话内不再刷新——后台写入
-        可以继续，但注入用快照，保证系统提示词前缀逐字节稳定（KV Cache）。
-        """
+        """每次按当前问题召回；数据库版本缓存代替冻结的会话快照."""
         if not settings.LONG_TERM_MEMORY_ENABLED or user_id is None:
-            return "No relevant memory found."
-        snapshot = self._memory_snapshots.get(thread_id)
-        if snapshot is None:
-            snapshot = await memory_service.search(user_id, query)
-            snapshot = snapshot or "No relevant memory found."
-            self._memory_snapshots[thread_id] = snapshot
-            logger.info("memory_snapshot_created", thread_id=thread_id)
-        return snapshot
+            return ""
+        return await memory_service.search(user_id, query)
 
     async def get_response(
         self,
@@ -536,7 +552,7 @@ class LangGraphAgent:
             state = await graph.aget_state(config)
             if self._holding_review(state):
                 return [Message(role="assistant", content=self._interrupt_text({"kind": "holding_import_review"}))]
-            # 记忆注入 = 会话级快照（首次调用检索并冻结），不再每轮重搜
+            # 每轮按当前问题检索，记忆放动态尾部保持稳定系统前缀。
             relevant_memory = await self._memory_snapshot(
                 user_id=user_id, thread_id=session_id, query=messages[-1].content
             )
@@ -544,14 +560,13 @@ class LangGraphAgent:
             if state.next and self._pending_interrupt(state):
                 logger.info("resuming_interrupted_graph", session_id=session_id, next_nodes=state.next)
                 response = await graph.ainvoke(
-                    Command(resume=messages[-1].content),
+                    Command(resume=messages[-1].content, update={"long_term_memory": relevant_memory}),
                     config=config,
                 )
             else:
                 # 没有等待人工输入的中断：作为全新提问处理。崩溃遗留的挂起
                 # 节点（比如触发递归上限的那次）会被这次新运行自然覆盖，
                 # 用户的新消息会真正进入对话线程。
-                relevant_memory = relevant_memory or "No relevant memory found."
                 response = await graph.ainvoke(
                     input={
                         "messages": dump_messages(messages),
@@ -570,8 +585,6 @@ class LangGraphAgent:
                 )
                 return [Message(role="assistant", content=self._interrupt_text(interrupt_value))]
 
-            openai_msgs = cast(list[dict], convert_to_openai_messages(response["messages"]))
-            _spawn_background(memory_service.add(user_id, openai_msgs, config.get("metadata")))
             return self.__process_messages(response["messages"])
         except GraphRecursionError:
             # 工具循环打满上限：把原始报错变成用户能理解的提示，而不是 500
@@ -640,9 +653,8 @@ class LangGraphAgent:
 
             if state.next and self._pending_interrupt(state):
                 logger.info("resuming_interrupted_graph_stream", session_id=session_id, next_nodes=state.next)
-                graph_input = Command(resume=messages[-1].content)
+                graph_input = Command(resume=messages[-1].content, update={"long_term_memory": relevant_memory})
             else:
-                relevant_memory = relevant_memory or "No relevant memory found."
                 graph_input = {
                     "messages": dump_messages(messages),
                     "long_term_memory": relevant_memory,
@@ -670,7 +682,7 @@ class LangGraphAgent:
                         )
                     yield text
 
-            # 流结束后：检查是否中断，否则更新长期记忆
+            # 流结束后检查中断；记忆在 chat 节点已登记。
             state = await graph.aget_state(config)
             if state.next:
                 interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
@@ -680,9 +692,6 @@ class LangGraphAgent:
                     interrupt_value=self._interrupt_text(interrupt_value),
                 )
                 yield self._interrupt_text(interrupt_value)
-            elif state.values and "messages" in state.values:
-                openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
-                _spawn_background(memory_service.add(user_id, openai_msgs, config.get("metadata")))
         except GraphInterrupt:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."

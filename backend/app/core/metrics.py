@@ -82,6 +82,13 @@ holding_import_items_total = Counter(
 )
 
 
+memory_jobs_total = Counter("memory_jobs_total", "Durable memory job outcomes", ["status"])
+memory_retrieval_seconds = Histogram("memory_retrieval_seconds", "Memory retrieval latency")
+memory_retrieval_total = Counter("memory_retrieval_total", "Memory retrieval outcomes", ["status"])
+memory_write_seconds = Histogram("memory_write_seconds", "Memory extraction and indexing latency")
+memory_candidates_rejected_total = Counter("memory_candidates_rejected_total", "Memory operations rejected by policy")
+
+
 def setup_metrics(app):
     """Set up Prometheus metrics middleware and endpoints.
 

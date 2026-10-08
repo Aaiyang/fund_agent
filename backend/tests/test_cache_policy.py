@@ -1,6 +1,6 @@
 """KV Cache / Prompt Cache 策略回归测试（任务书 §27）.
 
-覆盖：时间不破坏全局前缀、Tool 顺序稳定、记忆快照冻结、
+覆盖：时间不破坏全局前缀、Tool 顺序稳定、逐问题记忆召回、
 Current Run append-only、未达阈值不滑动、达到阈值标记压缩、
 前缀指纹对系统提示词变化敏感，以及交易时段标签。
 """
@@ -142,7 +142,7 @@ class _FakeMemoryService:
         return self.results.pop(0) if self.results else "旧记忆"
 
 
-async def test_memory_snapshot_frozen_per_session(monkeypatch):
+async def test_memory_retrieval_refreshes_for_each_question(monkeypatch):
     from app.agent.graph.agent import LangGraphAgent
 
     from app.core.config import settings
@@ -155,14 +155,14 @@ async def test_memory_snapshot_frozen_per_session(monkeypatch):
     first = await agent._memory_snapshot(user_id="3", thread_id="thread-1", query="问题 1")
     second = await agent._memory_snapshot(user_id="3", thread_id="thread-1", query="问题 2")
 
-    # 同会话第二次调用命中快照：内容不变、不再触发检索
+    # 同会话也按当前问题重新检索，避免冻结旧记忆或失败结果。
     assert first == "记忆 A"
-    assert second == "记忆 A"
-    assert fake.calls == 1
+    assert second == "记忆 B"
+    assert fake.calls == 2
 
-    # 新会话才会重新检索
+    # 新会话遵守同样的按需规则。
     third = await agent._memory_snapshot(user_id="3", thread_id="thread-2", query="问题 3")
-    assert third == "记忆 B"
+    assert third == "旧记忆"
 
 
 async def test_session_snapshot_change_rotates_prefix_hash():

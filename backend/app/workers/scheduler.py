@@ -12,9 +12,22 @@ from typing import Any
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.task_queue import enqueue
+from app.services.memory import memory_service
 from app.workers import HOT_FUND_SYNC_TASK
 
 _job: asyncio.Task[Any] | None = None
+_memory_job: asyncio.Task[Any] | None = None
+
+
+async def _memory_recovery_loop() -> None:
+    """立即及定期恢复漏投递/租期过期任务，不依赖热门基金同步开关."""
+    while True:
+        try:
+            for user_id in await memory_service.repository.ready_users():
+                await memory_service.dispatch(user_id)
+        except Exception:
+            logger.exception("memory_recovery_dispatch_failed")
+        await asyncio.sleep(settings.MEMORY_RECOVERY_INTERVAL_SECONDS)
 
 
 async def _hot_fund_loop() -> None:
@@ -31,7 +44,9 @@ async def _hot_fund_loop() -> None:
 
 def start_periodic_jobs() -> None:
     """开关打开时启动周期入队循环."""
-    global _job
+    global _job, _memory_job
+    if settings.LONG_TERM_MEMORY_ENABLED and _memory_job is None:
+        _memory_job = asyncio.create_task(_memory_recovery_loop(), name="memory_recovery_loop")
     if not settings.FUND_HOT_SYNC_ENABLED:
         logger.info("periodic_jobs_disabled")
         return
@@ -42,7 +57,14 @@ def start_periodic_jobs() -> None:
 
 async def stop_periodic_jobs() -> None:
     """取消周期循环，并等它真正退出."""
-    global _job
+    global _job, _memory_job
+    if _memory_job is not None:
+        _memory_job.cancel()
+        try:
+            await _memory_job
+        except asyncio.CancelledError:
+            pass
+        _memory_job = None
     if _job is not None:
         _job.cancel()
         try:
