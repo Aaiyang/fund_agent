@@ -38,7 +38,7 @@ FUND_HOLIDAY_API_TIMEOUT_SECONDS=8
 
 URL 只能由服务端配置，模型不能指定请求地址。数据通过共享公开日历缓存保存，不携带用户凭证或聊天内容。原有运行时交易时段提示已注明只是按星期和时钟估算，遇到节假日问题应调用本工具；日历查询不会自动确认交易所是否开市。
 
-实现分别位于 `app/integrations/holiday_calendar.py`、`app/services/calendar_service.py` 和 `app/agent/tools/get_calendar.py`。默认工具集版本升级为 `v2`，系统提示版本为 `fund-agent-v3`。重启后端进程即可加载工具。
+实现分别位于 `app/integrations/holiday_calendar.py`、`app/services/calendar_service.py` 和 `app/agent/tools/get_calendar.py`。工具集和提示词的当前版本以 `app/agent/tools/registry.py` 与 `app/agent/prompts/__init__.py` 为准，后续功能接入会继续升级。重启后端进程即可加载工具。
 
 `tests/test_calendar_tool.py` 覆盖日期校验、四类日期、跨年、全年、缓存时效、未公布年份、上游格式校验、HTTP 重试及真实 LangGraph 工具执行流程。自动测试使用模拟数据，不依赖公共接口可用性，也不调用真实 LLM。
 

@@ -34,7 +34,7 @@ FUND_HOLIDAY_API_TIMEOUT_SECONDS=8
 
 Only server configuration controls the URL; the model cannot supply one. Requests contain no user credentials or chat content. Existing runtime trading-session hints now explicitly describe their weekday/clock estimate and require a calendar lookup for holiday questions. This tool does not establish whether an exchange is open.
 
-Implementation lives in `app/integrations/holiday_calendar.py`, `app/services/calendar_service.py`, and `app/agent/tools/get_calendar.py`. Tool set version is `v2` and system prompt version is `fund-agent-v3`. Restart the backend to load the new tool.
+Implementation lives in `app/integrations/holiday_calendar.py`, `app/services/calendar_service.py`, and `app/agent/tools/get_calendar.py`. Current tool/prompt versions are defined by `app/agent/tools/registry.py` and `app/agent/prompts/__init__.py`; subsequent features may bump them. Restart the backend to load the new tool.
 
 `tests/test_calendar_tool.py` covers date validation, day classification, cross-year/year queries, cache expiry, unavailable years, malformed upstream responses, HTTP retry policy, and actual LangGraph tool execution. Tests use fake data and do not call a real LLM or depend on the public endpoint.
 
