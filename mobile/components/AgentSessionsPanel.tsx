@@ -117,7 +117,6 @@ export function AgentSessionsPanel({
                       </View>
                     ) : null}
                   </View>
-                  <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>会话 {session.session_id.slice(0, 8)}</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
