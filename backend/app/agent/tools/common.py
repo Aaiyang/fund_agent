@@ -3,6 +3,8 @@
 import functools
 from typing import Any
 
+from langgraph.errors import GraphInterrupt
+
 from app.agent.tools.result import ToolResult
 from app.agent.tools.runtime import ToolRuntimeError
 from app.core.logging import logger
@@ -31,6 +33,8 @@ def tool_result(fn):
             result = await fn(*args, **kwargs)
         except ToolRuntimeError as e:
             return ToolResult.fail(e.code, e.message).to_text()
+        except GraphInterrupt:
+            raise
         except Exception:
             logger.exception("tool_execution_failed", tool=fn.__name__)
             return ToolResult.fail(

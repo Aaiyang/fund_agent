@@ -55,6 +55,7 @@ from app.schemas import (
     GraphState,
     Message,
 )
+from app.schemas.agent_import import HoldingImportReview
 from app.utils.clock import business_now, trading_session_label
 from app.agent.prompts import SYSTEM_PROMPT_VERSION
 from app.agent.tools.registry import TOOLS_VERSION
@@ -187,6 +188,9 @@ class LangGraphAgent:
         username = config.get("metadata", {}).get("username")
         thread_id = config.get("configurable", {}).get("thread_id")
         SYSTEM_PROMPT = load_system_prompt(username=username, long_term_memory=state.long_term_memory)
+        attachment_tail = ""
+        if state.holding_import_ids:
+            attachment_tail = "\n# 本轮持仓截图批次\n" + ", ".join(state.holding_import_ids)
 
         # 上下文组装策略：structured 走 ContextManager v1（Turn 化 + 去重 + 校验）
         if settings.CONTEXT_STRATEGY == "structured":
@@ -195,7 +199,7 @@ class LangGraphAgent:
             runtime_tail = (
                 f"# 当前时间\n日期：{now.strftime('%Y-%m-%d')}；时间：{now.strftime('%H:%M:%S')}；"
                 f"交易时段（按星期和时钟估算，节假日与实际休市未核验）：{trading_session_label(now)}。"
-            )
+            ) + attachment_tail
             prepared = await context_manager.prepare(
                 state.messages,
                 system_message=SYSTEM_PROMPT,
@@ -212,7 +216,7 @@ class LangGraphAgent:
             messages = prepared.messages
         else:
             # legacy：旧 trim_messages 路径，保留为回退开关
-            messages = prepare_messages(state.messages, SYSTEM_PROMPT)
+            messages = prepare_messages(state.messages, SYSTEM_PROMPT + attachment_tail)
 
         try:
             # 使用带自动重试与厂家降级的 LLM 服务
@@ -289,10 +293,16 @@ class LangGraphAgent:
         async def _execute_tool(tool_call: dict) -> ToolMessage:
             # Duplicate Tool Guard：执行前阻止当前 Run 内的同参数重复调用
             # （优先阻止而非事后删除历史 ToolMessage，保住配对与缓存）
+            tool_history = state.messages[:-1]
+            if tool_call["name"] in {"get_holding_import", "request_holding_import_confirmation"}:
+                # 识别状态会异步改变，用户下一轮追问必须可以重新查询。
+                # 每个用户轮次内仍保留重复调用上限。
+                for index in range(len(tool_history) - 1, -1, -1):
+                    if getattr(tool_history[index], "type", None) == "human":
+                        tool_history = tool_history[index + 1 :]
+                        break
             if self._tool_guard.should_block(
-                count_signature_occurrences(
-                    state.messages[:-1], build_tool_signature(tool_call["name"], tool_call["args"])
-                )
+                count_signature_occurrences(tool_history, build_tool_signature(tool_call["name"], tool_call["args"]))
             ):
                 logger.warning(
                     "tool_duplicate_blocked",
@@ -344,6 +354,48 @@ class LangGraphAgent:
         值吞掉，永远进不了对话线程。
         """
         return bool(state.tasks and state.tasks[0].interrupts)
+
+    @staticmethod
+    def _holding_review(state: StateSnapshot) -> HoldingImportReview | None:
+        """提取图保存的复核卡和真实中断 ID，不信任客户端编造的卡片."""
+        if not state.next:
+            return None
+        for task in state.tasks:
+            for item in task.interrupts:
+                if isinstance(item.value, dict) and item.value.get("kind") == "holding_import_review":
+                    return HoldingImportReview.model_validate({**item.value, "interrupt_id": item.id})
+        return None
+
+    @staticmethod
+    def _interrupt_text(value: object) -> str:
+        """结构化复核卡通过响应字段传输，正文只显示简短提示."""
+        if isinstance(value, dict) and value.get("kind") == "holding_import_review":
+            return "图片识别已完成，请在人工复核面板检查识别结果并确认或取消；确认前不会更新持仓。"
+        return str(value)
+
+    async def get_pending_holding_review(self, session_id: str) -> HoldingImportReview | None:
+        """客户端刷新后恢复当前会话的待确认卡片."""
+        graph = await self._get_graph()
+        state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+        return self._holding_review(state)
+
+    async def resume_holding_import(
+        self, session_id: str, interrupt_id: str, decision: dict, *, user_id: str, username: str | None = None
+    ) -> list[Message]:
+        """由人工决策端点恢复指定中断，工具只读取已落库结果，不再次写持仓."""
+        graph = await self._get_graph()
+        config: RunnableConfig = {
+            "configurable": {"thread_id": session_id},
+            "callbacks": [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else [],
+            "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
+            "metadata": {"user_id": user_id, "session_id": session_id, "username": username},
+        }
+        await graph.ainvoke(Command(resume={interrupt_id: decision}), config=config)
+        state = await graph.aget_state(config)
+        pending = self._holding_review(state)
+        if pending:
+            return [Message(role="assistant", content=self._interrupt_text(pending.model_dump()))]
+        return self.__process_messages(state.values.get("messages", []))
 
     def _build_graph(self, checkpointer) -> CompiledStateGraph:
         """在给定 checkpointer 之上组装 chat/tool_call 图.
@@ -430,6 +482,7 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         username: Optional[str] = None,
+        holding_import_ids: list[str] | None = None,
     ) -> list[Message]:
         """从 LLM 获取响应.
 
@@ -438,6 +491,7 @@ class LangGraphAgent:
             session_id (str): 会话 ID。
             user_id (Optional[str]): 用户 ID。
             username (Optional[str]): 用户显示名。
+            holding_import_ids: 本轮已经验证归属的图片导入批次。
 
         Returns:
             list[Message]: LLM 的响应消息。
@@ -461,6 +515,8 @@ class LangGraphAgent:
 
         try:
             state = await graph.aget_state(config)
+            if self._holding_review(state):
+                return [Message(role="assistant", content=self._interrupt_text({"kind": "holding_import_review"}))]
             # 记忆注入 = 会话级快照（首次调用检索并冻结），不再每轮重搜
             relevant_memory = await self._memory_snapshot(
                 user_id=user_id, thread_id=session_id, query=messages[-1].content
@@ -478,7 +534,11 @@ class LangGraphAgent:
                 # 用户的新消息会真正进入对话线程。
                 relevant_memory = relevant_memory or "No relevant memory found."
                 response = await graph.ainvoke(
-                    input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    input={
+                        "messages": dump_messages(messages),
+                        "long_term_memory": relevant_memory,
+                        "holding_import_ids": holding_import_ids or [],
+                    },
                     config=config,
                 )
 
@@ -486,8 +546,10 @@ class LangGraphAgent:
             state = await graph.aget_state(config)
             if state.next:
                 interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
-                logger.info("graph_interrupted", session_id=session_id, interrupt_value=str(interrupt_value))
-                return [Message(role="assistant", content=str(interrupt_value))]
+                logger.info(
+                    "graph_interrupted", session_id=session_id, interrupt_value=self._interrupt_text(interrupt_value)
+                )
+                return [Message(role="assistant", content=self._interrupt_text(interrupt_value))]
 
             openai_msgs = cast(list[dict], convert_to_openai_messages(response["messages"]))
             _spawn_background(memory_service.add(user_id, openai_msgs, config.get("metadata")))
@@ -504,8 +566,10 @@ class LangGraphAgent:
         except GraphInterrupt:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
-            logger.info("graph_interrupted", session_id=session_id, interrupt_value=str(interrupt_value))
-            return [Message(role="assistant", content=str(interrupt_value))]
+            logger.info(
+                "graph_interrupted", session_id=session_id, interrupt_value=self._interrupt_text(interrupt_value)
+            )
+            return [Message(role="assistant", content=self._interrupt_text(interrupt_value))]
         except Exception as e:
             logger.exception("get_response_failed", error=str(e), session_id=session_id)
             raise
@@ -516,6 +580,7 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         username: Optional[str] = None,
+        holding_import_ids: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         """以流式方式从 LLM 获取响应.
 
@@ -524,6 +589,7 @@ class LangGraphAgent:
             session_id (str): 会话 ID。
             user_id (Optional[str]): 用户 ID。
             username (Optional[str]): 用户显示名。
+            holding_import_ids: 本轮已经验证归属的图片导入批次。
 
         Yields:
             str: LLM 响应的文本片段。
@@ -546,6 +612,9 @@ class LangGraphAgent:
 
         try:
             state = await graph.aget_state(config)
+            if self._holding_review(state):
+                yield self._interrupt_text({"kind": "holding_import_review"})
+                return
             relevant_memory = await self._memory_snapshot(
                 user_id=user_id, thread_id=session_id, query=messages[-1].content
             )
@@ -555,7 +624,11 @@ class LangGraphAgent:
                 graph_input = Command(resume=messages[-1].content)
             else:
                 relevant_memory = relevant_memory or "No relevant memory found."
-                graph_input = {"messages": dump_messages(messages), "long_term_memory": relevant_memory}
+                graph_input = {
+                    "messages": dump_messages(messages),
+                    "long_term_memory": relevant_memory,
+                    "holding_import_ids": holding_import_ids or [],
+                }
 
             stream_started = time.perf_counter()
             first_token_at: float | None = None
@@ -582,16 +655,24 @@ class LangGraphAgent:
             state = await graph.aget_state(config)
             if state.next:
                 interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
-                logger.info("graph_interrupted_stream", session_id=session_id, interrupt_value=str(interrupt_value))
-                yield str(interrupt_value)
+                logger.info(
+                    "graph_interrupted_stream",
+                    session_id=session_id,
+                    interrupt_value=self._interrupt_text(interrupt_value),
+                )
+                yield self._interrupt_text(interrupt_value)
             elif state.values and "messages" in state.values:
                 openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
                 _spawn_background(memory_service.add(user_id, openai_msgs, config.get("metadata")))
         except GraphInterrupt:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
-            logger.info("graph_interrupted_stream", session_id=session_id, interrupt_value=str(interrupt_value))
-            yield str(interrupt_value)
+            logger.info(
+                "graph_interrupted_stream",
+                session_id=session_id,
+                interrupt_value=self._interrupt_text(interrupt_value),
+            )
+            yield self._interrupt_text(interrupt_value)
         except GraphRecursionError:
             # 工具循环打满上限：向流式客户端推送一句可理解的提示，而不是 500
             logger.warning("graph_recursion_limit_hit_stream", session_id=session_id)

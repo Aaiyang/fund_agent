@@ -84,9 +84,13 @@ def test_chat_routes_use_authenticated_owners_scope_and_reject_forged_roles(monk
         await asyncio.sleep(0)
         yield llm_service.active_model_name()
 
+    async def get_pending_holding_review(session_id):
+        return None
+
     monkeypatch.setattr(chatbot.user_profile_service, "execution_profiles", execution_profiles)
     monkeypatch.setattr(chatbot.agent, "get_response", get_response)
     monkeypatch.setattr(chatbot.agent, "get_stream_response", get_stream_response)
+    monkeypatch.setattr(chatbot.agent, "get_pending_holding_review", get_pending_holding_review)
     app = FastAPI()
     app.state.limiter = limiter
     app.include_router(chatbot.router)

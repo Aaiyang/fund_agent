@@ -102,12 +102,13 @@ class InMemoryCacheService:
         """
         self._cache.pop(key, None)
 
-    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> bool:
         """Acquire a process-local lock keyed by cache key.
 
         Args:
             key: The lock key.
             ttl: Lock time-to-live in seconds.
+            fail_open: Compatibility option; in-memory acquisition has no external backend.
 
         Returns:
             True if the lock was acquired, False if already held.
@@ -230,20 +231,22 @@ class ValkeyCacheService:
         except Exception as e:
             logger.warning("cache_delete_failed", key=key, error=str(e))
 
-    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> bool:
         """Acquire a distributed lock via SET NX EX.
 
         Args:
             key: The lock key.
             ttl: Lock time-to-live in seconds (auto-release safety net).
+            fail_open: Permit execution during backend failure; sensitive operations use False.
 
         Returns:
             True if the lock was acquired, False if already held. Fails open
             (returns True) when the cache backend is unreachable so a cache
-            outage never blocks fund synchronization.
+            outage never blocks fund synchronization. Sensitive workflows can
+            set fail_open=False to refuse unprotected execution.
         """
         if not self._client:
-            return True
+            return fail_open
         token = uuid.uuid4().hex
         try:
             acquired = bool(await self._client.set(key, token, nx=True, ex=ttl))
@@ -252,7 +255,7 @@ class ValkeyCacheService:
             return acquired
         except Exception as e:
             logger.warning("cache_lock_acquire_failed", key=key, error=str(e))
-            return True
+            return fail_open
 
     async def release_lock(self, key: str) -> None:
         """Release a distributed lock.

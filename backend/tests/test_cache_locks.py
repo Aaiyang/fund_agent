@@ -26,6 +26,15 @@ async def test_valkey_release_passes_owner_token_to_compare_and_delete() -> None
     assert "lock:test" not in cache._lock_tokens
 
 
+async def test_sensitive_lock_fails_closed_when_valkey_is_unavailable() -> None:
+    cache = ValkeyCacheService()
+    assert not await cache.acquire_lock("holding:review", fail_open=False)
+    assert await cache.acquire_lock("fund:sync")
+    cache._client = AsyncMock()
+    cache._client.set.side_effect = ConnectionError("fixture unavailable")
+    assert not await cache.acquire_lock("holding:review", fail_open=False)
+
+
 def test_lock_excludes_a_second_acquirer_until_released() -> None:
     async def scenario() -> tuple[bool, bool, bool]:
         cache = InMemoryCacheService()

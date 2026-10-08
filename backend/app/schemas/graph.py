@@ -16,3 +16,4 @@ class GraphState(BaseModel):
         default_factory=list, description="The messages in the conversation"
     )
     long_term_memory: str = Field(default="", description="The long term memory of the conversation")
+    holding_import_ids: list[str] = Field(default_factory=list, description="本轮已验证用户与会话归属的截图批次")

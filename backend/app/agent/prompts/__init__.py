@@ -3,7 +3,8 @@
 # 系统提示词版本：仅当身份/规则/工具使用原则变化时升级（KV Cache 前缀稳定性）
 # v2：agent_name 修正（去掉重复的 " Agent"）——身份变化
 # v4：节假日与调休查询必须使用日历工具，禁止联网搜索兜底
-SYSTEM_PROMPT_VERSION = "fund-agent-v4"
+# v5：图片持仓识别与结构化人工确认
+SYSTEM_PROMPT_VERSION = "fund-agent-v5"
 
 import os
 from typing import Optional

@@ -7,6 +7,7 @@ PostgreSQL。
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from urllib.parse import quote_plus
 
 from sqlalchemy.ext.asyncio import (
@@ -45,6 +46,8 @@ async_session_factory = async_sessionmaker(
     autoflush=False,
 )
 
+_TRANSACTION_SESSION: ContextVar[AsyncSession | None] = ContextVar("transaction_session", default=None)
+
 
 @asynccontextmanager
 async def get_async_session() -> AsyncIterator[AsyncSession]:
@@ -53,6 +56,10 @@ async def get_async_session() -> AsyncIterator[AsyncSession]:
     Yields:
         一个 AsyncSession。正常退出时提交，抛异常时回滚。
     """
+    scoped = _TRANSACTION_SESSION.get()
+    if scoped is not None:
+        yield scoped
+        return
     async with async_session_factory() as session:
         try:
             yield session
@@ -60,6 +67,17 @@ async def get_async_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+@asynccontextmanager
+async def transaction_scope() -> AsyncIterator[AsyncSession]:
+    """让串行仓储调用共用同一事务；作用域内不得并发使用数据库会话."""
+    async with get_async_session() as session:
+        token = _TRANSACTION_SESSION.set(session)
+        try:
+            yield session
+        finally:
+            _TRANSACTION_SESSION.reset(token)
 
 
 async def async_health_check() -> bool:

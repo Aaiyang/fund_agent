@@ -13,6 +13,7 @@ from pydantic import (
 )
 
 from app.schemas.base import BaseResponse
+from app.schemas.agent_import import HoldingImportReview, ImportId
 
 
 class Message(BaseModel):
@@ -78,6 +79,7 @@ class ChatRequest(BaseModel):
         description="List of messages in the conversation",
         min_length=1,
     )
+    holding_import_ids: list[ImportId] = Field(default_factory=list, max_length=5)
 
 
 class ChatResponse(BaseResponse):
@@ -88,6 +90,7 @@ class ChatResponse(BaseResponse):
     """
 
     messages: List[Message] = Field(..., description="List of messages in the conversation")
+    pending_action: HoldingImportReview | None = None
 
 
 class StreamResponse(BaseResponse):
@@ -100,6 +103,16 @@ class StreamResponse(BaseResponse):
 
     content: str = Field(default="", description="The content of the current chunk")
     done: bool = Field(default=False, description="Whether the stream is complete")
+    pending_action: HoldingImportReview | None = None
+
+
+class HoldingImportDecisionResponse(ChatResponse):
+    """人工操作结果由数据库确定，客户端不依赖模型生成的成功描述."""
+
+    import_id: ImportId
+    status: Literal["APPLIED", "CANCELLED"]
+    applied: int
+    skipped: int
 
 
 class SessionTitle(BaseModel):

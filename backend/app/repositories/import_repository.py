@@ -24,6 +24,7 @@ class ImportRepository:
         status: str,
         image_count: int = 0,
         image_hashes: list[str] | None = None,
+        chat_session_id: str | None = None,
     ) -> HoldingImport:
         """新建一条导入批次记录."""
         async with get_async_session() as session:
@@ -34,17 +35,22 @@ class ImportRepository:
                 status=status,
                 image_count=image_count,
                 image_hashes=image_hashes or [],
+                chat_session_id=chat_session_id,
                 started_at=utc_now(),
             )
             session.add(record)
             await session.flush()
             return record
 
-    async def get_import(self, user_id: int | None, import_id: str) -> HoldingImport | None:
+    async def get_import(
+        self, user_id: int | None, import_id: str, *, for_update: bool = False
+    ) -> HoldingImport | None:
         """读取一个导入批次；user_id 传 None 是给系统内部用的."""
         statement = select(HoldingImport).where(col(HoldingImport.id) == import_id)
         if user_id is not None:
             statement = statement.where(col(HoldingImport.user_id) == user_id)
+        if for_update:
+            statement = statement.with_for_update()
         async with get_async_session() as session:
             result = await session.execute(statement)
             return result.scalar_one_or_none()

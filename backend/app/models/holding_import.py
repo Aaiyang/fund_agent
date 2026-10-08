@@ -29,6 +29,8 @@ class HoldingImport(BaseModel, table=True):
     id: str = Field(default_factory=_new_import_id, primary_key=True, max_length=32)
     user_id: int = Field(foreign_key="user.id", index=True)
     account_id: int = Field(foreign_key="portfolio_account.id", index=True)
+    # Agent 上传的批次绑定会话；普通持仓页面导入保持 None。
+    chat_session_id: str | None = Field(default=None, index=True)
     import_type: str = Field(max_length=20)  # 取值：MANUAL（手动录入）/ SCREENSHOT（截图识别）
     status: str = Field(default="UPLOADED", max_length=30, index=True)
 

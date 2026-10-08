@@ -17,6 +17,7 @@ from PIL import Image
 
 from app.analytics.settlement import latest_session
 from app.core.config import settings
+from app.core.database import transaction_scope
 from app.core.logging import logger
 from app.core.metrics import holding_import_items_total, holding_imports_total, screenshot_parse_duration_seconds
 from app.core.task_queue import enqueue
@@ -37,6 +38,7 @@ from app.services.fund_service import fund_service
 from app.services.portfolio_service import portfolio_service
 from app.workers import SCREENSHOT_IMPORT_TASK
 from app.utils.clock import utc_now, business_today
+from app.utils.holding_review import holding_review_digest
 
 _ALLOWED_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
 
@@ -88,6 +90,8 @@ class HoldingImportService:
         user_id: int,
         account_id: int,
         files: list[UploadFile],
+        *,
+        chat_session_id: str | None = None,
     ) -> HoldingImport:
         """校验并保存截图，把解析任务入队交给后台执行.
 
@@ -101,7 +105,12 @@ class HoldingImportService:
         await portfolio_service.ensure_account(user_id, account_id)
 
         record = await import_repository.create_import(
-            user_id, account_id, "SCREENSHOT", status="UPLOADED", image_count=len(files)
+            user_id,
+            account_id,
+            "SCREENSHOT",
+            status="UPLOADED",
+            image_count=len(files),
+            chat_session_id=chat_session_id,
         )
         try:
             paths = await self._save_images(record.id, files)
@@ -221,7 +230,19 @@ class HoldingImportService:
         **fields: float | str | date | bool | None,
     ) -> ImportItemOut:
         """用户对单条明细的修改与处置；改过的值会重新走一遍校验."""
-        record = await import_repository.get_import(user_id, import_id)
+        async with transaction_scope():
+            return await self._update_item_locked(user_id, import_id, item_id, user_action=user_action, **fields)
+
+    async def _update_item_locked(
+        self,
+        user_id: int,
+        import_id: str,
+        item_id: int,
+        user_action: str | None,
+        **fields: float | str | date | bool | None,
+    ) -> ImportItemOut:
+        """草稿编辑和确认共用批次行锁，防止用户确认时草稿被并发改写."""
+        record = await import_repository.get_import(user_id, import_id, for_update=True)
         if record is None:
             raise ImportStateError("import_not_found")
         if record.status != "REVIEW_REQUIRED":
@@ -274,18 +295,38 @@ class HoldingImportService:
     # 确认 / 取消
     # ------------------------------------------------------------------
 
-    async def confirm_import(self, user_id: int, import_id: str) -> dict[str, int]:
+    async def confirm_import(
+        self, user_id: int, import_id: str, *, expected_review_digest: str | None = None
+    ) -> dict[str, int]:
         """把已确认的明细落到持仓上——这是持仓唯一的写入入口.
 
         语义按 spec 3.7：按基金覆盖当前快照；不合成 BUY/SELL 流水；
         每个生效的基金补一条 IMPORT_ADJUSTMENT 审计流水。
         """
-        record = await import_repository.get_import(user_id, import_id)
-        if record is None:
-            raise ImportStateError("import_not_found")
-        if record.status != "REVIEW_REQUIRED":
-            raise ImportStateError(f"import_not_confirmable_in_state_{record.status}")
+        async with transaction_scope():
+            record = await import_repository.get_import(user_id, import_id, for_update=True)
+            if record is None:
+                raise ImportStateError("import_not_found")
+            if record.status == "APPLIED":
+                result = {"applied": record.items_confirmed, "skipped": record.items_detected - record.items_confirmed}
+                newly_applied = False
+            elif record.status != "REVIEW_REQUIRED":
+                raise ImportStateError(f"import_not_confirmable_in_state_{record.status}")
+            else:
+                if expected_review_digest is not None:
+                    detail = await self.get_import_detail(user_id, import_id)
+                    if detail is None or holding_review_digest(detail) != expected_review_digest:
+                        raise ImportStateError("import_review_changed")
+                result = await self._apply_confirmed_import(user_id, import_id, record)
+                newly_applied = True
+        if newly_applied:
+            holding_imports_total.labels(import_type=record.import_type, status="APPLIED").inc()
+        await self._cleanup_images(import_id)
+        logger.info("import_confirmed", import_id=import_id, applied=result["applied"], skipped=result["skipped"])
+        return result
 
+    async def _apply_confirmed_import(self, user_id: int, import_id: str, record: HoldingImport) -> dict[str, int]:
+        """由持有批次行锁的事务调用，所有持仓、流水与状态要么一起提交，要么一起回滚."""
         items = await import_repository.list_items(import_id)
         applied = skipped = 0
         for item in items:
@@ -341,20 +382,18 @@ class HoldingImportService:
             applied_at=utc_now(),
         )
         await portfolio_repository.touch_account_imported(user_id, record.account_id)
-        holding_imports_total.labels(import_type=record.import_type, status="APPLIED").inc()
-        await self._cleanup_images(import_id)
-        logger.info("import_confirmed", import_id=import_id, applied=applied, skipped=skipped)
         return {"applied": applied, "skipped": skipped}
 
     async def delete_import(self, user_id: int, import_id: str) -> bool:
         """取消还没落库的导入，并删掉它的临时图片."""
-        record = await import_repository.get_import(user_id, import_id)
-        if record is None:
-            return False
-        if record.status == "APPLIED":
-            raise ImportStateError("applied_import_cannot_be_deleted")
-        await import_repository.update_import(import_id, status="CANCELLED")
-        await import_repository.delete_items(import_id)
+        async with transaction_scope():
+            record = await import_repository.get_import(user_id, import_id, for_update=True)
+            if record is None:
+                return False
+            if record.status == "APPLIED":
+                raise ImportStateError("applied_import_cannot_be_deleted")
+            await import_repository.update_import(import_id, status="CANCELLED")
+            await import_repository.delete_items(import_id)
         holding_imports_total.labels(import_type=record.import_type, status="CANCELLED").inc()
         await self._cleanup_images(import_id)
         logger.info("import_cancelled", import_id=import_id)
