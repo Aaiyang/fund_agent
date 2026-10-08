@@ -1,8 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
 
 import { EmptyState, ErrorState, LoadingState, describeError } from '@/components/states';
+import { AgentSessionsPanel } from '@/components/AgentSessionsPanel';
 import { MarkdownText } from '@/components/MarkdownText';
 import { Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -62,6 +63,8 @@ export default function AgentScreen() {
   const { fund_code: paramCode } = useLocalSearchParams<{ fund_code?: string }>();
   const storedSessionId = useUiStore((state) => state.agentSessionId);
   const setSessionId = useUiStore((state) => state.setAgentSessionId);
+  const sessionsOpen = useUiStore((state) => state.agentSessionsOpen);
+  const setSessionsOpen = useUiStore((state) => state.setAgentSessionsOpen);
   const sessions = useAgentSessions();
   const createSession = useCreateAgentSession();
   // 没手动选过会话时落在服务端的第一条，和 Web 端一个口径。
@@ -72,6 +75,9 @@ export default function AgentScreen() {
   const [draft, setDraft] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
+  // 面板的关闭回调要稳定：它进了那个滑动 effect 的依赖，每次渲染都换身份会让
+  // 动画反复重启。
+  const closeSessions = useCallback(() => setSessionsOpen(false), [setSessionsOpen]);
 
   const chat = useAgentChat({
     sessionId,
@@ -208,6 +214,9 @@ export default function AgentScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+      {sessionsOpen ? (
+        <AgentSessionsPanel activeSessionId={sessionId} onPick={setSessionId} onClose={closeSessions} />
+      ) : null}
     </Screen>
   );
 }

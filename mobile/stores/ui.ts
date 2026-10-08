@@ -17,9 +17,12 @@ type UiState = {
    * 组件内的状态留不住这条选择。
    */
   agentSessionId: string | null;
+  /** 会话面板是否滑出。放这里是因为开关分属两个组件：表头按钮与聊天页。 */
+  agentSessionsOpen: boolean;
   setAccountId: (accountId: number | null) => void;
   setGroupId: (groupId: number | null) => void;
   setAgentSessionId: (sessionId: string | null) => void;
+  setAgentSessionsOpen: (open: boolean) => void;
   /** 退回默认选中；切换登录用户时用。 */
   reset: () => void;
 };
@@ -28,8 +31,10 @@ export const useUiStore = create<UiState>((set) => ({
   accountId: null,
   groupId: null,
   agentSessionId: null,
+  agentSessionsOpen: false,
   setAccountId: (accountId) => set({ accountId }),
   setGroupId: (groupId) => set({ groupId }),
   setAgentSessionId: (sessionId) => set({ agentSessionId: sessionId }),
-  reset: () => set({ accountId: null, groupId: null, agentSessionId: null }),
+  setAgentSessionsOpen: (open) => set({ agentSessionsOpen: open }),
+  reset: () => set({ accountId: null, groupId: null, agentSessionId: null, agentSessionsOpen: false }),
 }));

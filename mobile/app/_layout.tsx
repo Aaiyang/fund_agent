@@ -49,7 +49,6 @@ export default function RootLayout() {
         <Stack.Screen name="position/edit" options={{ title: '修改持仓' }} />
         <Stack.Screen name="position/trade" options={{ title: '加减仓' }} />
         <Stack.Screen name="auto-invest" options={{ title: '定投计划' }} />
-        <Stack.Screen name="agent-sessions" options={{ title: '历史会话' }} />
         <Stack.Screen name="llm-settings" options={{ title: '模型设置' }} />
         <Stack.Screen name="profile/edit" options={{ title: '编辑资料' }} />
         <Stack.Screen name="account/index" options={{ title: '账户管理' }} />

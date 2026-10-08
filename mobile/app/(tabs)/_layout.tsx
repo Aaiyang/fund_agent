@@ -3,6 +3,7 @@ import { router, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
 import { theme } from '@/constants/theme';
+import { useUiStore } from '@/stores/ui';
 
 /**
  * 标签栏图标。expo-symbols 按平台分别校验图标名：iOS 用 SF Symbols，
@@ -22,18 +23,24 @@ function SearchButton() {
   );
 }
 
+/**
+ * 会话面板的开关。放在表头左侧，点开的是聊天页里滑出的面板，
+ * 所以这里只翻一个 UI 状态，不做跳转。
+ */
 function SessionsButton() {
+  const open = useUiStore((state) => state.agentSessionsOpen);
+  const setOpen = useUiStore((state) => state.setAgentSessionsOpen);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="历史会话"
       hitSlop={10}
-      onPress={() => router.push('/agent-sessions')}
+      onPress={() => setOpen(!open)}
       style={{ paddingHorizontal: 16 }}
     >
       <SymbolView
         name={{ ios: 'bubble.left.and.bubble.right', android: 'chat', web: 'chat' }}
-        tintColor={theme.primary}
+        tintColor={open ? theme.primary : theme.textMuted}
         size={22}
       />
     </Pressable>
@@ -47,6 +54,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textMuted,
         headerShown: true,
+        headerTitleAlign: 'center',
         headerTitleStyle: { fontSize: 17, color: theme.text },
       }}
     >
@@ -81,7 +89,7 @@ export default function TabLayout() {
         options={{
           title: 'Agent',
           headerTitle: 'AI 基金助手',
-          headerRight: () => <SessionsButton />,
+          headerLeft: () => <SessionsButton />,
           tabBarIcon: ({ color, size }) => (
             <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} tintColor={color} size={size} />
           ),
