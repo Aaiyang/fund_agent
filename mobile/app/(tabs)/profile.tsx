@@ -64,6 +64,12 @@ export default function ProfileScreen() {
       </Card>
 
       <Card>
+        <SectionTitle title="AI 与模型" />
+        <MenuLink label="模型设置" hint="供应商档案、API Key 与当前模型" onPress={() => router.push('/llm-settings')} />
+        <MenuLink label="历史会话" hint="新建、切换、删除与 Agent 的对话" onPress={() => router.push('/agent-sessions')} />
+      </Card>
+
+      <Card>
         <SectionTitle title="导入记录" action="发起新导入" onAction={() => router.push('/holding-import')} />
         <Async
           query={history}

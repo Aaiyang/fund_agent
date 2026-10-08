@@ -22,6 +22,24 @@ function SearchButton() {
   );
 }
 
+function SessionsButton() {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="历史会话"
+      hitSlop={10}
+      onPress={() => router.push('/agent-sessions')}
+      style={{ paddingHorizontal: 16 }}
+    >
+      <SymbolView
+        name={{ ios: 'bubble.left.and.bubble.right', android: 'chat', web: 'chat' }}
+        tintColor={theme.primary}
+        size={22}
+      />
+    </Pressable>
+  );
+}
+
 export default function TabLayout() {
   return (
     <Tabs
@@ -62,6 +80,8 @@ export default function TabLayout() {
         name="agent"
         options={{
           title: 'Agent',
+          headerTitle: 'AI 基金助手',
+          headerRight: () => <SessionsButton />,
           tabBarIcon: ({ color, size }) => (
             <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} tintColor={color} size={size} />
           ),

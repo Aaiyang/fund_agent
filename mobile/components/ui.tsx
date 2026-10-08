@@ -231,6 +231,7 @@ export function Field({
   keyboardType = 'default',
   placeholder,
   secureTextEntry,
+  autoCapitalize,
 }: {
   label: string;
   labelExtra?: ReactNode;
@@ -239,6 +240,8 @@ export function Field({
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   placeholder?: string;
   secureTextEntry?: boolean;
+  /** 接口地址与 API Key 这类串不能被首字母大写改写，调用点显式关掉。 */
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
@@ -250,7 +253,7 @@ export function Field({
         placeholder={placeholder}
         placeholderTextColor={theme.textFaint}
         secureTextEntry={secureTextEntry}
-        autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
+        autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
         style={{
           borderWidth: 1,
           borderColor: theme.border,

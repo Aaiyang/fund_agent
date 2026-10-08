@@ -51,5 +51,11 @@ export const queryKeys = {
 
   autoInvest: ['auto-invest'] as const,
 
+  agentSessions: ['agent', 'sessions'] as const,
+  agentMessages: (sessionId: string | null) => ['agent', 'messages', sessionId] as const,
+
+  llmProfiles: ['llm', 'profiles'] as const,
+  llmModels: (baseUrl: string) => ['llm', 'models', baseUrl] as const,
+
   me: ['me'] as const,
 };

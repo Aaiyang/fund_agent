@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 
+import { forgetAllSessions } from '@/api/chatSessions';
 import { request } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import { clearTokens, loadTokens, saveTokens } from '@/api/tokenStore';
@@ -84,6 +85,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // 吊销令牌失败也不能把用户卡死在应用里。
     }
     await clearTokens();
+    // 会话令牌也属于这个用户，内存里不能留给下一个人。
+    forgetAllSessions();
     // 缓存里的服务器数据属于这个用户：不清掉的话，各项查询过期之前，
     // 界面会一直渲染上一个账户的持仓。
     queryClient.clear();

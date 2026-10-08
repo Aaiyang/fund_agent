@@ -36,6 +36,14 @@ export type RequestOptions = {
   query?: Record<string, QueryValue>;
   /** 公开接口设 false，默认 true。 */
   auth?: boolean;
+  /**
+   * 用这个令牌当 Bearer，不读也不刷新用户的访问令牌。
+   *
+   * 聊天域（/chatbot）认的是会话令牌，服务端每次列会话时重新签发、没有配套的
+   * refresh 令牌，套进用户令牌那条单飞刷新链里只会刷出一个错的身份。
+   * 传 null 表示这个接口不带 Authorization。
+   */
+  bearer?: string | null;
 };
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
@@ -49,11 +57,17 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   return qs ? `${url}?${qs}` : url;
 }
 
-async function parseError(response: Response): Promise<ApiError> {
-  let code = `http_${response.status}`;
-  let message = response.statusText || '请求失败';
+/**
+ * 把非 2xx 的响应体翻成 ApiError。
+ *
+ * 流式那条链用的是 XMLHttpRequest，拿不到 Response 对象，所以错误码的推导
+ * 单独出来，两条路径共用同一套 detail/errors 口径。
+ */
+export function apiError(status: number, statusText: string, bodyText: string): ApiError {
+  let code = `http_${status}`;
+  let message = statusText || '请求失败';
   try {
-    const payload = await response.json();
+    const payload = JSON.parse(bodyText) as { detail?: unknown; errors?: { message?: string }[] };
     if (typeof payload?.detail === 'string') {
       message = payload.detail;
       code = payload.detail;
@@ -64,7 +78,11 @@ async function parseError(response: Response): Promise<ApiError> {
   } catch {
     // 错误响应体不是 JSON：沿用按状态码拼出的错误码。
   }
-  return new ApiError(response.status, code, message);
+  return new ApiError(status, code, message);
+}
+
+async function parseError(response: Response): Promise<ApiError> {
+  return apiError(response.status, response.statusText, await response.text().catch(() => ''));
 }
 
 /** 刷新令牌一次只换一回；并发的 401 共享同一次刷新。 */
@@ -106,8 +124,10 @@ function headersWith(auth: boolean, token: string | null, extra: Record<string, 
  * 任何非 2xx 响应都抛 ApiError，调用方可以按状态码分支处理。
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, form, formData, query, auth = true } = options;
+  const { method = 'GET', body, form, formData, query, auth = true, bearer } = options;
   const url = buildUrl(path, query);
+  // bearer 一旦指定就走显式令牌，缺省才去读用户的访问令牌。
+  const tokens: Tokens = bearer === undefined ? await loadTokens() : { access: bearer, refresh: null };
 
   const send = async (tokens: Tokens): Promise<Response> => {
     if (form) {
@@ -128,8 +148,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     });
   };
 
-  let response = await send(await loadTokens());
-  if (response.status === 401 && auth) {
+  let response = await send(tokens);
+  if (response.status === 401 && auth && bearer === undefined) {
     if (await refreshTokens()) response = await send(await loadTokens());
   }
   if (!response.ok) throw await parseError(response);
