@@ -1,4 +1,3 @@
-import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
@@ -7,11 +6,10 @@ import { EmptyState, ErrorState, LoadingState, describeError } from '@/component
 import { MarkdownText } from '@/components/MarkdownText';
 import { Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
-import { useClearAgentMessages, useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
+import { useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
 import { useFundDetail } from '@/hooks/useFunds';
 import { useUiStore } from '@/stores/ui';
-import { confirmAction } from '@/utils/confirm';
 
 function Bubble({ role, content, streaming, failed, onRetry }: {
   role: string;
@@ -69,7 +67,6 @@ export default function AgentScreen() {
   // 没手动选过会话时落在服务端的第一条，和 Web 端一个口径。
   const sessionId = storedSessionId ?? sessions.data?.[0]?.session_id ?? null;
 
-  const clearMessages = useClearAgentMessages(sessionId);
   const context = useFundDetail(paramCode ?? null);
   const [contextDismissed, setContextDismissed] = useState(false);
   const [draft, setDraft] = useState('');
@@ -98,14 +95,6 @@ export default function AgentScreen() {
     setDraft('');
     setProblem(null);
     void chat.send(question).catch((error: unknown) => setProblem(describeError(error)));
-  }
-
-  function confirmClear() {
-    if (!chat.turns.length) return;
-    confirmAction('清空当前对话', '这条会话里的消息会全部删除，会话本身保留。', () => {
-      chat.reset();
-      clearMessages.mutate(undefined, { onError: (error) => setProblem(describeError(error)) });
-    });
   }
 
   return (
@@ -217,15 +206,6 @@ export default function AgentScreen() {
               <Text style={{ fontSize: 15, color: '#FFFFFF', fontWeight: '600' }}>发送</Text>
             </Pressable>
           )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="清空当前对话"
-            hitSlop={10}
-            onPress={confirmClear}
-            style={{ marginLeft: 10, paddingVertical: 11 }}
-          >
-            <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor={theme.textFaint} size={18} />
-          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </Screen>
