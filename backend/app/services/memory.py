@@ -369,8 +369,19 @@ class MemoryService:
                 job.operations = [operation.model_dump() for operation in extraction.operations]
             if not job.operations:
                 return "SKIPPED"
-        while facts := await self.repository.facts(job.user_id, pending=True):
+        while True:
+            account = await self.repository.account(job.user_id)
+            if account is None:
+                return "CANCELLED"
+            facts = await self.repository.facts(job.user_id, pending=True, deleted_only=not account.enabled)
+            if not facts:
+                break
             for fact in facts:
+                current = await self.repository.account(job.user_id)
+                if current is None:
+                    return "CANCELLED"
+                if fact.generation != current.generation or (fact.status == "ACTIVE" and not current.enabled):
+                    break
                 await sync_fact(memory, fact)
                 await self.repository.indexed(fact)
         return "SUCCEEDED"

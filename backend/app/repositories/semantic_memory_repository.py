@@ -194,12 +194,16 @@ class SemanticMemoryRepository:
         fact.source_session_id, fact.source_message_id = "", ""
         fact.expires_at = None
 
-    async def facts(self, user_id: int, *, pending: bool = False, limit: int = 100) -> list[MemoryFact]:
+    async def facts(
+        self, user_id: int, *, pending: bool = False, limit: int = 100, deleted_only: bool = False
+    ) -> list[MemoryFact]:
         """普通读取排除过期事实，同步读取包含删除待办."""
         async with get_async_session() as db:
             query = select(MemoryFact).where(col(MemoryFact.user_id) == user_id)
             if pending:
                 query = query.where(col(MemoryFact.index_state) == "PENDING")
+                if deleted_only:
+                    query = query.where(col(MemoryFact.status) == "DELETED")
             else:
                 query = query.where(
                     col(MemoryFact.status) == "ACTIVE",

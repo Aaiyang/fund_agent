@@ -339,3 +339,29 @@ async def test_native_pgvector_sdk_contract_and_database_validated_recall(memory
     finally:
         await asyncio.to_thread(store.delete, vector_id=fact.id)
         await asyncio.to_thread(store.connection_pool.close)
+
+
+async def test_disabled_memory_only_cleans_deleted_vectors_until_reenabled(memory_database, monkeypatch):
+    owner, _ = memory_database
+    monkeypatch.setattr(settings, "LONG_TERM_MEMORY_ENABLED", True)
+    fact, _ = await _fact(owner)
+    account = await repo.account(owner)
+    assert account
+    disabled = await repo.control(owner, account.revision, enabled=False)
+    service = MemoryService(repo)
+    service._memory = SimpleNamespace()
+    sync = AsyncMock()
+    monkeypatch.setattr("app.services.memory.sync_fact", sync)
+    await service.process_user(owner)
+    sync.assert_not_awaited()
+    assert (await repo.facts(owner))[0].index_state == "PENDING"
+    # 关闭时仍允许用户删除，清理路径不能调用 embedding。
+    current = (await repo.facts(owner))[0]
+    await repo.edit(owner, current.id, current.version, None)
+    await service.process_user(owner)
+    assert sync.await_count == 1 and sync.call_args.args[1].status == "DELETED"
+    account = await repo.account(owner)
+    assert account and account.generation == disabled.generation
+    await repo.control(owner, account.revision, enabled=True)
+    await service.process_user(owner)
+    assert await repo.facts(owner) == []
