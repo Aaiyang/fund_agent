@@ -36,7 +36,8 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       {status === 'anonymous' ? <Redirect href="/login" /> : null}
-      <Stack>        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ title: '登录' }} />
         <Stack.Screen name="search" options={{ title: '搜索基金' }} />
         <Stack.Screen name="watchlist-groups" options={{ title: '自选分组' }} />

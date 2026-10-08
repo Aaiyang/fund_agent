@@ -26,9 +26,15 @@ export default function AgentSessionsScreen() {
   const setSessionId = useUiStore((state) => state.setAgentSessionId);
   const [problem, setProblem] = useState<string | null>(null);
 
+  /** 直链打开这一页时没有导航历史，router.back() 会抛 GO_BACK not handled。 */
+  function leave() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/agent');
+  }
+
   function select(sessionId: string) {
     setSessionId(sessionId);
-    router.back();
+    leave();
   }
 
   async function createAndOpen() {
@@ -105,7 +111,7 @@ export default function AgentSessionsScreen() {
         )}
       </Async>
       {problem ? <Text style={{ fontSize: 13, color: theme.danger, marginBottom: 8 }}>{problem}</Text> : null}
-      <Button label="回 Agent" variant="secondary" onPress={() => router.back()} />
+      <Button label="回 Agent" variant="secondary" onPress={leave} />
     </Screen>
   );
 }

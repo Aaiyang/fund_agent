@@ -112,7 +112,9 @@ function parseBlocks(content: string): Block[] {
     const unordered = ordered ? null : UNORDERED.exec(line);
     if (ordered || unordered) {
       flushParagraph();
-      const item = (ordered ?? unordered)![2];
+      // 两个正则的捕获组数量不同：ORDERED 的序号是组 1、正文是组 2，
+      // UNORDERED 只有正文一个组。取错下标会把 undefined 当文本传下去。
+      const item = ordered ? ordered[2] : (unordered as RegExpExecArray)[1];
       const wantsOrdered = Boolean(ordered);
       // 序号不同才另起一组：模型连着列 1..5 时那是一列表。
       if (list && list.ordered !== wantsOrdered) flushList();
