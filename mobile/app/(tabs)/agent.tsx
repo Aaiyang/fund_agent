@@ -21,10 +21,10 @@ import type { PickedImage } from '@/hooks/useImports';
 /** 一条待发送的附件。选完只留在本地，点发送才上传——上传本身就是让服务端开始识别。 */
 type Attachment = { key: string; images: PickedImage[] };
 
-/** 一个字都不打、只甩一张图过来时给模型的那句话：只陈述有什么，不指示它做什么。 */
+/** 一个字都不打、只甩图过来时给模型的那句话：只说上传了什么、走的哪条通道，不替它判断内容。 */
 function attachmentFallback(attachments: Attachment[]): string {
   const count = attachments.reduce((sum, each) => sum + each.images.length, 0);
-  return `我刚上传了 ${count} 张持仓截图`;
+  return `我刚上传了 ${count} 张图片（持仓截图导入通道）`;
 }
 
 function Bubble({ role, content, streaming, failed, onRetry }: {
@@ -266,7 +266,7 @@ export default function AgentScreen() {
                 key={item.key}
                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingLeft: 10, paddingVertical: 4, marginRight: 8, marginBottom: 4 }}
               >
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>截图 {item.images.length} 张</Text>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>图片 {item.images.length} 张</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel="不带这个附件" hitSlop={8} disabled={uploading} onPress={() => setAttachments((prev) => prev.filter((each) => each.key !== item.key))}>
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 6 }}>✕</Text>
                 </Pressable>
