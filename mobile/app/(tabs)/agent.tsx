@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
 
-import { EmptyState, LoadingState, describeError } from '@/components/states';
+import { EmptyState, ErrorState, LoadingState, describeError } from '@/components/states';
 import { MarkdownText } from '@/components/MarkdownText';
 import { Chip, Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -161,8 +161,10 @@ export default function AgentScreen() {
           ) : null}
         </View>
 
-        {chat.history.isPending && !chat.turns.length ? (
+        {chat.loadingHistory ? (
           <LoadingState label="正在读历史…" />
+        ) : chat.historyError && !chat.turns.length ? (
+          <ErrorState message={describeError(chat.historyError)} onRetry={chat.retryHistory} />
         ) : (
           <ScrollView
             ref={scroller}

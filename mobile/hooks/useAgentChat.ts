@@ -108,6 +108,11 @@ export function useAgentChat(input: {
     sending: current?.state === 'streaming',
     canRetry: current?.state === 'failed',
     lastFailed: current?.state === 'failed' ? current.error : undefined,
+    // 没有会话时历史查询是 disabled，而 react-query v5 里 disabled 的查询
+    // 状态恒为 pending —— 直接拿 isPending 当加载态会让页面永远卡在"正在读历史"。
+    loadingHistory: Boolean(sessionId) && history.isPending,
+    historyError: history.isError && history.data === undefined ? history.error : null,
+    retryHistory: () => void history.refetch(),
     history,
     send,
     stop,
