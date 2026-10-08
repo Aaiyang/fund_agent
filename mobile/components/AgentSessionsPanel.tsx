@@ -9,7 +9,7 @@
 
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { Animated, Dimensions, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { sessionTitle, type ChatSession } from '@/api/chatSessions';
 import { confirmAction } from '@/utils/confirm';
@@ -36,13 +36,25 @@ export function AgentSessionsPanel({
   const [closing, setClosing] = useState(false);
   // Animated.Value 要跨渲染保持稳定，但用 useRef(...).current 会在渲染期读 ref，
   // expo 的 react-hooks/refs 规则会拦；useState 的惰性初始化同样只建一次。
-  const [slide] = useState(() => new Animated.Value(0));
+  // 初值 1 = 停在屏幕右侧外，挂载后那个 effect 再把它推到 0，才有"右滑进来"。
+  const [slide] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
-    Animated.timing(slide, { toValue: closing ? 1 : 0, duration: 180, useNativeDriver: true }).start(() => {
-      if (closing) onClose();
-    });
-  }, [closing, slide, onClose]);
+    Animated.timing(slide, {
+      toValue: closing ? 1 : 0,
+      duration: 180,
+      // react-native-web 没有 native driver：开着它动画根本不跑，
+      // start() 的完成回调也不会触发（实测面板关不掉）。
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [closing, slide]);
+
+  useEffect(() => {
+    if (!closing) return;
+    // 卸载交给定时器，不依赖动画完成回调：两端都确定性收口，且时长和动画一致。
+    const timer = setTimeout(onClose, 180);
+    return () => clearTimeout(timer);
+  }, [closing, onClose]);
 
   function dismiss() {
     setClosing(true);
