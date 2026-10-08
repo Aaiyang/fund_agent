@@ -273,6 +273,8 @@ class Settings:
         self.VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
         self.VALKEY_MAX_CONNECTIONS = int(os.getenv("VALKEY_MAX_CONNECTIONS", "20"))
         self.CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+        self.HOLIDAY_API_BASE_URL = os.getenv("FUND_HOLIDAY_API_BASE_URL", "https://timor.tech/api/holiday")
+        self.HOLIDAY_API_TIMEOUT_SECONDS = float(os.getenv("FUND_HOLIDAY_API_TIMEOUT_SECONDS", "8"))
 
         # Fund data provider (AKShare) Configuration
         self.AKSHARE_MAX_CONCURRENCY = int(os.getenv("AKSHARE_MAX_CONCURRENCY", "5"))

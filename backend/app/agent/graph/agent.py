@@ -194,7 +194,7 @@ class LangGraphAgent:
             # L4 Dynamic Tail：每轮可变的内容放最末尾，不破坏稳定前缀
             runtime_tail = (
                 f"# 当前时间\n日期：{now.strftime('%Y-%m-%d')}；时间：{now.strftime('%H:%M:%S')}；"
-                f"交易时段：{trading_session_label(now)}。"
+                f"交易时段（按星期和时钟估算，节假日与实际休市未核验）：{trading_session_label(now)}。"
             )
             prepared = await context_manager.prepare(
                 state.messages,
