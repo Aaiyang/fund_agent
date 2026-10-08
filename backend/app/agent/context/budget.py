@@ -6,6 +6,7 @@
 """
 
 import hashlib
+import json
 
 import tiktoken
 from langchain_core.messages import ToolMessage
@@ -56,7 +57,18 @@ class TokenEstimator:
                         total += self.count_text(block)
                     elif isinstance(block, dict) and "text" in block:
                         total += self.count_text(block["text"])
+            tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls:
+                total += self.count_text(json.dumps(tool_calls, ensure_ascii=False, sort_keys=True))
+            for attribute in ("name", "tool_call_id"):
+                value = getattr(message, attribute, None)
+                if value:
+                    total += self.count_text(str(value))
         return total
+
+    def count_tool_schemas(self, schemas: list | None) -> int:
+        """工具定义也占输入窗口；兼容模型 tokenizer 未知时仍为本地估算."""
+        return self.count_text(json.dumps(schemas, ensure_ascii=False, sort_keys=True)) if schemas else 0
 
     def count_messages(self, messages) -> int:
         """统计消息列表：逐条之和（与任何分组方式求和的结果完全一致）."""

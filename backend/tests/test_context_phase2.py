@@ -10,9 +10,8 @@ from types import SimpleNamespace
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.context.manager import ContextManager
+from app.agent.context.summary import ConversationSummaryManager
 from app.agent.context.models import (
-    CompactionResult,
-    ConversationSummary,
     ContextRequest,
     SessionSnapshot,
 )
@@ -205,30 +204,23 @@ def _noop():
 # ---------------------------------------------------------------------------
 
 
-class _FakeSummaryManager:
-    """可注入的摘要管理器：记录 compact 调用，返回预设摘要."""
+class _FakeSummaryManager(ConversationSummaryManager):
+    """使用真实摘要算法，仅替换外部 LLM；记录真正覆盖的轮次."""
 
     def __init__(self, fail: bool = False):
         self.fail = fail
         self.calls: list[list] = []
+        super().__init__(self.summarize)
 
-    async def compact(self, *, previous_summary, turns):
+    async def summarize(self, messages):
         if self.fail:
             raise RuntimeError("summary llm down")
-        self.calls.append(list(turns))
-        previous_version = previous_summary.version if previous_summary else 0
-        summary = ConversationSummary(
-            content=f"摘要 v{previous_version + 1}",
-            version=previous_version + 1,
-            covered_turn_count=(previous_summary.covered_turn_count if previous_summary else 0) + len(turns),
-            covered_until_turn_id=getattr(turns[-1], "turn_id", None),
-            created_at=previous_summary.created_at if previous_summary else None,
-        )
-        return CompactionResult(
-            summary=summary,
-            compacted_turn_count=len(turns),
-            remaining_turn_count=0,
-        )
+        return "已讨论基金持仓与用户约束。"
+
+    async def compact(self, *, turns, **kwargs):
+        result = await super().compact(turns=turns, **kwargs)
+        self.calls.append(list(turns[: result.compacted_turn_count]))
+        return result
 
 
 def _build_turns(count: int, body_tokens: int = 150) -> list:
@@ -280,7 +272,8 @@ async def test_batch_compaction_at_threshold(monkeypatch):
     await _prepare_with(manager, messages, max_tokens=1000)
 
     assert fake.calls, "未触发压缩"
-    assert fake.calls[0].__len__() >= 4  # 压缩了较老的一批（保留最近 2 个）
+    # 小预算下摘要提示词也占窗口，分批压缩完整轮次，绝不截掉原文。
+    assert 1 <= len(fake.calls[0]) <= 5
     assert manager._summaries["phase2"][0].version == 1
     # 初始 epoch sequence=1，第一次成功压缩后 rollover 到 2
     assert manager._epochs["phase2"].sequence == 2
@@ -342,7 +335,7 @@ async def test_cache_epoch_rollover(monkeypatch):
     assert sequence_after_compaction == 2
 
     # 下一轮未达到压缩条件（新会话消息很少）→ epoch 不再变化
-    small = messages[:2]
+    small = messages
     await _prepare_with(manager, small, max_tokens=1000)
     assert manager._epochs["phase2"].sequence == sequence_after_compaction
 

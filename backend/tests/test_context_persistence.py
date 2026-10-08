@@ -11,9 +11,10 @@ from datetime import UTC, datetime
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.context import state_store
+from app.agent.context.cache_policy import cache_policy
 from app.agent.context.manager import ContextManager
+from app.agent.context.summary import ConversationSummaryManager
 from app.agent.context.models import (
-    CompactionResult,
     ConversationSummary,
     ContextRequest,
     SessionSnapshot,
@@ -21,29 +22,23 @@ from app.agent.context.models import (
 from app.core.config import settings
 
 
-class _FakeSummaryManager:
-    """与 test_context_phase2 相同模式的假压缩器（不发 LLM 请求）."""
+class _FakeSummaryManager(ConversationSummaryManager):
+    """使用真实摘要算法，仅替换外部 LLM；记录真正覆盖的轮次."""
 
     def __init__(self, fail: bool = False):
         self.fail = fail
         self.calls: list[list] = []
+        super().__init__(self.summarize)
 
-    async def compact(self, *, previous_summary, turns):
+    async def summarize(self, messages):
         if self.fail:
             raise RuntimeError("summary llm down")
-        self.calls.append(list(turns))
-        previous_version = previous_summary.version if previous_summary else 0
-        summary = ConversationSummary(
-            content=f"摘要 v{previous_version + 1}",
-            version=previous_version + 1,
-            covered_turn_count=(previous_summary.covered_turn_count if previous_summary else 0) + len(turns),
-            covered_until_turn_id=getattr(turns[-1], "turn_id", None),
-            created_at=previous_summary.created_at if previous_summary else None,
-        )
-        return CompactionResult(summary=summary, compacted_turn_count=len(turns), remaining_turn_count=0)
+        return "已讨论基金持仓与用户约束。"
 
-    async def merge_segments(self, segments):
-        return CompactionResult(summary=segments[0], compacted_turn_count=0, remaining_turn_count=0)
+    async def compact(self, *, turns, **kwargs):
+        result = await super().compact(turns=turns, **kwargs)
+        self.calls.append(list(turns[: result.compacted_turn_count]))
+        return result
 
 
 def _build_turns(count: int, body_tokens: int = 190) -> list:
@@ -59,6 +54,10 @@ def _summary(version: int = 1) -> ConversationSummary:
         content="此前讨论了基金 A 的持仓结构",
         version=version,
         covered_turn_count=5,
+        source_start=(version - 1) * 5,
+        source_end=version * 5,
+        source_turn_hashes=["fixture"] * 5,
+        source_hash=cache_policy.fingerprint(["fixture"] * 5),
         covered_until_turn_id="turn-5",
         created_at=datetime(2026, 10, 7, 12, 0, tzinfo=UTC).replace(tzinfo=None),
     )
@@ -132,7 +131,7 @@ async def test_restart_restores_summary_and_watermark(_fake_context_state_store,
 
 
 async def test_persist_failure_degrades_gracefully(monkeypatch):
-    """落盘失败：压缩照常成功，只是少了重启恢复能力."""
+    """落盘失败不推进水位线，保留预算内的原始历史."""
 
     async def _broken_save(*args, **kwargs):
         raise OSError("db write failed")
@@ -152,8 +151,10 @@ async def test_persist_failure_degrades_gracefully(monkeypatch):
     )
 
     assert fake.calls, "压缩不应受落盘失败影响"
-    assert prepared.diagnostics.compaction_failed is False
-    assert prepared.diagnostics.summary_version == 1
+    assert prepared.diagnostics.compaction_failed is True
+    assert prepared.diagnostics.summary_version is None
+    assert "persist-fail" not in manager._summaries
+    assert "persist-fail" not in manager._epochs
 
 
 async def test_forget_thread_clears_inprocess_state(_fake_context_state_store, monkeypatch):

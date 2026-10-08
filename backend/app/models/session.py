@@ -38,4 +38,6 @@ class Session(BaseModel, table=True):
     # ContextManager 的摘要段与 Cache Epoch 状态（进程重启后恢复用）。
     # 随会话行存亡：删除会话即删除状态，不需要独立清理。
     context_state: dict | None = Field(default=None, sa_type=JSON)
+    context_revision: int = Field(default=0)
+    context_state_legacy: dict | None = Field(default=None, sa_type=JSON)
     user: "User" = Relationship(back_populates="sessions")

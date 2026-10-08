@@ -25,10 +25,18 @@ def _fake_context_state_store(monkeypatch):
 
     async def fake_load(thread_key: str):
         payload = store.get(thread_key)
-        return state_store.parse_state(payload) if payload else None
+        parsed = state_store.parse_state(payload) if payload else None
+        segments, sequence = parsed if parsed else ([], 1)
+        return state_store.ContextStateRead(
+            segments=segments, epoch_sequence=sequence, revision=(payload or {}).get("_revision", 0)
+        )
 
-    async def fake_save(thread_key: str, segments, epoch_sequence: int) -> None:
-        store[thread_key] = state_store.serialize_state(segments, epoch_sequence)
+    async def fake_save(thread_key: str, segments, epoch_sequence: int, *, expected_revision: int) -> bool:
+        revision = store.get(thread_key, {}).get("_revision", 0)
+        if revision != expected_revision:
+            return False
+        store[thread_key] = {**state_store.serialize_state(segments, epoch_sequence), "_revision": revision + 1}
+        return True
 
     monkeypatch.setattr(state_store, "load_context_state", fake_load)
     monkeypatch.setattr(state_store, "save_context_state", fake_save)

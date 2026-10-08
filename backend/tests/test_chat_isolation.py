@@ -158,5 +158,9 @@ async def test_clear_history_resets_persisted_summary_and_cache_only_after_commi
         assert "A" not in agent._memory_snapshots and agent._memory_snapshots["B"] == "other"
         assert manager._summaries["B"] == ["other-summary"]
     assert len(commands) == len(settings.CHECKPOINT_TABLES) + 1
-    assert commands[-1] == ('UPDATE "session" SET context_state = NULL WHERE id = %s', ("A",))
+    assert commands[-1] == (
+        'UPDATE "session" SET context_state = NULL, context_state_legacy = NULL, '
+        "context_revision = context_revision + 1 WHERE id = %s",
+        ("A",),
+    )
     assert all(params == ("A",) for _, params in commands)

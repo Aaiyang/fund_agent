@@ -103,6 +103,8 @@ class LangGraphAgent:
         # 使用绑定工具后的 LLM 服务
         self.llm_service = llm_service
         self.llm_service.bind_tools(tools)
+        # 由图层注入，避免 context → services → database → context 的循环导入。
+        context_manager.summary_manager.llm_call = self.llm_service.call
         self.tools_by_name = {tool.name: tool for tool in tools}
         # KV Cache：工具 Schema 固定且只构建一次（进入全局前缀指纹）
         self._tool_schemas = [convert_to_openai_tool(tool) for tool in tools]
@@ -646,7 +648,11 @@ class LangGraphAgent:
                                 sql.SQL("DELETE FROM {} WHERE thread_id = %s").format(sql.Identifier(table)),
                                 (session_id,),
                             )
-                        await conn.execute('UPDATE "session" SET context_state = NULL WHERE id = %s', (session_id,))
+                        await conn.execute(
+                            'UPDATE "session" SET context_state = NULL, context_state_legacy = NULL, '
+                            "context_revision = context_revision + 1 WHERE id = %s",
+                            (session_id,),
+                        )
                 context_manager.forget_thread(session_id)
                 self._memory_snapshots.pop(session_id, None)
                 logger.info(

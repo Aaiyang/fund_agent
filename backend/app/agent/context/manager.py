@@ -1,5 +1,10 @@
 """Agent 上下文组装工具：历史修剪、消息转换与 token 估算."""
 
+from asyncio import Lock
+from math import ceil
+from typing import Any
+from weakref import WeakValueDictionary
+
 from langchain_core.messages import (
     BaseMessage,
     SystemMessage,
@@ -9,11 +14,15 @@ from langchain_core.messages import trim_messages as _trim_messages
 from app.agent.context import state_store
 from app.agent.context.budget import ContextBudgetManager, token_estimator
 from app.agent.context.cache_policy import cache_policy
+from app.agent.context.summary import ConversationSummaryManager, turn_hash
+from app.agent.context.validator import context_validator
 from app.agent.context.models import CacheEpochMeta
 from app.agent.context.status import build_agent_status, render_agent_status
 from app.agent.context.models import (
     ContextDiagnostics,
     ContextInvariantError,
+    ContextEnvelope,
+    ContextRequest,
     ConversationSummary,
     ConversationTurn,
     CurrentUserTurn,
@@ -171,29 +180,36 @@ class ContextManager:
 
     def __init__(self) -> None:
         """初始化预算管理器与校验器."""
-        from app.agent.context.validator import context_validator
-
         self.budget = ContextBudgetManager(
             token_estimator,
             max_single_tool_message_tokens=settings.TOOL_MESSAGE_HARD_LIMIT_TOKENS,
         )
         self.validator = context_validator
         # Phase 2：会话摘要（按 thread 键控，进程内存储）与 Cache Epoch 生命周期
-        from app.agent.context.summary import ConversationSummaryManager
-
         self.summary_manager = ConversationSummaryManager()
         # 分段摘要：每段覆盖一批旧 Turn，生成后冻结不重写（避免迭代漂移）
         self._summaries: dict[str, list[ConversationSummary]] = {}
         self._epochs: dict[str, CacheEpochMeta] = {}
         # 摘要状态落在 session.context_state（见 state_store）；这是"已恢复"标记
         self._state_loaded: set[str] = set()
+        self._locks: WeakValueDictionary[str, Lock] = WeakValueDictionary()
+        self._generations: dict[str, int] = {}
 
     async def prepare(
+        self, messages: list, *, system_message: str, request: ContextRequest, **kwargs: Any
+    ) -> PreparedContext:
+        """同一进程按会话串行准备；跨进程写入由数据库 CAS 保护."""
+        thread_key = request.conversation_id or ""
+        lock = self._locks.setdefault(thread_key, Lock())
+        async with lock:
+            return await self._prepare(messages, system_message=system_message, request=request, **kwargs)
+
+    async def _prepare(
         self,
         messages: list,
         *,
         system_message: str,
-        request,
+        request: ContextRequest,
         business_context: dict | None = None,
         session_snapshot: SessionSnapshot | None = None,
         runtime_tail: str | None = None,
@@ -207,28 +223,38 @@ class ContextManager:
             ContextInvariantError: CURRENT_USER_TURN_MISSING /
                 CONTEXT_BUDGET_EXCEEDED / ONLY_SYSTEM_MESSAGE 等不变量被破坏。
         """
-        from app.agent.context.models import (
-            ContextEnvelope,
-            PreparedContext,
-        )
-
         current_turn = self._find_current_user_turn(messages)
         all_turns = self._group_messages_into_turns(messages)
 
         thread_key = request.conversation_id or ""
         # 进程重启后从 session.context_state 恢复摘要段与水位线（无状态则视为空）；
         # 摘要功能关闭时完全不加载——开关语义是"功能不可见"
+        generation = self._generations.get(thread_key, 0)
+        revision = 0
+        state_available = True
         if settings.CONVERSATION_SUMMARY_ENABLED:
-            await self._ensure_state_loaded(thread_key)
-        segments = self._summaries.get(thread_key, [])
+            try:
+                revision = await self._ensure_state_loaded(thread_key)
+            except ContextInvariantError:
+                raise
+            except Exception:
+                logger.exception("context_state_load_failed", thread=thread_key)
+                state_available = False
+        segments = (
+            self._summaries.get(thread_key, []) if settings.CONVERSATION_SUMMARY_ENABLED and state_available else []
+        )
+        # 即使 checkpoint 被替换或截短，也不能把新原文套上旧的整数水位线。
+        if segments:
+            expected = [source for segment in segments for source in segment.source_turn_hashes]
+            actual = [turn_hash(turn) for turn in all_turns[: len(expected)]]
+            if actual != expected or len(expected) >= len(all_turns):
+                logger.warning("context_summary_source_changed", thread=thread_key)
+                segments = []
 
         # ---- 水位线（Phase 2）：已压缩进摘要段的 Turn 数量 ----
         # checkpoint 只追加（Turn 位置稳定），整数水位线长期有效；
         # 最后一个 Turn 永远视为当前轮，不参与水位线。
-        covered = min(
-            sum(segment.covered_turn_count for segment in segments),
-            max(len(all_turns) - 1, 0),
-        )
+        covered = segments[-1].source_end if segments else 0
         # [ :covered] 已由摘要代表；[covered:] 为未压缩区（本轮窗口来源）
         uncompacted_turns = all_turns[covered:]
 
@@ -253,80 +279,98 @@ class ContextManager:
             thread_key,
             CacheEpochMeta(epoch_id=f"{thread_key or 'thread'}:e1", sequence=1),
         )
-        if settings.BATCH_COMPACTION_ENABLED and settings.CONVERSATION_SUMMARY_ENABLED and previous_turns:
-            estimated_total = (
-                token_estimator.count_text(system_message)
-                + token_estimator.count_messages(current_messages)
-                + sum(turn.estimated_tokens for turn in previous_turns)
-            )
-            min_turns = settings.CONTEXT_COMPACTION_MIN_TURNS
-            if (
-                cache_policy.should_compact(estimated_total, request.max_context_tokens)
-                and len(previous_turns) >= min_turns
-            ):
-                keep_recent = 2
-                # 压缩范围 = 全部"未压缩"的 previous Turn，除最近 2 个外全部进摘要；
-                # 成功后水位线随 summary.covered_turn_count 前移。
-                old_batch = previous_turns[: len(previous_turns) - keep_recent]
-                try:
-                    compaction_result = await self.summary_manager.compact(
-                        previous_summary=segments[-1] if segments else None,
-                        turns=old_batch,
-                    )
-                    # 分段：新段追加（旧段冻结不重写，避免迭代漂移）
-                    segments = [*segments, compaction_result.summary]
-                    self._summaries[thread_key] = segments
-                    previous_turns = previous_turns[-keep_recent:]
-                    rollover_count = 1
-                    old_sequence = epoch.sequence
-                    epoch = CacheEpochMeta(
-                        epoch_id=f"{epoch.epoch_id.split('#')[0]}#e{epoch.sequence + 1}",
-                        sequence=epoch.sequence + 1,
-                        summary_version=compaction_result.summary.version,
-                        created_at=compaction_result.summary.updated_at,
-                    )
-                    self._epochs[thread_key] = epoch
-                    logger.info(
-                        "cache_epoch_rollover",
-                        old_epoch=old_sequence,
-                        new_epoch=epoch.sequence,
-                        summary_version=compaction_result.summary.version,
-                        compacted_turn_count=compaction_result.compacted_turn_count,
-                    )
-                    await self._persist_state(thread_key)
-                except Exception:
-                    # 压缩失败：不删除旧 Turn、不 rollover，继续用现有上下文
-                    compaction_failed = True
-                    logger.exception("context_compaction_failed")
+        # 触发与最终预算使用同一套消息计数，包含摘要标题、动态尾部及工具 schema。
+        probe = ContextEnvelope(
+            current_turn=current_turn,
+            current_turn_messages=current_messages,
+            recent_turns=previous_turns,
+            conversation_summary=segments,
+            agent_status=agent_status,
+        )
+        schema_tokens = token_estimator.count_tool_schemas(tool_schemas)
+        estimated_total = (
+            token_estimator.count_messages(self._assemble_messages(system_message, probe, runtime_tail))
+            + schema_tokens
+        )
+        output_limit = max(64, min(2048, request.max_context_tokens // 8))
+        input_limit = max(1, request.max_context_tokens - output_limit)
 
-        # 摘要区占比超上限（或段数超硬上限）：对最旧的一半段做两两合并
-        # （size-tiered 模式：段覆盖的 Turn 数逐级翻倍，段数对数增长；
-        #   每对一次 LLM 调用，输入仅两段，摘要质量高、漂移单次可控）
-        if settings.CONVERSATION_SUMMARY_ENABLED and len(segments) >= 2:
-            region_tokens = sum(token_estimator.count_text(segment.content) for segment in segments)
-            region_ratio = cache_policy.usage_ratio(region_tokens, request.max_context_tokens)
+        def ensure_candidate_fits(candidate: list[ConversationSummary]) -> None:
+            """拒绝无法容纳当前轮的摘要状态，避免落盘后让会话永久超预算."""
+            fixed = ContextEnvelope(
+                current_turn=current_turn, conversation_summary=candidate, agent_status=agent_status
+            )
+            fixed_cost = (
+                token_estimator.count_messages(self._assemble_messages(system_message, fixed, runtime_tail))
+                + schema_tokens
+            )
+            trace = ContextEnvelope(current_turn=current_turn, current_turn_messages=current_messages)
+            try:
+                self.budget.fit(trace, request.max_context_tokens, fixed_cost)
+            except ContextInvariantError as exc:
+                raise ValueError("summary candidate leaves insufficient room for the current turn") from exc
+
+        if (
+            settings.BATCH_COMPACTION_ENABLED
+            and settings.CONVERSATION_SUMMARY_ENABLED
+            and state_available
+            and len(previous_turns) >= max(3, settings.CONTEXT_COMPACTION_MIN_TURNS)
+            and cache_policy.should_compact(estimated_total, request.max_context_tokens)
+        ):
+            try:
+                compaction_result = await self.summary_manager.compact(
+                    turns=previous_turns[:-2],
+                    source_start=covered,
+                    version=max((segment.version for segment in segments), default=0) + 1,
+                    input_token_limit=input_limit,
+                    output_token_limit=output_limit,
+                )
+                candidate = [*segments, compaction_result.summary]
+                ensure_candidate_fits(candidate)
+                candidate_epoch = CacheEpochMeta(
+                    epoch_id=f"{thread_key}:e{epoch.sequence + 1}",
+                    sequence=epoch.sequence + 1,
+                    summary_version=compaction_result.summary.version,
+                    created_at=compaction_result.summary.updated_at,
+                )
+                revision = await self._persist_state(thread_key, candidate, candidate_epoch, revision, generation)
+                segments = candidate
+                epoch = candidate_epoch
+                previous_turns = previous_turns[compaction_result.compacted_turn_count :]
+                rollover_count += 1
+            except ContextInvariantError:
+                raise
+            except Exception:
+                compaction_result = None
+                compaction_failed = True
+                logger.exception("context_compaction_failed", thread=thread_key)
+
+        # 只合并最旧的配置比例；失败时原段保持不变，不推进 Epoch。
+        if settings.CONVERSATION_SUMMARY_ENABLED and state_available and len(segments) >= 2:
+            region_tokens = token_estimator.count_messages(
+                self._assemble_messages("", ContextEnvelope(current_turn=current_turn, conversation_summary=segments))
+            )
             if (
-                region_ratio > settings.SUMMARY_REGION_MAX_RATIO
+                cache_policy.usage_ratio(region_tokens, request.max_context_tokens) > settings.SUMMARY_REGION_MAX_RATIO
                 or len(segments) > settings.SUMMARY_SEGMENT_MERGE_COUNT
             ):
-                segments, merged_pairs = await self._merge_oldest_pairwise(segments)
-                self._summaries[thread_key] = segments
-                rollover_count += 1
-                latest_version = max(segment.version for segment in segments)
-                epoch = CacheEpochMeta(
-                    epoch_id=f"{epoch.epoch_id.split('#')[0]}#e{epoch.sequence + 1}",
-                    sequence=epoch.sequence + 1,
-                    summary_version=latest_version,
-                    created_at=None,
-                )
-                self._epochs[thread_key] = epoch
-                logger.info(
-                    "summary_segments_merged",
-                    merged_pairs=merged_pairs,
-                    segment_count=len(segments),
-                    region_ratio=round(region_ratio, 4),
-                )
-                await self._persist_state(thread_key)
+                try:
+                    candidate, merged_pairs = await self._merge_oldest_pairwise(segments, input_limit, output_limit)
+                    ensure_candidate_fits(candidate)
+                    candidate_epoch = CacheEpochMeta(
+                        epoch_id=f"{thread_key}:e{epoch.sequence + 1}",
+                        sequence=epoch.sequence + 1,
+                        summary_version=max(segment.version for segment in candidate),
+                    )
+                    revision = await self._persist_state(thread_key, candidate, candidate_epoch, revision, generation)
+                    segments, epoch = candidate, candidate_epoch
+                    rollover_count += 1
+                    logger.info("summary_segments_merged", merged_pairs=merged_pairs, segment_count=len(segments))
+                except ContextInvariantError:
+                    raise
+                except Exception:
+                    compaction_failed = True
+                    logger.exception("context_summary_merge_failed", thread=thread_key)
 
         envelope = ContextEnvelope(
             current_turn=current_turn,
@@ -337,7 +381,15 @@ class ContextManager:
             business_context=business_context,
         )
 
-        system_cost = token_estimator.count_text(system_message)
+        fixed_envelope = ContextEnvelope(
+            current_turn=current_turn,
+            conversation_summary=segments,
+            agent_status=agent_status,
+        )
+        system_cost = (
+            token_estimator.count_messages(self._assemble_messages(system_message, fixed_envelope, runtime_tail))
+            + schema_tokens
+        )
         envelope, dedup_removed, compacted, dropped = self.budget.fit(
             envelope,
             request.max_context_tokens,
@@ -352,14 +404,17 @@ class ContextManager:
         # （每条 +4 开销的口径差），累计后会让选择"乐观"几十 token，
         # 导致最终总量小幅超预算。这里用真实计数逐出，保证精确合规。
         evicted = 0
-        while envelope.recent_turns and token_estimator.count_messages(prepared_messages) > request.max_context_tokens:
+        while (
+            envelope.recent_turns
+            and token_estimator.count_messages(prepared_messages) + schema_tokens > request.max_context_tokens
+        ):
             envelope.recent_turns.pop(0)
             evicted += 1
             prepared_messages = self._assemble_messages(system_message, envelope, runtime_tail)
         dropped += evicted
 
         summary_segments = envelope.conversation_summary
-        latest_summary = summary_segments[-1] if summary_segments else None
+        latest_summary = max(summary_segments, key=lambda segment: segment.version) if summary_segments else None
         agent_status_tokens = (
             token_estimator.count_text(render_agent_status(envelope.agent_status)) if envelope.agent_status else None
         )
@@ -388,6 +443,14 @@ class ContextManager:
             agent_status_tokens=agent_status_tokens,
         )
         self.validator.validate(prepared_messages, envelope, diagnostics)
+        if settings.CONVERSATION_SUMMARY_ENABLED and state_available and thread_key:
+            latest_state = await state_store.load_context_state(thread_key)
+            if (
+                not latest_state.exists
+                or latest_state.revision != revision
+                or self._generations.get(thread_key, 0) != generation
+            ):
+                raise ContextInvariantError("CONTEXT_STATE_CHANGED", "会话在准备期间已变化，请重试")
 
         logger.info(
             "context_prepared",
@@ -413,71 +476,80 @@ class ContextManager:
         )
         return PreparedContext(messages=prepared_messages, envelope=envelope, diagnostics=diagnostics)
 
-    async def _ensure_state_loaded(self, thread_key: str) -> None:
-        """进程重启后从 session.context_state 恢复摘要段与 Epoch（每线程至多读一次）.
-
-        已在内存里的线程跳过（含测试直接注入的场景）；行不存在或载荷
-        损坏视为无状态——下次达到阈值时重新压缩，只是多一次 LLM 调用。
-        """
-        if not thread_key or thread_key in self._state_loaded or thread_key in self._summaries:
-            return
-        self._state_loaded.add(thread_key)
-        try:
-            state = await state_store.load_context_state(thread_key)
-        except Exception:
-            logger.exception("context_state_load_failed", thread=thread_key)
-            return
-        if not state:
-            return
-        segments, epoch_sequence = state
-        if segments:
-            self._summaries[thread_key] = segments
-            self._epochs[thread_key] = CacheEpochMeta(
-                epoch_id=f"{thread_key or 'thread'}:e{epoch_sequence}",
-                sequence=epoch_sequence,
-            )
-            logger.info(
-                "context_state_restored",
-                thread=thread_key,
-                segment_count=len(segments),
-                epoch_sequence=epoch_sequence,
-            )
-
-    async def _persist_state(self, thread_key: str) -> None:
-        """压缩/合并后把摘要段与 Epoch 写回会话行；失败只记日志，不阻塞请求."""
+    async def _ensure_state_loaded(self, thread_key: str) -> int:
+        """每次读取数据库修订号，清空或其他 worker 的更新立即使本地缓存失效."""
         if not thread_key:
-            return
-        segments = self._summaries.get(thread_key, [])
-        epoch = self._epochs.get(thread_key)
-        try:
-            await state_store.save_context_state(thread_key, segments, epoch.sequence if epoch else 1)
-        except Exception:
-            logger.exception("context_state_persist_failed", thread=thread_key)
+            return 0
+        state = await state_store.load_context_state(thread_key)
+        if not state.exists:
+            raise ContextInvariantError("CONTEXT_STATE_CHANGED", "会话已删除，请重新打开会话")
+        self._summaries.pop(thread_key, None)
+        self._epochs.pop(thread_key, None)
+        if state.segments:
+            self._summaries[thread_key] = state.segments
+        if state.segments or state.epoch_sequence > 1:
+            self._epochs[thread_key] = CacheEpochMeta(
+                epoch_id=f"{thread_key}:e{state.epoch_sequence}",
+                sequence=state.epoch_sequence,
+            )
+        self._state_loaded.add(thread_key)
+        return state.revision
+
+    async def _persist_state(
+        self,
+        thread_key: str,
+        segments: list[ConversationSummary],
+        epoch: CacheEpochMeta,
+        revision: int,
+        generation: int,
+    ) -> int:
+        """先提交数据库，再发布到内存；CAS 失败说明会话在压缩期间已变化."""
+        state_store.validate_segments(segments)
+        if thread_key:
+            saved = await state_store.save_context_state(
+                thread_key,
+                segments,
+                epoch.sequence,
+                expected_revision=revision,
+            )
+            if not saved:
+                self.forget_thread(thread_key)
+                raise ContextInvariantError("CONTEXT_STATE_CHANGED", "会话在压缩期间已变化，请重试")
+            revision += 1
+        if self._generations.get(thread_key, 0) != generation:
+            raise ContextInvariantError("CONTEXT_STATE_CHANGED", "会话已清空，请重试")
+        self._summaries[thread_key] = segments
+        self._epochs[thread_key] = epoch
+        return revision
 
     def forget_thread(self, thread_key: str) -> None:
-        """会话删除后丢弃进程内的摘要状态（防止残留与误恢复）."""
+        """清空/删除后立即失效本地状态；使正在执行的旧摘要无法发布."""
         self._summaries.pop(thread_key, None)
         self._epochs.pop(thread_key, None)
         self._state_loaded.discard(thread_key)
+        self._generations[thread_key] = self._generations.get(thread_key, 0) + 1
 
-    async def _merge_oldest_pairwise(self, segments: list) -> tuple[list, int]:
-        """把最旧的偶数个段两两合并，段数约减半（size-tiered 模式）.
-
-        每对一次 LLM 调用，输入只有两段全文——摘要质量高、漂移单次可控；
-        落单段原样保留。返回（新段列表, 合并对数）。
-        """
-        to_merge_count = max(2, (len(segments) // 2) * 2)
-        to_merge = segments[:to_merge_count]
-        remainder = segments[to_merge_count:]
-
-        merged: list = []
-        llm_calls = 0
-        for i in range(0, len(to_merge), 2):
-            pair = to_merge[i : i + 2]
-            result = await self.summary_manager.merge_segments(pair)
+    async def _merge_oldest_pairwise(
+        self,
+        segments: list[ConversationSummary],
+        input_limit: int,
+        output_limit: int,
+    ) -> tuple[list[ConversationSummary], int]:
+        """按配置比例选最旧的偶数段，逐对合并，所有调用成功后一次发布."""
+        fraction = min(1.0, max(0.0, settings.SUMMARY_MERGE_FRACTION))
+        to_merge_count = min(len(segments) // 2 * 2, max(2, ceil(len(segments) * fraction) // 2 * 2))
+        merged: list[ConversationSummary] = []
+        version = max(segment.version for segment in segments)
+        for index in range(0, to_merge_count, 2):
+            version += 1
+            result = await self.summary_manager.merge_segments(
+                segments[index : index + 2],
+                version=version,
+                input_token_limit=input_limit,
+                output_token_limit=output_limit,
+            )
             merged.append(result.summary)
-            llm_calls += 1
-        return [*merged, *remainder], llm_calls
+        return [*merged, *segments[to_merge_count:]], len(merged)
 
     @staticmethod
     def _find_current_user_turn(messages: list) -> CurrentUserTurn:
@@ -496,7 +568,7 @@ class ContextManager:
         turns: list[ConversationTurn] = []
         for message in messages:
             if getattr(message, "type", None) == "human":
-                turns.append(ConversationTurn(user_message=message))
+                turns.append(ConversationTurn(user_message=message, turn_id=getattr(message, "id", None)))
             elif turns:
                 turns[-1].following_messages.append(message)
             else:
@@ -573,7 +645,9 @@ class ContextManager:
         agent_status_tokens=None,
     ) -> ContextDiagnostics:
         """统计最终上下文的量化指标与 KV Cache 指纹（不含用户内容本身）."""
-        total_tokens = token_estimator.count_messages(prepared_messages)
+        total_tokens = token_estimator.count_messages(prepared_messages) + token_estimator.count_tool_schemas(
+            tool_schemas
+        )
         usage_ratio = cache_policy.usage_ratio(total_tokens, max_tokens)
 
         # 三层前缀指纹：L0 全局（系统提示词+工具 Schema）/ L1 会话（+快照）/ L2 Epoch
@@ -582,7 +656,14 @@ class ContextManager:
             {"global": global_prefix_hash, "snapshot": session_snapshot.model_dump() if session_snapshot else None}
         )
         cache_epoch_id = f"{system_prompt_version or 'v0'}:{tools_version or 'v0'}:{session_prefix_hash[:8]}"
-        epoch_prefix_hash = cache_policy.fingerprint({"session": session_prefix_hash, "epoch": cache_epoch_id})
+        epoch_prefix_hash = cache_policy.fingerprint(
+            {
+                "session": session_prefix_hash,
+                "sequence": cache_epoch_sequence,
+                "segments": [segment.model_dump(mode="json") for segment in envelope.conversation_summary],
+            }
+        )
+        cache_epoch_id = f"{cache_epoch_id}:e{cache_epoch_sequence or 1}:{epoch_prefix_hash[:8]}"
 
         return ContextDiagnostics(
             total_tokens=total_tokens,

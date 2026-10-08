@@ -156,6 +156,11 @@ class ConversationSummary(BaseModel):
     version: int = 1
     covered_turn_count: int = 0
     covered_until_turn_id: str | None = None
+    covered_from_turn_id: str | None = None
+    source_start: int = 0
+    source_end: int = 0
+    source_turn_hashes: list[str] = Field(default_factory=list)
+    source_hash: str = ""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
