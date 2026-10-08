@@ -12,16 +12,20 @@ import { Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
-import { useChatImportDetail, useDecideChatImport, usePendingChatAction, useUploadChatScreenshots } from '@/hooks/useChatImport';
+import { useDecideChatImport, usePendingChatAction, useUploadChatScreenshots } from '@/hooks/useChatImport';
 import { useFundDetail } from '@/hooks/useFunds';
 import { useAccounts } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
 
-/** 一条附件批次：批次号 + 几张图。识别进度只对最后一条轮询，早先的只留个号。 */
-type Attachment = { importId: string; imageCount: number };
+/** 一条待发送的附件。选完只留在本地，点发送才上传——上传本身就是让服务端开始识别。 */
+type Attachment = { key: string; images: PickedImage[] };
 
-const ATTACHMENT_PROMPT = '我刚上传了持仓截图，帮我看下识别结果';
+/** 一个字都不打、只甩一张图过来时给模型的那句话：只陈述有什么，不指示它做什么。 */
+function attachmentFallback(attachments: Attachment[]): string {
+  const count = attachments.reduce((sum, each) => sum + each.images.length, 0);
+  return `我刚上传了 ${count} 张持仓截图`;
+}
 
 function Bubble({ role, content, streaming, failed, onRetry }: {
   role: string;
@@ -91,40 +95,34 @@ export default function AgentScreen() {
   // 动画反复重启。
   const closeSessions = useCallback(() => setSessionsOpen(false), [setSessionsOpen]);
 
-  const chat = useAgentChat({
-    sessionId,
-    ensureSession: async () => {
-      if (sessionId) return sessionId;
-      const created = await createSession.mutateAsync();
-      setSessionId(created.session_id);
-      return created.session_id;
-    },
-  });
+  /** 没有当前会话时先建一条；附件要在发消息之前拿到这个号去换令牌。 */
+  async function ensureActiveSession(): Promise<string> {
+    if (sessionId) return sessionId;
+    const created = await createSession.mutateAsync();
+    setSessionId(created.session_id);
+    return created.session_id;
+  }
+
+  const chat = useAgentChat({ sessionId, ensureSession: ensureActiveSession });
 
   const contextCode = paramCode && !contextDismissed ? paramCode : null;
 
   const accounts = useAccounts();
-  const upload = useUploadChatScreenshots(sessionId);
+  const upload = useUploadChatScreenshots();
   const decide = useDecideChatImport(sessionId);
   const pending = usePendingChatAction(sessionId);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const lastAttachment = attachments[attachments.length - 1] ?? null;
-  const importDetail = useChatImportDetail(sessionId, lastAttachment?.importId ?? null);
+  const [uploading, setUploading] = useState(false);
 
   /** 顶部导航选中的账户优先；汇总视图下落到第一个账户（与导入页同一口径）。 */
   function targetAccountId(): number | null {
     return viewAccountId ?? accounts.data?.items[0]?.id ?? null;
   }
 
-  async function attachScreenshots() {
-    const accountId = targetAccountId();
-    if (!accountId) {
-      setProblem('还没有账户，先去「我的 → 账户管理」建一个');
-      return;
-    }
+  async function pickAttachments() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setProblem('没有相册权限，无法上传截图');
+      setProblem('没有相册权限，无法选图');
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1 });
@@ -135,29 +133,45 @@ export default function AgentScreen() {
       mimeType: asset.mimeType ?? 'image/jpeg',
     }));
     setProblem(null);
-    upload.mutate(
-      { accountId, images },
-      {
-        onSuccess: (accepted) => setAttachments((prev) => [...prev, { importId: String(accepted.import_id), imageCount: accepted.image_count }]),
-        onError: (error) => setProblem(describeError(error)),
-      },
-    );
+    setAttachments((prev) => [...prev, { key: `${Date.now()}-${prev.length}`, images }]);
   }
 
-  function ask(text: string) {
-    if (chat.sending) return;
+  /** 一次发送里每选一批是一个批次，各自换回一个后端校验得到的批次号。 */
+  async function uploadAttachments(active: string): Promise<string[]> {
+    if (!attachments.length) return [];
+    const accountId = targetAccountId();
+    if (!accountId) throw new Error('还没有账户，先去「我的 → 账户管理」建一个');
+    const ids: string[] = [];
+    for (const each of attachments) {
+      const accepted = await upload.mutateAsync({ sessionId: active, accountId, images: each.images });
+      ids.push(String(accepted.import_id));
+    }
+    return ids;
+  }
+
+  async function ask(text: string) {
+    if (chat.sending || uploading) return;
     const trimmed = text.trim();
-    const importIds = attachments.map((item) => item.importId);
-    // 只发附件、一个字都不打也是这条功能的正常用法，补一句默认提问。
-    const body = trimmed || (importIds.length ? ATTACHMENT_PROMPT : '');
+    const body = trimmed || (attachments.length ? attachmentFallback(attachments) : '');
     if (!body) return;
+    setProblem(null);
+    setUploading(true);
+    let importIds: string[] = [];
+    try {
+      importIds = await uploadAttachments(await ensureActiveSession());
+    } catch (error: unknown) {
+      // 附件没传上去就先把话说出去，模型拿不到批次号，所以整条不发。
+      setUploading(false);
+      setProblem(describeError(error));
+      return;
+    }
+    setUploading(false);
+    setDraft('');
+    setAttachments([]);
     // 后端只有一条自由文本的通道，基金上下文只能写在消息里；附件不是文本，
     // 它走 `holding_import_ids` 这个结构化字段，工具才拿得到真实批次号。
     const name = context.data?.fund_name;
     const question = contextCode ? `（我正在看基金 ${contextCode}${name ? ` ${name}` : ''}）\n${body}` : body;
-    setDraft('');
-    setProblem(null);
-    setAttachments([]);
     void chat.send(question, importIds).catch((error: unknown) => setProblem(describeError(error)));
   }
 
@@ -247,29 +261,17 @@ export default function AgentScreen() {
 
         {attachments.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.gap, paddingTop: 8 }}>
-            {attachments.map((item) => {
-              const isLast = item.importId === lastAttachment?.importId;
-              const batch = isLast ? importDetail.data?.import_batch : null;
-              const status = batch?.status ?? 'UPLOADED';
-              const rows = batch?.items?.length;
-              const label =
-                status === 'PARSING' || status === 'UPLOADED'
-                  ? `截图 ${item.imageCount} 张 · 识别中…`
-                  : status === 'PARSE_FAILED'
-                    ? `截图 ${item.imageCount} 张 · 识别失败`
-                    : `截图 ${item.imageCount} 张 · 识别出 ${rows ?? 0} 行`;
-              return (
-                <View
-                  key={item.importId}
-                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingLeft: 10, paddingVertical: 4, marginRight: 8, marginBottom: 4 }}
-                >
-                  <Text style={{ fontSize: 12, color: theme.textMuted }}>{label}</Text>
-                  <Pressable accessibilityRole="button" accessibilityLabel="不带这个附件" hitSlop={8} onPress={() => setAttachments((prev) => prev.filter((each) => each.importId !== item.importId))}>
-                    <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 6 }}>✕</Text>
-                  </Pressable>
-                </View>
-              );
-            })}
+            {attachments.map((item) => (
+              <View
+                key={item.key}
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingLeft: 10, paddingVertical: 4, marginRight: 8, marginBottom: 4 }}
+              >
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>截图 {item.images.length} 张</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="不带这个附件" hitSlop={8} disabled={uploading} onPress={() => setAttachments((prev) => prev.filter((each) => each.key !== item.key))}>
+                  <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 6 }}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -286,13 +288,13 @@ export default function AgentScreen() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="添加截图"
+            accessibilityLabel="添加附件"
             hitSlop={10}
-            onPress={() => void attachScreenshots()}
-            disabled={upload.isPending}
-            style={{ marginRight: 8, paddingVertical: 10, opacity: upload.isPending ? 0.5 : 1 }}
+            onPress={() => void pickAttachments()}
+            disabled={uploading || chat.sending}
+            style={{ marginRight: 8, paddingVertical: 10, opacity: uploading || chat.sending ? 0.5 : 1 }}
           >
-            {upload.isPending ? (
+            {uploading ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : (
               <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.textMuted} size={20} />
@@ -301,12 +303,12 @@ export default function AgentScreen() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder={attachments.length ? '想问它什么都行（会带上截图）' : contextCode ? `问问 ${contextCode}…` : '想问什么都行'}
+            placeholder={attachments.length ? '想问它什么都行，可以只发附件' : contextCode ? `问问 ${contextCode}…` : '想问什么都行'}
             placeholderTextColor={theme.textFaint}
             maxLength={3000}
             multiline
             editable={!chat.sending}
-            onSubmitEditing={() => ask(draft)}
+            onSubmitEditing={() => void ask(draft)}
             returnKeyType="send"
             blurOnSubmit={false}
             style={{
@@ -337,11 +339,11 @@ export default function AgentScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="发送"
-              disabled={!draft.trim()}
-              onPress={() => ask(draft)}
-              style={{ marginLeft: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, backgroundColor: theme.primary, opacity: draft.trim() ? 1 : 0.45 }}
+              disabled={uploading || (!draft.trim() && !attachments.length)}
+              onPress={() => void ask(draft)}
+              style={{ marginLeft: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, backgroundColor: theme.primary, opacity: uploading || (!draft.trim() && !attachments.length) ? 0.45 : 1 }}
             >
-              <Text style={{ fontSize: 15, color: '#FFFFFF', fontWeight: '600' }}>发送</Text>
+              <Text style={{ fontSize: 15, color: '#FFFFFF', fontWeight: '600' }}>{uploading ? '上传中' : '发送'}</Text>
             </Pressable>
           )}
         </View>

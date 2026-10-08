@@ -20,19 +20,16 @@ import { ensureSessionToken } from '@/hooks/useAgent';
 import type { PickedImage } from '@/hooks/useImports';
 
 export type ChatImportAccepted = components['schemas']['ScreenshotImportAccepted'];
-export type ChatImportDetail = components['schemas']['ImportDetailResponse'];
 export type ChatImportReview = components['schemas']['HoldingImportReview'];
 export type ChatImportDecision = components['schemas']['HoldingImportDecisionResponse'];
 
-/** 还在识别中的状态；其余都是终态，可以停止轮询。 */
-const PARSING_STATUSES = new Set(['UPLOADED', 'PARSING']);
-
-export function useUploadChatScreenshots(sessionId: string | null) {
+export function useUploadChatScreenshots() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { accountId: number; images: PickedImage[] }): Promise<ChatImportAccepted> => {
-      if (!sessionId) throw new Error('还没有选中会话');
-      const token = await ensureSessionToken(client, sessionId);
+    // 会话按调用传：附件是在"发送"那一刻上传的，那时可能刚为这条消息新建会话，
+    // 挂在 hook 上的还是渲染时那份 null。
+    mutationFn: async (input: { sessionId: string; accountId: number; images: PickedImage[] }): Promise<ChatImportAccepted> => {
+      const token = await ensureSessionToken(client, input.sessionId);
       const form = new FormData();
       for (const image of input.images) {
         if (Platform.OS === 'web') {
@@ -55,20 +52,7 @@ export function useUploadChatScreenshots(sessionId: string | null) {
   });
 }
 
-export function useChatImportDetail(sessionId: string | null, importId: string | null) {
-  const client = useQueryClient();
-  return useQuery({
-    queryKey: queryKeys.chatImport(importId),
-    enabled: Boolean(sessionId && importId),
-    refetchInterval: (query) => (PARSING_STATUSES.has(query.state.data?.import_batch.status ?? '') ? 2000 : false),
-    queryFn: async () => {
-      const token = await ensureSessionToken(client, sessionId as string);
-      return request<ChatImportDetail>(`/chatbot/holding-imports/${importId}`, { bearer: token });
-    },
-  });
-}
-
-/** 刷新或重连后把还挂在半路的复核卡片捞回来（草稿内容会跟着最新一次识别刷新）. */
+/** 刷新或重连后把还挂在半路的复核卡片捞回来（草稿内容会跟着最新一次识别刷新). */
 export function usePendingChatAction(sessionId: string | null) {
   const client = useQueryClient();
   return useQuery({
