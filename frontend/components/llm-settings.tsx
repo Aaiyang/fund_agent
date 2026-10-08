@@ -52,7 +52,7 @@ const VENDOR_PRESETS: VendorPreset[] = [
   },
 ];
 
-type Draft = LlmProfileInput & { key_hint: string };
+type Draft = LlmProfileInput & { key_hint: string; read_only?: boolean };
 
 type FormState = {
   vendor: string;
@@ -155,6 +155,7 @@ export function LlmSettingsDialog({
 
   function startEdit(index: number) {
     const draft = drafts[index];
+    if (draft.read_only) return;
     setForm({
       vendor: '自定义',
       name: draft.name,
@@ -237,6 +238,7 @@ export function LlmSettingsDialog({
   }
 
   function removeDraft(index: number) {
+    if (drafts[index].read_only) return;
     setDrafts((current) => current.filter((_, i) => i !== index));
     if (editing === index) setEditing(null);
   }
@@ -251,12 +253,14 @@ export function LlmSettingsDialog({
     try {
       const result = await saveLlmSettings(
         token,
-        drafts.map(({ name, model, base_url, api_key }) => ({
-          name,
-          model,
-          base_url,
-          api_key,
-        })),
+        drafts
+          .filter((draft) => !draft.read_only)
+          .map(({ name, model, base_url, api_key }) => ({
+            name,
+            model,
+            base_url,
+            api_key,
+          })),
       );
       onSaved(result);
       onOpenChange(false);
@@ -273,7 +277,7 @@ export function LlmSettingsDialog({
         <DialogHeader>
           <DialogTitle>模型供应商设置</DialogTitle>
           <DialogDescription>
-            配置常见厂家的 API；保存后立即生效，密钥只保存在服务端。
+            个人模型仅对当前账户生效，也可以使用默认 GLM Flash。
           </DialogDescription>
         </DialogHeader>
 
@@ -300,6 +304,11 @@ export function LlmSettingsDialog({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
                     {draft.name}
+                    {draft.read_only && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        基础模型
+                      </span>
+                    )}
                     {llm?.active === draft.name && (
                       <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                         当前
@@ -315,6 +324,7 @@ export function LlmSettingsDialog({
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`编辑 ${draft.name}`}
+                  disabled={draft.read_only}
                   onClick={() => startEdit(index)}
                 >
                   <Pencil />
@@ -323,7 +333,7 @@ export function LlmSettingsDialog({
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`删除 ${draft.name}`}
-                  disabled={drafts.length === 1}
+                  disabled={draft.read_only}
                   onClick={() => removeDraft(index)}
                 >
                   <Trash2 />

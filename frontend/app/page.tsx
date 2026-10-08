@@ -353,6 +353,31 @@ function ChatWorkspace({
   const [llmOpen, setLlmOpen] = useState(false);
   const [llm, setLlm] = useState<LlmProfiles | null>(null);
   const [loadingLlm, setLoadingLlm] = useState(false);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const streamGenerationRef = useRef(0);
+  const streamRequestRef = useRef<{
+    sessionId: string | null;
+    controller: AbortController;
+  } | null>(null);
+
+  function activateSession(session: Session | null) {
+    const nextId = session?.session_id ?? null;
+    if (nextId === activeSessionIdRef.current) return;
+    const stream = streamRequestRef.current;
+    if (stream && stream.sessionId !== nextId) stream.controller.abort();
+    activeSessionIdRef.current = nextId;
+    setActiveSession(session);
+    setMessages([]);
+  }
+
+  useEffect(
+    () => () => {
+      const stream = streamRequestRef.current;
+      streamRequestRef.current = null;
+      stream?.controller.abort();
+    },
+    [],
+  );
 
   function openLlmSettings() {
     setLlmOpen(true);
@@ -399,17 +424,31 @@ function ChatWorkspace({
 
   useEffect(() => {
     let cancelled = false;
+    const nextId = activeSession?.session_id ?? null;
+    activeSessionIdRef.current = nextId;
+    const stream = streamRequestRef.current;
+    if (stream && stream.sessionId !== nextId) stream.controller.abort();
     if (!activeSession) {
       const timer = window.setTimeout(() => setMessages([]), 0);
       return () => window.clearTimeout(timer);
     }
 
     const timer = window.setTimeout(() => {
+      if (streamRequestRef.current?.sessionId === activeSession.session_id) {
+        setLoadingMessages(false);
+        return;
+      }
+      const generation = streamGenerationRef.current;
       setLoadingMessages(true);
       setError('');
       void getMessages(activeSession)
         .then((history) => {
-          if (!cancelled) setMessages(history);
+          if (
+            !cancelled &&
+            generation === streamGenerationRef.current &&
+            streamRequestRef.current?.sessionId !== activeSession.session_id
+          )
+            setMessages(history);
         })
         .catch((loadError: unknown) => {
           if (!cancelled) setError(getErrorMessage(loadError));
@@ -435,8 +474,7 @@ function ChatWorkspace({
     try {
       const session = await createSession(auth.token);
       setSessions((current) => [session, ...current]);
-      setActiveSession(session);
-      setMessages([]);
+      activateSession(session);
       setSidebarOpen(false);
       return session;
     } catch (createError) {
@@ -448,32 +486,68 @@ function ChatWorkspace({
   async function submitMessage(rawContent: string) {
     const content = rawContent.trim();
     if (!content) throw new Error('消息不能为空');
-    if (sending) throw new Error('上一条消息仍在生成中');
-    let session = activeSession;
-    if (!session) session = await handleNewSession();
-    if (!session) throw new Error('无法创建新会话');
-
-    setDraft('');
-    setError('');
+    if (streamRequestRef.current) throw new Error('上一条消息仍在生成中');
+    const request = {
+      sessionId: activeSession?.session_id ?? null,
+      controller: new AbortController(),
+    };
+    streamRequestRef.current = request;
+    streamGenerationRef.current += 1;
     setSending(true);
-    setMessages((current) => [
-      ...current,
-      { role: 'user', content },
-      { role: 'assistant', content: '' },
-    ]);
-
+    let session = activeSession;
     try {
-      await streamMessage(session, content, (chunk) => {
-        setMessages((current) => {
-          const next = [...current];
-          const last = next[next.length - 1];
-          if (last?.role === 'assistant')
-            next[next.length - 1] = { ...last, content: last.content + chunk };
-          return next;
-        });
-      });
+      if (!session) {
+        const created = await createSession(auth.token);
+        session = created;
+        if (request.controller.signal.aborted)
+          throw new DOMException('已停止生成', 'AbortError');
+        request.sessionId = session.session_id;
+        setSessions((current) => [created, ...current]);
+        activateSession(session);
+        setSidebarOpen(false);
+      }
+      setDraft('');
+      setError('');
+      setMessages((current) => [
+        ...current,
+        { role: 'user', content },
+        { role: 'assistant', content: '' },
+      ]);
+      await streamMessage(
+        session,
+        content,
+        (chunk) => {
+          if (
+            streamRequestRef.current !== request ||
+            activeSessionIdRef.current !== request.sessionId ||
+            request.controller.signal.aborted
+          )
+            return;
+          setMessages((current) => {
+            if (
+              streamRequestRef.current !== request ||
+              activeSessionIdRef.current !== request.sessionId ||
+              request.controller.signal.aborted
+            )
+              return current;
+            const next = [...current];
+            const last = next[next.length - 1];
+            if (last?.role === 'assistant')
+              next[next.length - 1] = {
+                ...last,
+                content: last.content + chunk,
+              };
+            return next;
+          });
+        },
+        request.controller.signal,
+      );
       window.setTimeout(() => void refreshSessions(), 500);
     } catch (sendError) {
+      if (sendError instanceof Error && sendError.name === 'AbortError') {
+        return { status: 'stopped', session_id: request.sessionId };
+      }
+      if (activeSessionIdRef.current !== request.sessionId) throw sendError;
       setError(getErrorMessage(sendError));
       setMessages((current) =>
         current.filter(
@@ -482,7 +556,10 @@ function ChatWorkspace({
       );
       throw sendError;
     } finally {
-      setSending(false);
+      if (streamRequestRef.current === request) {
+        streamRequestRef.current = null;
+        setSending(false);
+      }
     }
 
     return { status: 'completed', session_id: session.session_id };
@@ -500,13 +577,17 @@ function ChatWorkspace({
   }
 
   async function handleClear() {
-    if (!activeSession) return;
+    if (!activeSession || streamRequestRef.current) return;
+    const sessionId = activeSession.session_id;
     try {
       await clearMessages(activeSession);
+      if (activeSessionIdRef.current !== sessionId) return;
+      streamGenerationRef.current += 1;
       setMessages([]);
       setError('');
     } catch (clearError) {
-      setError(getErrorMessage(clearError));
+      if (activeSessionIdRef.current === sessionId)
+        setError(getErrorMessage(clearError));
     }
   }
 
@@ -518,7 +599,7 @@ function ChatWorkspace({
       );
       setSessions(remaining);
       if (activeSession?.session_id === session.session_id)
-        setActiveSession(remaining[0] ?? null);
+        activateSession(remaining[0] ?? null);
       setError('');
     } catch (deleteError) {
       setError(getErrorMessage(deleteError));
@@ -676,7 +757,7 @@ function ChatWorkspace({
                   <button
                     className="min-w-0 flex-1 px-3 py-3 text-left"
                     onClick={() => {
-                      setActiveSession(session);
+                      activateSession(session);
                       setSidebarOpen(false);
                     }}
                   >
@@ -802,7 +883,9 @@ function ChatWorkspace({
                   <Button
                     variant="ghost"
                     size="icon"
-                    disabled={!activeSession || messages.length === 0}
+                    disabled={
+                      !activeSession || messages.length === 0 || sending
+                    }
                     aria-label="清空对话"
                   />
                 }

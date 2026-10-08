@@ -35,7 +35,9 @@ export type LlmProfileInput = {
 
 export type LlmProfiles = {
   active: string;
-  profiles: Array<Omit<LlmProfileInput, 'api_key'> & { key_hint: string }>;
+  profiles: Array<
+    Omit<LlmProfileInput, 'api_key'> & { key_hint: string; read_only?: boolean }
+  >;
 };
 
 export type Session = {
@@ -234,9 +236,11 @@ export async function streamMessage(
   session: Session,
   content: string,
   onChunk: (content: string) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/chatbot/chat/stream`, {
     method: 'POST',
+    signal,
     headers: {
       Authorization: `Bearer ${session.token.access_token}`,
       'Content-Type': 'application/json',
