@@ -43,7 +43,7 @@ After 503 `holding_import_decision_failed_check_status` or 504 `holding_import_d
 
 ## Migration and validation
 
-Migration `a62d8b409e15` adds nullable `holding_import.chat_session_id` and its index; existing ordinary imports remain NULL. The development database has been upgraded. Migrate other environments with Alembic and restart the backend before use. Tool set version is `v3`; system prompt version is `fund-agent-v5`.
+Migration `a62d8b409e15` adds nullable `holding_import.chat_session_id` and its index; existing ordinary imports remain NULL. The development database has been upgraded. Migrate other environments with Alembic and restart the backend before use. Current tool and prompt versions are defined by their respective module constants.
 
 Tests exercise actual LangGraph interruptions/resumption, streaming cards, checkpoint recovery, ownership/session isolation, stale-review rejection, plain-chat refusal, repeat/concurrent decisions, retry after resume failure, and upload validation. Separate PostgreSQL tests run inside an outer rollback transaction and verify full rollback on mid-batch failure and idempotent audit writes. No real chat model is called by these tests.
 

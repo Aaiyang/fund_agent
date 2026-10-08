@@ -66,7 +66,7 @@
 
 ## 迁移和验证
 
-迁移 `a62d8b409e15` 给 `holding_import` 增加可空 `chat_session_id` 及索引；已有普通导入保持 NULL。开发数据库已升级。其他环境运行 `APP_ENV=<环境> ... alembic upgrade head` 后重启后端。工具集版本为 `v3`，系统提示版本为 `fund-agent-v5`。
+迁移 `a62d8b409e15` 给 `holding_import` 增加可空 `chat_session_id` 及索引；已有普通导入保持 NULL。开发数据库已升级。其他环境运行 `APP_ENV=<环境> ... alembic upgrade head` 后重启后端。工具集与系统提示词的当前版本以注册表及提示词模块常量为准。
 
 验证包括真实 LangGraph 的人工中断/恢复、流式卡片、刷新恢复、归属隔离、旧指纹拒绝、普通聊天拒绝确认、重复与并发决策、恢复失败重试、有效及无效图片上传。另用 PostgreSQL 回滚事务验证中途失败没有部分持仓或流水，以及重复确认的幂等性。自动测试不调用真实聊天模型。
 
