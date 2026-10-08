@@ -45,7 +45,8 @@ function displayWidth(text: string): number {
 
 function columnWidth(rows: string[][], index: number): number {
   const widest = rows.reduce((max, row) => Math.max(max, displayWidth(row[index] ?? '')), 0);
-  return Math.min(220, Math.max(56, widest * 6.6 + 18));
+  // 上限压到 180：再宽一张四列表就放不下，末列只能露半截，不如让它换行。
+  return Math.min(180, Math.max(56, widest * 6.6 + 18));
 }
 
 function inlineParts(raw: string): Inline[] {
@@ -179,9 +180,9 @@ function parseBlocks(content: string): Block[] {
   return blocks;
 }
 
-function InlineText({ parts, color, cell = false }: { parts: Inline[]; color: string; cell?: boolean }) {
+function InlineText({ parts, color, cell = false, selectable = false }: { parts: Inline[]; color: string; cell?: boolean; selectable?: boolean }) {
   return (
-    <Text style={{ ...(cell ? CELL : BASE), color }}>
+    <Text selectable={selectable} style={{ ...(cell ? CELL : BASE), color }}>
       {parts.map((part, index) => (
         <Text
           key={index}
@@ -299,10 +300,13 @@ export function MarkdownText({ content, color = theme.text }: { content: string;
         if (block.kind === 'table') {
           return <TableBlock key={index} header={block.header} rows={block.rows} />;
         }
+        // 段落走行内解析：这里以前直接吐原文，所以 **加粗** 的星号会露在界面上。
         return (
-          <Text key={index} style={{ ...BASE, color }} selectable>
-            {block.text}
-          </Text>
+          <View key={index} style={{ gap: 2 }}>
+            {block.text.split('\n').map((line, lineIndex) => (
+              <InlineText key={lineIndex} parts={inlineParts(line)} color={color} selectable />
+            ))}
+          </View>
         );
       })}
     </View>

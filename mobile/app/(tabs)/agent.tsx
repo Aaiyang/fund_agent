@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
 
-import { EmptyState, ErrorState, LoadingState, describeError } from '@/components/states';
+import { ErrorState, LoadingState, describeError } from '@/components/states';
 import { AgentSessionsPanel } from '@/components/AgentSessionsPanel';
 import { ImportReviewCard } from '@/components/ImportReviewCard';
 import { MarkdownText } from '@/components/MarkdownText';
@@ -14,6 +14,7 @@ import { useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
 import { useDecideChatImport, usePendingChatAction, useUploadChatScreenshots } from '@/hooks/useChatImport';
 import { useFundDetail } from '@/hooks/useFunds';
+import { useLlmProfiles } from '@/hooks/useLlmProfiles';
 import { useAccounts } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
@@ -27,34 +28,47 @@ function attachmentFallback(attachments: Attachment[]): string {
   return `我刚上传了 ${count} 张图片（持仓截图导入通道）`;
 }
 
-function Bubble({ role, content, streaming, failed, onRetry }: {
+/** 用户那一句的底色：DeepSeek 式的浅蓝，不用实心蓝是因为白字在浅背景上读不动。 */
+const USER_BUBBLE = 'rgba(37, 99, 235, 0.10)';
+
+const SUGGESTIONS = ['我的持仓今天怎么样？', '帮我把自选里的基金排个序', '对比一下我持有的两只 QDII'];
+
+/**
+ * 一条消息。借 DeepSeek 的排版：助手的回答不套气泡，直接铺在页面上，
+ * 只有用户那一句是右侧一块浅色——长回答读起来不像在被逐条"回话"。
+ */
+function Message({ role, content, streaming, failed, onRetry, label }: {
   role: string;
   content: string;
   streaming?: boolean;
   failed?: string;
   onRetry?: () => void;
+  label?: string;
 }) {
-  const mine = role === 'user';
-  return (
-    <View
-      style={{
-        alignSelf: mine ? 'flex-end' : 'flex-start',
-        maxWidth: '86%',
-        marginBottom: 10,
-        backgroundColor: mine ? theme.primary : theme.surface,
-        borderRadius: theme.radius,
-        borderWidth: mine ? 0 : 1,
-        borderColor: theme.border,
-        padding: 12,
-      }}
-    >
-      {mine ? (
-        <Text style={{ fontSize: 15, lineHeight: 22, color: '#FFFFFF' }} selectable>
+  if (role === 'user') {
+    return (
+      <View
+        style={{
+          alignSelf: 'flex-end',
+          maxWidth: '86%',
+          marginBottom: 16,
+          backgroundColor: USER_BUBBLE,
+          borderRadius: 16,
+          paddingHorizontal: 14,
+          paddingVertical: 9,
+        }}
+      >
+        <Text style={{ fontSize: 15, lineHeight: 23, color: theme.text }} selectable>
           {content}
         </Text>
-      ) : content ? (
-        <MarkdownText content={content} />
-      ) : streaming ? (
+      </View>
+    );
+  }
+  return (
+    <View style={{ marginBottom: 20 }}>
+      {label ? <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 6 }}>{label}</Text> : null}
+      {content ? <MarkdownText content={content} /> : null}
+      {streaming && !content ? (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <ActivityIndicator color={theme.primary} size="small" />
           <Text style={{ fontSize: 14, color: theme.textMuted, marginLeft: 8 }}>正在思考…</Text>
@@ -113,6 +127,10 @@ export default function AgentScreen() {
   const pending = usePendingChatAction(sessionId);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const canSend = !uploading && (Boolean(draft.trim()) || attachments.length > 0);
+  // 回答上面标一句"是谁说的"：档案名是用户自己起的，标的是它底下那个模型号。
+  const profiles = useLlmProfiles();
+  const assistantLabel = profiles.data?.profiles.find((each) => each.name === profiles.data?.active)?.model;
 
   /** 顶部导航选中的账户优先；汇总视图下落到第一个账户（与导入页同一口径）。 */
   function targetAccountId(): number | null {
@@ -232,21 +250,39 @@ export default function AgentScreen() {
         ) : (
           <ScrollView
             ref={scroller}
-            contentContainerStyle={{ padding: theme.gap, paddingBottom: 16 }}
+            contentContainerStyle={{ padding: theme.gap, paddingTop: 16, paddingBottom: 16 }}
             keyboardShouldPersistTaps="handled"
             onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
           >
             {!chat.turns.length ? (
-              <EmptyState title="问点什么都行" hint="可以问我的持仓、我的自选、某一只基金，或者让它对比两只。" />
+              <View style={{ paddingTop: 36 }}>
+                <Text style={{ fontSize: 21, fontWeight: '700', color: theme.text, textAlign: 'center' }}>你好，我是基金助手</Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: theme.textMuted, textAlign: 'center', marginTop: 8, paddingHorizontal: 16 }}>
+                  可以问我的持仓、我的自选、某一只基金，{'\n'}或者让它对比两只。
+                </Text>
+                <View style={{ alignItems: 'center', marginTop: 22, gap: 8 }}>
+                  {SUGGESTIONS.map((item) => (
+                    <Pressable
+                      key={item}
+                      accessibilityRole="button"
+                      onPress={() => setDraft(item)}
+                      style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface }}
+                    >
+                      <Text style={{ fontSize: 14, color: theme.textMuted }}>{item}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
             ) : null}
             {chat.turns.map((turn, index) => (
-              <Bubble
+              <Message
                 key={`${index}-${turn.role}`}
                 role={turn.role}
                 content={turn.content}
                 streaming={turn.state === 'streaming'}
                 failed={turn.state === 'failed' ? turn.error : undefined}
                 onRetry={chat.retry}
+                label={turn.role === 'assistant' ? assistantLabel : undefined}
               />
             ))}
             {problem ? <Text style={{ fontSize: 13, color: theme.danger, marginBottom: 8 }}>{problem}</Text> : null}
@@ -259,93 +295,101 @@ export default function AgentScreen() {
           </View>
         ) : null}
 
-        {attachments.length ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.gap, paddingTop: 8 }}>
-            {attachments.map((item) => (
-              <View
-                key={item.key}
-                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingLeft: 10, paddingVertical: 4, marginRight: 8, marginBottom: 4 }}
-              >
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>图片 {item.images.length} 张</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="不带这个附件" hitSlop={8} disabled={uploading} onPress={() => setAttachments((prev) => prev.filter((each) => each.key !== item.key))}>
-                  <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 6 }}>✕</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
         <View
           style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
             backgroundColor: theme.surface,
             borderTopWidth: 1,
             borderTopColor: theme.border,
             paddingHorizontal: theme.gap,
-            paddingVertical: 8,
+            paddingTop: 8,
+            paddingBottom: Platform.OS === 'web' ? 12 : 20,
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="添加附件"
-            hitSlop={10}
-            onPress={() => void pickAttachments()}
-            disabled={uploading || chat.sending}
-            style={{ marginRight: 8, paddingVertical: 10, opacity: uploading || chat.sending ? 0.5 : 1 }}
-          >
-            {uploading ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.textMuted} size={20} />
-            )}
-          </Pressable>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={attachments.length ? '想问它什么都行，可以只发附件' : contextCode ? `问问 ${contextCode}…` : '想问什么都行'}
-            placeholderTextColor={theme.textFaint}
-            maxLength={3000}
-            multiline
-            editable={!chat.sending}
-            onSubmitEditing={() => void ask(draft)}
-            returnKeyType="send"
-            blurOnSubmit={false}
+          {attachments.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8, gap: 8 }}>
+              {attachments.map((item) => (
+                <View
+                  key={item.key}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.background, borderRadius: 999, paddingLeft: 10, paddingVertical: 4 }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>图片 {item.images.length} 张</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="不带这个附件" hitSlop={8} disabled={uploading} onPress={() => setAttachments((prev) => prev.filter((each) => each.key !== item.key))}>
+                    <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 6 }}>✕</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <View
             style={{
-              flex: 1,
-              maxHeight: 112,
-              minHeight: 40,
+              flexDirection: 'row',
+              alignItems: 'flex-end',
+              backgroundColor: theme.background,
               borderWidth: 1,
               borderColor: theme.border,
-              borderRadius: 10,
-              paddingHorizontal: 12,
-              paddingVertical: 9,
-              fontSize: 15,
-              color: theme.text,
-              backgroundColor: theme.background,
-              textAlignVertical: 'top',
+              borderRadius: 22,
+              padding: 6,
             }}
-          />
-          {chat.sending ? (
+          >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="停止生成"
-              onPress={chat.stop}
-              style={{ marginLeft: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: theme.danger }}
+              accessibilityLabel="添加附件"
+              hitSlop={10}
+              onPress={() => void pickAttachments()}
+              disabled={uploading || chat.sending}
+              style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', opacity: uploading || chat.sending ? 0.4 : 1 }}
             >
-              <Text style={{ fontSize: 15, color: theme.danger, fontWeight: '600' }}>停止</Text>
+              {uploading ? (
+                <ActivityIndicator size="small" color={theme.primary} />
+              ) : (
+                <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.textMuted} size={19} />
+              )}
             </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="发送"
-              disabled={uploading || (!draft.trim() && !attachments.length)}
-              onPress={() => void ask(draft)}
-              style={{ marginLeft: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, backgroundColor: theme.primary, opacity: uploading || (!draft.trim() && !attachments.length) ? 0.45 : 1 }}
-            >
-              <Text style={{ fontSize: 15, color: '#FFFFFF', fontWeight: '600' }}>{uploading ? '上传中' : '发送'}</Text>
-            </Pressable>
-          )}
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={attachments.length ? '想问它什么都行，可以只发附件' : contextCode ? `问问 ${contextCode}…` : '想问什么都行'}
+              placeholderTextColor={theme.textFaint}
+              maxLength={3000}
+              multiline
+              onSubmitEditing={() => void ask(draft)}
+              returnKeyType="send"
+              blurOnSubmit={false}
+              style={{
+                flex: 1,
+                maxHeight: 112,
+                minHeight: 34,
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                fontSize: 15,
+                lineHeight: 22,
+                color: theme.text,
+                backgroundColor: 'transparent',
+                textAlignVertical: 'top',
+              }}
+            />
+            {chat.sending ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="停止生成"
+                onPress={chat.stop}
+                style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.primary }}
+              >
+                <SymbolView name={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} tintColor="#FFFFFF" size={15} />
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="发送"
+                disabled={!canSend}
+                onPress={() => void ask(draft)}
+                style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginLeft: 6, backgroundColor: canSend ? theme.primary : theme.border }}
+              >
+                <SymbolView name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} tintColor="#FFFFFF" size={17} />
+              </Pressable>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
       {sessionsOpen ? (
