@@ -1,43 +1,17 @@
 import { SymbolView } from 'expo-symbols';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
 
 import { EmptyState, ErrorState, LoadingState, describeError } from '@/components/states';
 import { MarkdownText } from '@/components/MarkdownText';
-import { Chip, Screen } from '@/components/ui';
+import { Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useClearAgentMessages, useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
 import { useFundDetail } from '@/hooks/useFunds';
-import { useLlmProfiles, useSwitchLlmProfile } from '@/hooks/useLlmProfiles';
 import { useUiStore } from '@/stores/ui';
 import { confirmAction } from '@/utils/confirm';
-
-/** 模型档案条：切换是服务端全局的，Web 端会跟着一起变。 */
-function ModelStrip() {
-  const profiles = useLlmProfiles();
-  const switchProfile = useSwitchLlmProfile();
-  const items = profiles.data?.profiles ?? [];
-  if (!items.length) return null;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center' }}>
-        {items.map((profile) => (
-          <Chip
-            key={profile.name}
-            label={profile.name}
-            active={profiles.data?.active === profile.name}
-            onPress={() => switchProfile.mutate(profile.name)}
-          />
-        ))}
-      </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="模型设置" hitSlop={10} onPress={() => router.push('/llm-settings')}>
-        <SymbolView name={{ ios: 'gear', android: 'settings', web: 'settings' }} tintColor={theme.textMuted} size={18} />
-      </Pressable>
-    </View>
-  );
-}
 
 function Bubble({ role, content, streaming, failed, onRetry }: {
   role: string;
@@ -135,10 +109,7 @@ export default function AgentScreen() {
   }
 
   return (
-    <Screen
-      scroll={false}
-      pinned={<ModelStrip />}
-    >
+    <Screen scroll={false}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={{ flexDirection: 'row', paddingHorizontal: theme.gap, paddingTop: theme.gap }}>
           {contextCode ? (
