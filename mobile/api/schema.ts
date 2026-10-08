@@ -273,6 +273,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chatbot/holding-imports/screenshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Holding Screenshots
+         * @description 聊天图片上传：目标账户属于当前用户，创建识别草稿并绑定当前会话.
+         */
+        post: operations["upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/pending-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pending Action
+         * @description 客户端刷新/重连时恢复待复核卡，并显示最新草稿.
+         */
+        get: operations["get_pending_action_api_v1_chatbot_pending_action_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/holding-imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chat Holding Import
+         * @description 供两个客户端轮询进度、展示完整识别结果.
+         */
+        get: operations["get_chat_holding_import_api_v1_chatbot_holding_imports__import_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/holding-imports/{import_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Holding Import
+         * @description 人工确认/取消是独立 HTTP 操作；先校验真实中断，再应用草稿并恢复 Agent.
+         */
+        post: operations["decide_holding_import_api_v1_chatbot_holding_imports__import_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chatbot/chat": {
         parameters: {
             query?: never;
@@ -1533,6 +1613,11 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post */
+        Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post: {
+            /** Files */
+            files: string[];
+        };
         /**
          * CandleExternalBar
          * @description 一根 OHLCV K 线；``volume`` 沿用行情自身的单位.
@@ -1580,6 +1665,8 @@ export interface components {
              * @description List of messages in the conversation
              */
             messages: components["schemas"]["ChatInputMessage"][];
+            /** Holding Import Ids */
+            holding_import_ids?: string[];
         };
         /**
          * ChatResponse
@@ -1600,6 +1687,7 @@ export interface components {
              * @description List of messages in the conversation
              */
             messages: components["schemas"]["Message"][];
+            pending_action?: components["schemas"]["HoldingImportReview"] | null;
         };
         /**
          * CompanyExternalProfile
@@ -2003,6 +2091,82 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HoldingImportDecision
+         * @description 仅由人工界面提交，不是 LLM 工具参数或普通聊天消息.
+         */
+        HoldingImportDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "confirm" | "cancel";
+            /** Interrupt Id */
+            interrupt_id: string;
+            /** Review Digest */
+            review_digest: string;
+        };
+        /**
+         * HoldingImportDecisionResponse
+         * @description 人工操作结果由数据库确定，客户端不依赖模型生成的成功描述.
+         */
+        HoldingImportDecisionResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /**
+             * Messages
+             * @description List of messages in the conversation
+             */
+            messages: components["schemas"]["Message"][];
+            pending_action?: components["schemas"]["HoldingImportReview"] | null;
+            /** Import Id */
+            import_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "APPLIED" | "CANCELLED";
+            /** Applied */
+            applied: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /**
+         * HoldingImportReview
+         * @description 结构化 HITL 卡片，图 checkpoint 保存它，客户端刷新可恢复.
+         */
+        HoldingImportReview: {
+            /**
+             * Kind
+             * @default holding_import_review
+             * @constant
+             */
+            kind?: "holding_import_review";
+            /**
+             * Interrupt Id
+             * @default
+             */
+            interrupt_id?: string;
+            /** Import Id */
+            import_id: string;
+            /** Account Id */
+            account_id: number;
+            /** Image Count */
+            image_count: number;
+            /** Review Digest */
+            review_digest: string;
+            /** Items */
+            items: components["schemas"]["ImportItemOut"][];
+            /**
+             * Notice
+             * @default 确认后按基金覆盖此账户的持仓快照并记录调整流水；未出现在截图中的其他持仓不会删除。
+             */
+            notice?: string;
         };
         /**
          * ImportCandidate
@@ -2467,6 +2631,19 @@ export interface components {
             average_price?: number | null;
             /** Trade Date */
             trade_date?: string | null;
+        };
+        /**
+         * PendingActionResponse
+         * @description 查询当前会话仍等待人工操作的复核卡片.
+         */
+        PendingActionResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            pending_action?: components["schemas"]["HoldingImportReview"] | null;
         };
         /**
          * PortfolioSummary
@@ -3670,6 +3847,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionResponse"][];
+                };
+            };
+        };
+    };
+    upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post: {
+        parameters: {
+            query: {
+                account_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenshotImportAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pending_action_api_v1_chatbot_pending_action_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingActionResponse"];
+                };
+            };
+        };
+    };
+    get_chat_holding_import_api_v1_chatbot_holding_imports__import_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_holding_import_api_v1_chatbot_holding_imports__import_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoldingImportDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingImportDecisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

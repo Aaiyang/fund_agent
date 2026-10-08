@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChatMessage, ChatStreamError } from '@/api/chatStream';
 import { queryKeys } from '@/api/queries';
 import { ensureSessionToken, useAgentMessages } from '@/hooks/useAgent';
+import type { ChatImportReview } from '@/hooks/useChatImport';
 import type { ChatMessage } from '@/hooks/useAgent';
 
 export type ChatTurn = ChatMessage & {
@@ -21,7 +22,15 @@ export type ChatTurn = ChatMessage & {
   error?: string;
 };
 
-type Overlay = { sessionId: string; question: string; answer: string; state: ChatTurn['state']; error?: string };
+type Overlay = {
+  sessionId: string;
+  question: string;
+  answer: string;
+  state: ChatTurn['state'];
+  error?: string;
+  /** 这一轮带出去的截图批次，失败后「重试」要按同一批重发。 */
+  importIds: string[];
+};
 
 export function useAgentChat(input: {
   sessionId: string | null;
@@ -34,18 +43,20 @@ export function useAgentChat(input: {
   // useQuery 的结果对象每次渲染都是新的，依赖里只放解构出来的 refetch。
   const { refetch: refetchHistory } = history;
   const [overlay, setOverlay] = useState<Overlay | null>(null);
+  // Agent 走到人工复核时由流里带回来的一张卡片；它只能由 decision 端点消解。
+  const [review, setReview] = useState<ChatImportReview | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, importIds: string[] = []) => {
       if (controller.current) throw new Error('上一条还在生成中');
       const content = text.trim();
       if (!content) throw new Error('要说点什么');
 
       const active = await ensureSession();
       const token = await ensureSessionToken(client, active);
-      setOverlay({ sessionId: active, question: content, answer: '', state: 'streaming' });
+      setOverlay({ sessionId: active, question: content, answer: '', state: 'streaming', importIds });
       const abort = new AbortController();
       controller.current = abort;
 
@@ -55,12 +66,14 @@ export function useAgentChat(input: {
         await streamChatMessage({
           token,
           text: content,
+          holdingImportIds: importIds,
           signal: abort.signal,
           onDelta: (delta) => setOverlay((prev) => (
             prev?.sessionId === active && !abort.signal.aborted
               ? { ...prev, answer: prev.answer + delta }
               : prev
           )),
+          onPendingAction: setReview,
         });
       } catch (error) {
         if ((error as Error).name === 'AbortError') stopped = true;
@@ -95,7 +108,7 @@ export function useAgentChat(input: {
     const question = current?.state === 'failed' ? current.question : null;
     if (!question) return;
     setOverlay(null);
-    void send(question);
+    void send(question, current?.importIds ?? []);
   }, [current, send]);
 
   const turns: ChatTurn[] = [
@@ -118,6 +131,9 @@ export function useAgentChat(input: {
     loadingHistory: Boolean(sessionId) && history.isPending,
     historyError: history.isError && history.data === undefined ? history.error : null,
     retryHistory: () => void history.refetch(),
+    review,
+    /** 刷新后要把服务端还挂着的复核卡片灌进来；决策完成后置 null。 */
+    setReview,
     history,
     send,
     stop,

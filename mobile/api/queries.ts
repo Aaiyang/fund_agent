@@ -53,6 +53,9 @@ export const queryKeys = {
 
   agentSessions: ['agent', 'sessions'] as const,
   agentMessages: (sessionId: string | null) => ['agent', 'messages', sessionId] as const,
+  chatImports: ['chat', 'imports'] as const,
+  chatImport: (importId: string | null) => ['chat', 'imports', importId] as const,
+  chatPendingAction: ['chat', 'pending-action'] as const,
 
   llmProfiles: ['llm', 'profiles'] as const,
   llmModels: (baseUrl: string) => ['llm', 'models', baseUrl] as const,

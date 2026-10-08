@@ -386,6 +386,197 @@
         ]
       }
     },
+    "/api/v1/chatbot/holding-imports/screenshots": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Upload Holding Screenshots",
+        "description": "聊天图片上传：目标账户属于当前用户，创建识别草稿并绑定当前会话.",
+        "operationId": "upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenshotImportAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chatbot/pending-action": {
+      "get": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Get Pending Action",
+        "description": "客户端刷新/重连时恢复待复核卡，并显示最新草稿.",
+        "operationId": "get_pending_action_api_v1_chatbot_pending_action_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingActionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chatbot/holding-imports/{import_id}": {
+      "get": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Get Chat Holding Import",
+        "description": "供两个客户端轮询进度、展示完整识别结果.",
+        "operationId": "get_chat_holding_import_api_v1_chatbot_holding_imports__import_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chatbot/holding-imports/{import_id}/decision": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Decide Holding Import",
+        "description": "人工确认/取消是独立 HTTP 操作；先校验真实中断，再应用草稿并恢复 Agent.",
+        "operationId": "decide_holding_import_api_v1_chatbot_holding_imports__import_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldingImportDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingImportDecisionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chatbot/chat": {
       "post": {
         "tags": [
@@ -3579,7 +3770,7 @@
           },
           "amount": {
             "type": "number",
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Amount"
           },
           "frequency": {
@@ -3595,8 +3786,8 @@
           },
           "run_day": {
             "type": "integer",
-            "maximum": 31.0,
-            "minimum": 1.0,
+            "maximum": 31,
+            "minimum": 1,
             "title": "Run Day",
             "description": "每周几（1-7）或每月几号（1-31）",
             "default": 1
@@ -3738,7 +3929,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
@@ -3767,8 +3958,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 31.0,
-                "minimum": 1.0
+                "maximum": 31,
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -3915,6 +4106,23 @@
         ],
         "title": "Body_update_session_name_api_v1_auth_session__session_id__name_patch"
       },
+      "Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post"
+      },
       "CandleExternalBar": {
         "properties": {
           "trade_date": {
@@ -3993,6 +4201,15 @@
             "minItems": 1,
             "title": "Messages",
             "description": "List of messages in the conversation"
+          },
+          "holding_import_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Holding Import Ids"
           }
         },
         "type": "object",
@@ -4017,6 +4234,16 @@
             "type": "array",
             "title": "Messages",
             "description": "List of messages in the conversation"
+          },
+          "pending_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldingImportReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -5063,6 +5290,150 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HoldingImportDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "cancel"
+            ],
+            "title": "Decision"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Interrupt Id"
+          },
+          "review_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Review Digest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "interrupt_id",
+          "review_digest"
+        ],
+        "title": "HoldingImportDecision",
+        "description": "仅由人工界面提交，不是 LLM 工具参数或普通聊天消息."
+      },
+      "HoldingImportDecisionResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "List of messages in the conversation"
+          },
+          "pending_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldingImportReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "import_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Import Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPLIED",
+              "CANCELLED"
+            ],
+            "title": "Status"
+          },
+          "applied": {
+            "type": "integer",
+            "title": "Applied"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "import_id",
+          "status",
+          "applied",
+          "skipped"
+        ],
+        "title": "HoldingImportDecisionResponse",
+        "description": "人工操作结果由数据库确定，客户端不依赖模型生成的成功描述."
+      },
+      "HoldingImportReview": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "holding_import_review",
+            "title": "Kind",
+            "default": "holding_import_review"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "title": "Interrupt Id",
+            "default": ""
+          },
+          "import_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Import Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "image_count": {
+            "type": "integer",
+            "title": "Image Count"
+          },
+          "review_digest": {
+            "type": "string",
+            "title": "Review Digest"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "确认后按基金覆盖此账户的持仓快照并记录调整流水；未出现在截图中的其他持仓不会删除。"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_id",
+          "account_id",
+          "image_count",
+          "review_digest",
+          "items"
+        ],
+        "title": "HoldingImportReview",
+        "description": "结构化 HITL 卡片，图 checkpoint 保存它，客户端刷新可恢复."
+      },
       "ImportCandidate": {
         "properties": {
           "fund_code": {
@@ -5483,7 +5854,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -5495,7 +5866,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -5507,7 +5878,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -5519,7 +5890,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6011,7 +6382,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6023,7 +6394,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6035,7 +6406,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6047,7 +6418,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6174,22 +6545,45 @@
         "title": "MinuteExternalPoint",
         "description": "交易时段内的一个分钟点.\n\n``volume`` 和 ``amount`` 是单分钟的值，由上游的累计量、累计额差分得到；\n``average_price`` 只对个股有意义。单日分时的 ``trade_date`` 保持 None，\n五日序列因为点跨了好几天才要填上."
       },
+      "PendingActionResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "pending_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldingImportReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "PendingActionResponse",
+        "description": "查询当前会话仍等待人工操作的复核卡片."
+      },
       "PortfolioSummary": {
         "properties": {
           "total_market_value": {
             "type": "number",
             "title": "Total Market Value",
-            "default": 0.0
+            "default": 0
           },
           "total_cost": {
             "type": "number",
             "title": "Total Cost",
-            "default": 0.0
+            "default": 0
           },
           "total_profit_loss": {
             "type": "number",
             "title": "Total Profit Loss",
-            "default": 0.0
+            "default": 0
           },
           "total_profit_loss_rate": {
             "anyOf": [
@@ -6205,7 +6599,7 @@
           "daily_profit_loss": {
             "type": "number",
             "title": "Daily Profit Loss",
-            "default": 0.0
+            "default": 0
           },
           "fund_count": {
             "type": "integer",
@@ -6547,7 +6941,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6559,7 +6953,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -6571,7 +6965,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -7308,7 +7702,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
@@ -7321,7 +7715,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"

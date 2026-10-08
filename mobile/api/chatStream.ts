@@ -11,9 +11,15 @@
  */
 
 import { API_BASE_URL, apiError } from '@/api/client';
+import type { ChatImportReview } from '@/hooks/useChatImport';
 
 /** 后端 StreamResponse 的一帧；OpenAPI 里没有这个类型（流式响应没法描述）。 */
-export type ChatStreamChunk = { content?: string; done?: boolean };
+export type ChatStreamChunk = {
+  content?: string;
+  done?: boolean;
+  /** Agent 走到人工复核时会带着它：卡片只能由 HTTP 端点决定，聊天文本不算确认。 */
+  pending_action?: ChatImportReview | null;
+};
 
 /** 服务端把那一次生成的失败原因放在 done 帧的 content 里回传。 */
 export class ChatStreamError extends Error {
@@ -38,18 +44,24 @@ export function takeFrames(pending: string): { frames: string[]; rest: string } 
   return { frames: pieces.filter((frame) => frame.trim()), rest };
 }
 
-function parseFrame(frame: string, onDelta: (delta: string) => void): void {
+function parseFrame(frame: string, handlers: StreamHandlers): void {
   for (const line of frame.split('\n')) {
     if (!line.startsWith(DATA_PREFIX)) continue;
     const chunk = JSON.parse(line.slice(DATA_PREFIX.length)) as ChatStreamChunk;
+    if (chunk.pending_action) handlers.onPendingAction(chunk.pending_action);
     if (chunk.done) {
       // 正常收尾的 done 帧是空的；带内容的那一帧就是服务端的失败原因。
       if (chunk.content) throw new ChatStreamError(chunk.content);
       continue;
     }
-    if (chunk.content) onDelta(chunk.content);
+    if (chunk.content) handlers.onDelta(chunk.content);
   }
 }
+
+type StreamHandlers = {
+  onDelta: (delta: string) => void;
+  onPendingAction: (review: ChatImportReview) => void;
+};
 
 /**
  * 把一句话发给当前会话，边收边回调增量。
@@ -60,10 +72,17 @@ function parseFrame(frame: string, onDelta: (delta: string) => void): void {
 export function streamChatMessage(input: {
   token: string;
   text: string;
+  /** 这一条消息带上的截图批次；后端会校验它们确实属于这个会话。 */
+  holdingImportIds?: string[];
   signal: AbortSignal;
   onDelta: (delta: string) => void;
+  onPendingAction?: (review: ChatImportReview) => void;
 }): Promise<void> {
-  const { token, text, signal, onDelta } = input;
+  const { token, text, holdingImportIds = [], signal } = input;
+  const handlers: StreamHandlers = {
+    onDelta: input.onDelta,
+    onPendingAction: input.onPendingAction ?? (() => undefined),
+  };
 
   return new Promise<void>((resolve, reject) => {
     if (signal.aborted) {
@@ -90,7 +109,7 @@ export function streamChatMessage(input: {
         consumed += rest.length;
         frames.push(rest);
       }
-      for (const frame of frames) parseFrame(frame, onDelta);
+      for (const frame of frames) parseFrame(frame, handlers);
     };
 
     const onAbort = () => xhr.abort();
@@ -121,8 +140,14 @@ export function streamChatMessage(input: {
     };
 
     // 只发这一个问题：历史由服务端的 LangGraph 检查点按会话线程记着，
-    // 整段重发会重复计入上下文。
-    xhr.send(JSON.stringify({ messages: [{ role: 'user', content: text }] }));
+    // 整段重发会重复计入上下文。附件走结构化字段，不塞进正文——工具读的是
+    // `holding_import_ids`，写在文本里它拿不到批次号，还会被后端当成编造的导入。
+    xhr.send(
+      JSON.stringify({
+        messages: [{ role: 'user', content: text }],
+        ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
+      }),
+    );
   });
 }
 
