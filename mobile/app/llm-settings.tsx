@@ -6,10 +6,9 @@
  *    少了它的列表，服务端没有单条删除接口；
  * 2. `api_key` 传空串 = 沿用服务端已存的那把。界面回显的是 `key_hint` 掩码，
  *    明文 Key 只在点"保存"的那一次请求里出门，本地状态也只留刚输入的这一份；
- * 3. 至少保留一个档案，客户端先挡一次，服务端也会 400。
+ * 3. 基础 GLM Flash 档案只读，个人档案可全部删除。
  *
- * 「设为当前」是立刻生效的全局切换，和"保存列表"是两件事：Agent 页与 Web 端
- * 用的是同一个当前档案，不是每条会话各选一个。
+ * 「设为当前」只对当前登录用户生效；同一用户在 Agent 页与 Web 端共享选择。
  */
 
 import { useState } from 'react';
@@ -22,10 +21,10 @@ import type { LlmProfileItem } from '@/hooks/useLlmProfiles';
 import { useLlmProfiles, useSaveLlmProfiles, useSwitchLlmProfile, useVendorModels } from '@/hooks/useLlmProfiles';
 
 /** 列表里的一行档案：keyHint 是给人看的掩码，apiKey 只在本次会话里临时存在。 */
-type Draft = { name: string; model: string; base_url: string; keyHint: string; apiKey: string };
+type Draft = { name: string; model: string; base_url: string; keyHint: string; apiKey: string; readOnly?: boolean };
 
 function toDraft(profile: LlmProfileItem): Draft {
-  return { name: profile.name, model: profile.model, base_url: profile.base_url, keyHint: profile.key_hint ?? '', apiKey: '' };
+  return { name: profile.name, model: profile.model, base_url: profile.base_url, keyHint: profile.key_hint ?? '', apiKey: '', readOnly: profile.read_only };
 }
 
 /** 掩码规则和服务端一致：只露前四位。 */
@@ -139,10 +138,7 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
   }
 
   function remove(index: number) {
-    if (drafts.length <= 1) {
-      setProblem('至少需要保留一个供应商档案');
-      return;
-    }
+    if (drafts[index].readOnly) return;
     setDrafts((prev) => prev.filter((_, position) => position !== index));
     setNotice('已移出列表，还没保存到服务端');
   }
@@ -155,7 +151,7 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
     setProblem(null);
     save.mutate(
       // 没重新输入 Key 的行传空串，意思是"沿用服务端已存的那把"。
-      drafts.map(({ name, model, base_url, apiKey }) => ({ name, model, base_url, api_key: apiKey })),
+      drafts.filter((item) => !item.readOnly).map(({ name, model, base_url, apiKey }) => ({ name, model, base_url, api_key: apiKey })),
       {
         onSuccess: () => setNotice('已保存，立即生效。密钥只保存在服务端。'),
         onError: (error) => setProblem(describeError(error)),
@@ -195,7 +191,7 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
                 ) : null}
               </View>
               <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
-                {item.model} · {item.keyHint ? `Key ${item.keyHint}` : '未配置 Key'}
+                {item.model} · {item.readOnly ? '基础模型' : item.keyHint ? `Key ${item.keyHint}` : '未配置 Key'}
               </Text>
               <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }} numberOfLines={1}>
                 {item.base_url}
@@ -216,12 +212,13 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="编辑这个档案"
+              disabled={item.readOnly}
               hitSlop={8}
               onPress={() => {
                 setEditing(index);
                 setAdding(false);
               }}
-              style={{ paddingHorizontal: 8 }}
+              style={{ paddingHorizontal: 8, opacity: item.readOnly ? 0.35 : 1 }}
             >
               <Text style={{ fontSize: 13, color: theme.textMuted }}>编辑</Text>
             </Pressable>
@@ -229,9 +226,9 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
               accessibilityRole="button"
               accessibilityLabel="删除这个档案"
               hitSlop={8}
-              disabled={drafts.length <= 1}
+              disabled={item.readOnly}
               onPress={() => remove(index)}
-              style={{ paddingHorizontal: 8, opacity: drafts.length <= 1 ? 0.35 : 1 }}
+              style={{ paddingHorizontal: 8, opacity: item.readOnly ? 0.35 : 1 }}
             >
               <Text style={{ fontSize: 13, color: theme.danger }}>删除</Text>
             </Pressable>
@@ -262,7 +259,7 @@ function ProfileList({ initial, activeName }: { initial: Draft[]; activeName: st
         {problem ? <Text style={{ fontSize: 13, color: theme.danger, marginBottom: 10 }}>{problem}</Text> : null}
         <Button label="保存到服务端" loading={save.isPending} onPress={saveAll} />
         <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 8, lineHeight: 18 }}>
-          保存后立即生效；API Key 只存在服务端，本机不留。整份列表会被替换，删除档案也一样要点保存才落地。
+          个人模型仅对当前账户生效。默认 GLM Flash 可随时切回；删除个人档案后也需要保存。
         </Text>
       </Card>
     </>

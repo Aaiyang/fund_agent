@@ -2,8 +2,8 @@
  * 模型供应商档案：列表、整份保存、切换、以及探测某家有哪些模型。
  *
  * 三个写接口都回同一个 `LlmProfilesResponse`（active + profiles），所以一个
- * query key 就能把三种操作全部失效掉。档案是**服务端全局**的：这里切换一次，
- * Web 端和 Agent 用的都是这一个当前档案，不是每条会话各自选一个。
+ * query key 就能把三种操作全部失效掉。档案和当前选择按登录用户隔离，
+ * 同一个用户在 Web 和 Mobile 共享个人配置。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

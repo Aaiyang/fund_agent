@@ -284,18 +284,18 @@ export interface paths {
         put?: never;
         /**
          * Chat
-         * @description 用 LangGraph 处理一次对话请求.
+         * @description Process a chat request using LangGraph.
          *
          *     Args:
-         *         request: 用于限流的 FastAPI request 对象。
-         *         chat_request: 带消息内容的对话请求。
-         *         session: 由鉴权 token 解析出的当前会话。
+         *         request: The FastAPI request object for rate limiting.
+         *         chat_request: The chat request containing messages.
+         *         session: The current session from the auth token.
          *
          *     Returns:
-         *         ChatResponse: 处理完成后的对话响应。
+         *         ChatResponse: The processed chat response.
          *
          *     Raises:
-         *         HTTPException: 请求处理过程中出现错误时抛出。
+         *         HTTPException: If there's an error processing the request.
          */
         post: operations["chat_api_v1_chatbot_chat_post"];
         delete?: never;
@@ -315,18 +315,18 @@ export interface paths {
         put?: never;
         /**
          * Chat Stream
-         * @description 用 LangGraph 处理对话请求，结果以流式返回.
+         * @description Process a chat request using LangGraph with streaming response.
          *
          *     Args:
-         *         request: 用于限流的 FastAPI request 对象。
-         *         chat_request: 带消息内容的对话请求。
-         *         session: 由鉴权 token 解析出的当前会话。
+         *         request: The FastAPI request object for rate limiting.
+         *         chat_request: The chat request containing messages.
+         *         session: The current session from the auth token.
          *
          *     Returns:
-         *         StreamingResponse: 对话结果的流式响应。
+         *         StreamingResponse: A streaming response of the chat completion.
          *
          *     Raises:
-         *         HTTPException: 请求处理过程中出现错误时抛出。
+         *         HTTPException: If there's an error processing the request.
          */
         post: operations["chat_stream_api_v1_chatbot_chat_stream_post"];
         delete?: never;
@@ -344,31 +344,31 @@ export interface paths {
         };
         /**
          * Get Session Messages
-         * @description 读取当前会话的全部历史消息.
+         * @description Get all messages for a session.
          *
          *     Args:
-         *         request: 用于限流的 FastAPI request 对象。
-         *         session: 由鉴权 token 解析出的当前会话。
+         *         request: The FastAPI request object for rate limiting.
+         *         session: The current session from the auth token.
          *
          *     Returns:
-         *         ChatResponse: 该会话的全部消息。
+         *         ChatResponse: All messages in the session.
          *
          *     Raises:
-         *         HTTPException: 读取消息过程中出现错误时抛出。
+         *         HTTPException: If there's an error retrieving the messages.
          */
         get: operations["get_session_messages_api_v1_chatbot_messages_get"];
         put?: never;
         post?: never;
         /**
          * Clear Chat History
-         * @description 清空当前会话的全部历史消息.
+         * @description Clear all messages for a session.
          *
          *     Args:
-         *         request: 用于限流的 FastAPI request 对象。
-         *         session: 由鉴权 token 解析出的当前会话。
+         *         request: The FastAPI request object for rate limiting.
+         *         session: The current session from the auth token.
          *
          *     Returns:
-         *         dict: 表示聊天记录已清空的提示。
+         *         dict: A message indicating the chat history was cleared.
          */
         delete: operations["clear_chat_history_api_v1_chatbot_messages_delete"];
         options?: never;
@@ -1192,10 +1192,7 @@ export interface paths {
         put?: never;
         /**
          * Update Llm Settings
-         * @description 用设置页提交的列表整体替换供应商档案.
-         *
-         *     写入服务端的档案文件并热重建注册表；只要原生效档案仍在新列表里就继续生效。
-         *     已存在的档案若 ``api_key`` 留空，则沿用服务端已存的那把 Key。
+         * @description 只替换当前用户的个人档案；空列表表示仅使用基础模型.
          */
         post: operations["update_llm_settings_api_v1_agent_llm_settings_post"];
         delete?: never;
@@ -1215,7 +1212,7 @@ export interface paths {
         put?: never;
         /**
          * Switch Llm Profile
-         * @description 运行时切换生效的 LLM 供应商档案（全局生效，无需重启）.
+         * @description 切换当前用户的模型选择，不影响其他用户及已开始的请求.
          */
         post: operations["switch_llm_profile_api_v1_agent_llm_switch_post"];
         delete?: never;
@@ -1237,8 +1234,7 @@ export interface paths {
          * List Vendor Models
          * @description 查询某厂家 OpenAI 兼容的 ``/models`` 接口.
          *
-         *     让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。调用方传入的
-         *     base_url 会原样转发——本地单用户工作台可以接受，不要把该接口公开暴露出去。
+         *     让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。
          */
         post: operations["list_vendor_models_api_v1_agent_llm_models_post"];
         delete?: never;
@@ -1559,6 +1555,19 @@ export interface components {
             volume?: number | null;
         };
         /**
+         * ChatInputMessage
+         * @description 客户端只允许提交用户消息，系统指令与模型历史由服务端构建.
+         */
+        ChatInputMessage: {
+            /**
+             * Role
+             * @constant
+             */
+            role: "user";
+            /** Content */
+            content: string;
+        };
+        /**
          * ChatRequest
          * @description chat 端点的请求模型.
          *
@@ -1570,7 +1579,7 @@ export interface components {
              * Messages
              * @description List of messages in the conversation
              */
-            messages: components["schemas"]["Message"][];
+            messages: components["schemas"]["ChatInputMessage"][];
         };
         /**
          * ChatResponse
@@ -2286,11 +2295,8 @@ export interface components {
              * @description Unique identifier for this request
              */
             request_id?: string;
-            /**
-             * Models
-             * @default []
-             */
-            models?: string[];
+            /** Models */
+            models: string[];
         };
         /**
          * LlmProfileItem
@@ -2314,6 +2320,11 @@ export interface components {
              * @default
              */
             key_hint?: string;
+            /**
+             * Read Only
+             * @default false
+             */
+            read_only?: boolean;
         };
         /**
          * LlmProfileUpdate
@@ -2351,11 +2362,8 @@ export interface components {
             request_id?: string;
             /** Active */
             active: string;
-            /**
-             * Profiles
-             * @default []
-             */
-            profiles?: components["schemas"]["LlmProfileItem"][];
+            /** Profiles */
+            profiles: components["schemas"]["LlmProfileItem"][];
         };
         /**
          * LlmSettingsUpdate

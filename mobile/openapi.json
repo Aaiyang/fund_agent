@@ -392,7 +392,7 @@
           "Chatbot"
         ],
         "summary": "Chat",
-        "description": "用 LangGraph 处理一次对话请求.\n\nArgs:\n    request: 用于限流的 FastAPI request 对象。\n    chat_request: 带消息内容的对话请求。\n    session: 由鉴权 token 解析出的当前会话。\n\nReturns:\n    ChatResponse: 处理完成后的对话响应。\n\nRaises:\n    HTTPException: 请求处理过程中出现错误时抛出。",
+        "description": "Process a chat request using LangGraph.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    chat_request: The chat request containing messages.\n    session: The current session from the auth token.\n\nReturns:\n    ChatResponse: The processed chat response.\n\nRaises:\n    HTTPException: If there's an error processing the request.",
         "operationId": "chat_api_v1_chatbot_chat_post",
         "requestBody": {
           "content": {
@@ -439,7 +439,7 @@
           "Chatbot"
         ],
         "summary": "Chat Stream",
-        "description": "用 LangGraph 处理对话请求，结果以流式返回.\n\nArgs:\n    request: 用于限流的 FastAPI request 对象。\n    chat_request: 带消息内容的对话请求。\n    session: 由鉴权 token 解析出的当前会话。\n\nReturns:\n    StreamingResponse: 对话结果的流式响应。\n\nRaises:\n    HTTPException: 请求处理过程中出现错误时抛出。",
+        "description": "Process a chat request using LangGraph with streaming response.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    chat_request: The chat request containing messages.\n    session: The current session from the auth token.\n\nReturns:\n    StreamingResponse: A streaming response of the chat completion.\n\nRaises:\n    HTTPException: If there's an error processing the request.",
         "operationId": "chat_stream_api_v1_chatbot_chat_stream_post",
         "requestBody": {
           "content": {
@@ -484,7 +484,7 @@
           "Chatbot"
         ],
         "summary": "Get Session Messages",
-        "description": "读取当前会话的全部历史消息.\n\nArgs:\n    request: 用于限流的 FastAPI request 对象。\n    session: 由鉴权 token 解析出的当前会话。\n\nReturns:\n    ChatResponse: 该会话的全部消息。\n\nRaises:\n    HTTPException: 读取消息过程中出现错误时抛出。",
+        "description": "Get all messages for a session.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    session: The current session from the auth token.\n\nReturns:\n    ChatResponse: All messages in the session.\n\nRaises:\n    HTTPException: If there's an error retrieving the messages.",
         "operationId": "get_session_messages_api_v1_chatbot_messages_get",
         "responses": {
           "200": {
@@ -509,7 +509,7 @@
           "Chatbot"
         ],
         "summary": "Clear Chat History",
-        "description": "清空当前会话的全部历史消息.\n\nArgs:\n    request: 用于限流的 FastAPI request 对象。\n    session: 由鉴权 token 解析出的当前会话。\n\nReturns:\n    dict: 表示聊天记录已清空的提示。",
+        "description": "Clear all messages for a session.\n\nArgs:\n    request: The FastAPI request object for rate limiting.\n    session: The current session from the auth token.\n\nReturns:\n    dict: A message indicating the chat history was cleared.",
         "operationId": "clear_chat_history_api_v1_chatbot_messages_delete",
         "responses": {
           "200": {
@@ -3187,7 +3187,7 @@
           "Agent"
         ],
         "summary": "Update Llm Settings",
-        "description": "用设置页提交的列表整体替换供应商档案.\n\n写入服务端的档案文件并热重建注册表；只要原生效档案仍在新列表里就继续生效。\n已存在的档案若 ``api_key`` 留空，则沿用服务端已存的那把 Key。",
+        "description": "只替换当前用户的个人档案；空列表表示仅使用基础模型.",
         "operationId": "update_llm_settings_api_v1_agent_llm_settings_post",
         "requestBody": {
           "content": {
@@ -3234,7 +3234,7 @@
           "Agent"
         ],
         "summary": "Switch Llm Profile",
-        "description": "运行时切换生效的 LLM 供应商档案（全局生效，无需重启）.",
+        "description": "切换当前用户的模型选择，不影响其他用户及已开始的请求.",
         "operationId": "switch_llm_profile_api_v1_agent_llm_switch_post",
         "requestBody": {
           "content": {
@@ -3281,7 +3281,7 @@
           "Agent"
         ],
         "summary": "List Vendor Models",
-        "description": "查询某厂家 OpenAI 兼容的 ``/models`` 接口.\n\n让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。调用方传入的\nbase_url 会原样转发——本地单用户工作台可以接受，不要把该接口公开暴露出去。",
+        "description": "查询某厂家 OpenAI 兼容的 ``/models`` 接口.\n\n让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。",
         "operationId": "list_vendor_models_api_v1_agent_llm_models_post",
         "requestBody": {
           "content": {
@@ -3579,7 +3579,7 @@
           },
           "amount": {
             "type": "number",
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Amount"
           },
           "frequency": {
@@ -3595,8 +3595,8 @@
           },
           "run_day": {
             "type": "integer",
-            "maximum": 31,
-            "minimum": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
             "title": "Run Day",
             "description": "每周几（1-7）或每月几号（1-31）",
             "default": 1
@@ -3738,7 +3738,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -3767,8 +3767,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 31,
-                "minimum": 1
+                "maximum": 31.0,
+                "minimum": 1.0
               },
               {
                 "type": "null"
@@ -3961,11 +3961,33 @@
         "title": "CandleExternalBar",
         "description": "一根 OHLCV K 线；``volume`` 沿用行情自身的单位."
       },
+      "ChatInputMessage": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "const": "user",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 3000,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatInputMessage",
+        "description": "客户端只允许提交用户消息，系统指令与模型历史由服务端构建."
+      },
       "ChatRequest": {
         "properties": {
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/Message"
+              "$ref": "#/components/schemas/ChatInputMessage"
             },
             "type": "array",
             "minItems": 1,
@@ -5461,7 +5483,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5473,7 +5495,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5485,7 +5507,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5497,7 +5519,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5781,11 +5803,13 @@
               "type": "string"
             },
             "type": "array",
-            "title": "Models",
-            "default": []
+            "title": "Models"
           }
         },
         "type": "object",
+        "required": [
+          "models"
+        ],
         "title": "LlmModelsResponse",
         "description": "POST /agent/llm/models 响应——该 Key 实际可用的模型 id."
       },
@@ -5813,6 +5837,11 @@
             "type": "string",
             "title": "Key Hint",
             "default": ""
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
           }
         },
         "type": "object",
@@ -5876,13 +5905,13 @@
               "$ref": "#/components/schemas/LlmProfileItem"
             },
             "type": "array",
-            "title": "Profiles",
-            "default": []
+            "title": "Profiles"
           }
         },
         "type": "object",
         "required": [
-          "active"
+          "active",
+          "profiles"
         ],
         "title": "LlmProfilesResponse",
         "description": "GET /agent/llm/profiles 响应——档案列表加上当前生效的那一个."
@@ -5982,7 +6011,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5994,7 +6023,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6006,7 +6035,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6018,7 +6047,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6150,17 +6179,17 @@
           "total_market_value": {
             "type": "number",
             "title": "Total Market Value",
-            "default": 0
+            "default": 0.0
           },
           "total_cost": {
             "type": "number",
             "title": "Total Cost",
-            "default": 0
+            "default": 0.0
           },
           "total_profit_loss": {
             "type": "number",
             "title": "Total Profit Loss",
-            "default": 0
+            "default": 0.0
           },
           "total_profit_loss_rate": {
             "anyOf": [
@@ -6176,7 +6205,7 @@
           "daily_profit_loss": {
             "type": "number",
             "title": "Daily Profit Loss",
-            "default": 0
+            "default": 0.0
           },
           "fund_count": {
             "type": "integer",
@@ -6518,7 +6547,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6530,7 +6559,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6542,7 +6571,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -7279,7 +7308,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -7292,7 +7321,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"

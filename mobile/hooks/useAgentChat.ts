@@ -7,7 +7,7 @@
  */
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { streamChatMessage, ChatStreamError } from '@/api/chatStream';
 import { queryKeys } from '@/api/queries';
@@ -35,6 +35,7 @@ export function useAgentChat(input: {
   const { refetch: refetchHistory } = history;
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
 
   const send = useCallback(
     async (text: string) => {
@@ -55,7 +56,11 @@ export function useAgentChat(input: {
           token,
           text: content,
           signal: abort.signal,
-          onDelta: (delta) => setOverlay((prev) => (prev ? { ...prev, answer: prev.answer + delta } : prev)),
+          onDelta: (delta) => setOverlay((prev) => (
+            prev?.sessionId === active && !abort.signal.aborted
+              ? { ...prev, answer: prev.answer + delta }
+              : prev
+          )),
         });
       } catch (error) {
         if ((error as Error).name === 'AbortError') stopped = true;
