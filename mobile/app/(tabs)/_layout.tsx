@@ -3,6 +3,7 @@ import { router, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
 import { theme } from '@/constants/theme';
+import { useCreateAgentSession } from '@/hooks/useAgent';
 import { useUiStore } from '@/stores/ui';
 
 /**
@@ -43,6 +44,28 @@ function SessionsButton() {
         tintColor={open ? theme.primary : theme.textMuted}
         size={22}
       />
+    </Pressable>
+  );
+}
+
+/**
+ * 新建会话。放在表头标题右边，取代原来面板里那个「新建」文字按钮：
+ * 建完直接选中并把面板收起，回到聊天页就是新的一条空白对话。
+ */
+function NewChatButton() {
+  const create = useCreateAgentSession();
+  const setSessionId = useUiStore((state) => state.setAgentSessionId);
+  const setSessionsOpen = useUiStore((state) => state.setAgentSessionsOpen);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="新建会话"
+      hitSlop={10}
+      disabled={create.isPending}
+      onPress={() => create.mutate(undefined, { onSuccess: (session) => { setSessionId(session.session_id); setSessionsOpen(false); } })}
+      style={{ paddingHorizontal: 16, opacity: create.isPending ? 0.5 : 1 }}
+    >
+      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.primary} size={22} />
     </Pressable>
   );
 }
@@ -90,6 +113,7 @@ export default function TabLayout() {
           title: 'Agent',
           headerTitle: 'AI 基金助手',
           headerLeft: () => <SessionsButton />,
+          headerRight: () => <NewChatButton />,
           tabBarIcon: ({ color, size }) => (
             <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} tintColor={color} size={size} />
           ),

@@ -1,10 +1,12 @@
 /**
- * 会话面板：从屏幕右侧滑入，盖在聊天内容上面。
+ * 会话面板：贴在屏幕左边、从左往右滑出，盖在聊天内容上面。
  *
- * 不用 Modal 是因为 `animationType="slide"` 在 iOS/Android/Web 上都是自下而上，
- * 而这里要的是"右滑出来"的抽屉感；用一层绝对定位的遮罩 + Animated.translateX
- * 反而三端一致。宽度按屏宽 78% 取（上限 320），动画位移直接用同一个数算，
- * 省掉 onLayout 量宽那一轮（面板挂载时宽度就该确定）。
+ * 不用 Modal 是因为 `animationType="slide"` 三端都是自下而上，出不来抽屉感；
+ * 一层绝对定位遮罩 + Animated.translateX 反而一致。宽度按屏宽 78% 取（上限 320），
+ * 动画位移用同一个数算，省掉 onLayout 量宽那一轮。
+ *
+ * 面板自己不放标题栏：标题在表头已经有了，再来一条会把两块界面割开。
+ * 关闭靠点遮罩、再点一次表头那个按钮，或直接选中一条会话。
  */
 
 import { SymbolView } from 'expo-symbols';
@@ -12,11 +14,11 @@ import { useEffect, useState } from 'react';
 import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { sessionTitle, type ChatSession } from '@/api/chatSessions';
-import { confirmAction } from '@/utils/confirm';
-import { useAgentSessions, useCreateAgentSession, useDeleteAgentSession } from '@/hooks/useAgent';
-import { theme } from '@/constants/theme';
-import { Badge } from '@/components/ui';
 import { describeError } from '@/components/states';
+import { Badge } from '@/components/ui';
+import { theme } from '@/constants/theme';
+import { useAgentSessions, useDeleteAgentSession } from '@/hooks/useAgent';
+import { confirmAction } from '@/utils/confirm';
 
 const PANEL_WIDTH = Math.min(320, Dimensions.get('window').width * 0.78);
 
@@ -30,28 +32,26 @@ export function AgentSessionsPanel({
   onClose: () => void;
 }) {
   const sessions = useAgentSessions();
-  const create = useCreateAgentSession();
   const remove = useDeleteAgentSession();
   const [problem, setProblem] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
-  // Animated.Value 要跨渲染保持稳定，但用 useRef(...).current 会在渲染期读 ref，
-  // expo 的 react-hooks/refs 规则会拦；useState 的惰性初始化同样只建一次。
-  // 初值 1 = 停在屏幕右侧外，挂载后那个 effect 再把它推到 0，才有"右滑进来"。
+  // Animated.Value 要跨渲染保持稳定，但 useRef(...).current 属于渲染期读 ref，
+  // expo 的 react-hooks/refs 会拦；useState 惰性初始化同样只建一次。
+  // 初值 1 = 停在左边框外，挂载后那个 effect 推到 0，才是"从左往右滑出"。
   const [slide] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     Animated.timing(slide, {
       toValue: closing ? 1 : 0,
       duration: 180,
-      // react-native-web 没有 native driver：开着它动画根本不跑，
-      // start() 的完成回调也不会触发（实测面板关不掉）。
+      // react-native-web 没有 native driver：开着它动画不跑，start() 的回调也不触发。
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [closing, slide]);
 
   useEffect(() => {
     if (!closing) return;
-    // 卸载交给定时器，不依赖动画完成回调：两端都确定性收口，且时长和动画一致。
+    // 卸载交给定时器，时长与动画一致，两端都确定性收口。
     const timer = setTimeout(onClose, 180);
     return () => clearTimeout(timer);
   }, [closing, onClose]);
@@ -65,13 +65,6 @@ export function AgentSessionsPanel({
     dismiss();
   }
 
-  function createAndPick() {
-    create.mutate(undefined, {
-      onSuccess: (session) => pick(session.session_id),
-      onError: (error) => setProblem(describeError(error)),
-    });
-  }
-
   function confirmDelete(session: ChatSession) {
     confirmAction('删除这条会话', `「${sessionTitle(session)}」的全部消息会一起删掉，不可恢复。`, () => {
       remove.mutate(session.session_id, { onError: (error) => setProblem(describeError(error)) });
@@ -82,47 +75,29 @@ export function AgentSessionsPanel({
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="关闭会话列表" onPress={dismiss} style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.35)' }} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="关闭会话列表"
+        onPress={dismiss}
+        style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.35)' }}
+      />
       <Animated.View
         style={{
           position: 'absolute',
           top: 0,
           bottom: 0,
-          right: 0,
+          left: 0,
           width: PANEL_WIDTH,
           backgroundColor: theme.surface,
-          borderLeftWidth: 1,
+          borderRightWidth: 1,
           borderColor: theme.border,
-          transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, PANEL_WIDTH] }) }],
+          transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -PANEL_WIDTH] }) }],
         }}
       >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: theme.gap,
-            paddingTop: theme.gap,
-            paddingBottom: 8,
-            borderBottomWidth: 1,
-            borderColor: theme.border,
-          }}
-        >
-          <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>会话</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable accessibilityRole="button" onPress={createAndPick} disabled={create.isPending} hitSlop={8} style={{ marginRight: 14 }}>
-              <Text style={{ fontSize: 13, color: theme.primary, opacity: create.isPending ? 0.5 : 1 }}>{create.isPending ? '新建中…' : '新建'}</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={dismiss} hitSlop={10}>
-              <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor={theme.textMuted} size={18} />
-            </Pressable>
-          </View>
-        </View>
-
         <ScrollView contentContainerStyle={{ padding: theme.gap }}>
           {sessions.isPending ? <Text style={{ fontSize: 13, color: theme.textMuted }}>加载中…</Text> : null}
           {!sessions.isPending && !items.length ? (
-            <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有会话，点「新建」开始一条。</Text>
+            <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有会话，点右上角的图标新建一条。</Text>
           ) : null}
           {items.map((session) => {
             const active = activeSessionId === session.session_id;
