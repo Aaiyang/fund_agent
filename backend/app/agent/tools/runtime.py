@@ -29,12 +29,14 @@ class ToolRuntimeContext:
     user_id: int
     thread_id: str
     request_id: str
+    user_message_id: str = ""
+    user_message: str = ""
 
 
 _CURRENT_RUNTIME: ContextVar[ToolRuntimeContext | None] = ContextVar("tool_runtime", default=None)
 
 
-def set_tool_runtime(context: ToolRuntimeContext) -> None:
+def set_tool_runtime(context: ToolRuntimeContext | None) -> None:
     """为当前异步任务绑定上下文（子任务会继承）."""
     _CURRENT_RUNTIME.set(context)
 

@@ -120,7 +120,7 @@ def test_tool_registry_order_and_version_stable():
     names_1 = [tool.name for tool in DEFAULT_AGENT_TOOLS]
     names_2 = [tool.name for tool in DEFAULT_AGENT_TOOLS]
     assert names_1 == names_2
-    assert TOOLS_VERSION == "v3"
+    assert TOOLS_VERSION == "v4"
     global_hash_1 = policy.fingerprint({"system": "s", "tools": TOOLS_VERSION})
     global_hash_2 = policy.fingerprint({"system": "s", "tools": TOOLS_VERSION})
     assert global_hash_1 == global_hash_2

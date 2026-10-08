@@ -19,6 +19,7 @@ from app.models.session import Session  # noqa: F401
 from app.models.thread import Thread  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_llm_settings import UserLlmSettings  # noqa: F401
+from app.models.user_persona import UserPersona, UserPersonaHistory, UserPersonaProposal  # noqa: F401
 from app.models.watchlist import Watchlist, WatchlistGroup, WatchlistGroupItem  # noqa: F401
 
 # Alembic 的 Config 对象

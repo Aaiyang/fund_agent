@@ -226,6 +226,7 @@ class Settings:
             "t",
             "yes",
         )
+        self.USER_PERSONA_ENABLED = os.getenv("USER_PERSONA_ENABLED", "true").lower() in ("true", "1", "yes")
         self.LONG_TERM_MEMORY_MODEL = os.getenv("LONG_TERM_MEMORY_MODEL", "gpt-5-nano")
         self.EMBEDDING_PROVIDER = os.getenv("FUND_EMBEDDING_PROVIDER", "openai")
         self.EMBEDDING_BASE_URL = os.getenv(

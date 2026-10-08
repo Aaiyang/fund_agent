@@ -17,6 +17,7 @@ from app.agent.tools.fund import (
     search_funds,
 )
 from app.agent.tools.market import get_market_context
+from app.agent.tools.user_persona import propose_user_profile_update
 from app.agent.tools.portfolio import (
     get_portfolio,
     get_positions,
@@ -25,7 +26,7 @@ from app.agent.tools.portfolio import (
 )
 
 # 工具集版本：仅当工具增删或 Schema 变化时升级（KV Cache 全局前缀组成部分）
-TOOLS_VERSION = "v3"
+TOOLS_VERSION = "v4"
 
 # 基金域
 FUND_TOOLS: list[BaseTool] = [search_funds, get_fund_snapshot, get_fund_history, get_fund_holdings]
@@ -42,7 +43,7 @@ PORTFOLIO_TOOLS: list[BaseTool] = [
 MARKET_TOOLS: list[BaseTool] = [get_market_context]
 
 # 通用系统工具
-SYSTEM_TOOLS: list[BaseTool] = [ask_human, duckduckgo_search_tool, get_calendar]
+SYSTEM_TOOLS: list[BaseTool] = [ask_human, duckduckgo_search_tool, get_calendar, propose_user_profile_update]
 
 DEFAULT_AGENT_TOOLS: list[BaseTool] = [
     *FUND_TOOLS,

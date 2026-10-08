@@ -231,7 +231,7 @@ async def test_provider_retries_only_transient_http_errors(monkeypatch, first_st
 
 
 def test_tool_registered_without_identity_or_url_arguments():
-    assert get_calendar in DEFAULT_AGENT_TOOLS and TOOLS_VERSION == "v3"
+    assert get_calendar in DEFAULT_AGENT_TOOLS and TOOLS_VERSION == "v4"
     assert set(get_calendar.args) == {"start_date", "end_date", "year", "refresh"}
 
 

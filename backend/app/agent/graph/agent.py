@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import replace
 from typing import (
     AsyncGenerator,
     Optional,
@@ -14,6 +15,7 @@ from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     BaseMessage,
+    HumanMessage,
     ToolMessage,
     convert_to_openai_messages,
 )
@@ -66,6 +68,7 @@ from app.core.metrics import (
 )
 from app.services.llm import llm_service
 from app.services.memory import memory_service
+from app.services.user_persona_service import user_persona_service
 from app.agent.context import (
     context_manager,
     dump_messages,
@@ -191,6 +194,7 @@ class LangGraphAgent:
         attachment_tail = ""
         if state.holding_import_ids:
             attachment_tail = "\n# 本轮持仓截图批次\n" + ", ".join(state.holding_import_ids)
+        attachment_tail += await user_persona_service.context(config.get("metadata", {}).get("user_id"))
 
         # 上下文组装策略：structured 走 ContextManager v1（Turn 化 + 去重 + 校验）
         if settings.CONTEXT_STRATEGY == "structured":
@@ -286,17 +290,32 @@ class LangGraphAgent:
         # 上下文变量继承它。身份缺失时优雅降级——由工具自己返回
         # PERMISSION_DENIED，而不是让节点把整个对话打崩。
         try:
-            set_tool_runtime(runtime_from_config(config))
+            runtime = runtime_from_config(config)
+            current_user = next(
+                (message for message in reversed(state.messages) if isinstance(message, HumanMessage)), None
+            )
+            if current_user is not None:
+                runtime = replace(
+                    runtime,
+                    user_message_id=str(current_user.id or ""),
+                    user_message=extract_text_content(current_user.content),
+                )
+            set_tool_runtime(runtime)
         except ToolRuntimeError as e:
+            set_tool_runtime(None)
             logger.warning("tool_runtime_context_missing", error=e.message)
 
         async def _execute_tool(tool_call: dict) -> ToolMessage:
             # Duplicate Tool Guard：执行前阻止当前 Run 内的同参数重复调用
             # （优先阻止而非事后删除历史 ToolMessage，保住配对与缓存）
             tool_history = state.messages[:-1]
-            if tool_call["name"] in {"get_holding_import", "request_holding_import_confirmation"}:
-                # 识别状态会异步改变，用户下一轮追问必须可以重新查询。
-                # 每个用户轮次内仍保留重复调用上限。
+            if tool_call["name"] in {
+                "get_holding_import",
+                "request_holding_import_confirmation",
+                "propose_user_profile_update",
+            }:
+                # 识别状态会异步改变，画像候选也需要按本轮消息取证。
+                # 新用户轮可以重新调用，轮次内仍保留重复调用上限。
                 for index in range(len(tool_history) - 1, -1, -1):
                     if getattr(tool_history[index], "type", None) == "human":
                         tool_history = tool_history[index + 1 :]

@@ -10,6 +10,7 @@ os.environ.setdefault("VALKEY_HOST", "")
 os.environ.setdefault("TASKIQ_REDIS_URL", "")
 os.environ.setdefault("LANGFUSE_TRACING_ENABLED", "false")
 os.environ.setdefault("LONG_TERM_MEMORY_ENABLED", "false")
+os.environ.setdefault("USER_PERSONA_ENABLED", "false")
 os.environ.setdefault("SESSION_NAMING_ENABLED", "false")
 
 
