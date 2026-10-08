@@ -23,8 +23,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.schemas.base import BaseResponse
-from app.services.llm import llm_service, profile_store
-from app.services.llm.registry import LLMRegistry
+from app.services.llm.user_profiles import PersonalProfile, UserProfiles, user_profile_service
 
 router = APIRouter()
 
@@ -43,6 +42,7 @@ class LlmProfileItem(BaseResponse):
     model: str
     base_url: str
     key_hint: str = ""
+    read_only: bool = False
 
 
 class LlmProfilesResponse(BaseResponse):
@@ -86,17 +86,10 @@ class LlmModelsResponse(BaseResponse):
     models: list[str]
 
 
-def _llm_profiles_response() -> LlmProfilesResponse:
-    profiles = [
-        LlmProfileItem(
-            name=str(entry["name"]),
-            model=str(entry["model"]),
-            base_url=str(entry["base_url"]),
-            key_hint=profile_store.key_hint(str(entry["api_key"])),
-        )
-        for entry in LLMRegistry.LLMS
-    ]
-    return LlmProfilesResponse(active=llm_service.active_model_name(), profiles=profiles)
+def _llm_profiles_response(data: UserProfiles) -> LlmProfilesResponse:
+    return LlmProfilesResponse(
+        active=data.active, profiles=[LlmProfileItem(**profile.model_dump()) for profile in data.profiles]
+    )
 
 
 @router.get("/llm/profiles", response_model=LlmProfilesResponse)
@@ -106,8 +99,9 @@ async def list_llm_profiles(
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> LlmProfilesResponse:
     """列出已配置的 LLM 供应商档案以及当前生效的那个."""
-    logger.info("llm_profiles_listed", user_id=identity.user_id, active=llm_service.active_model_name())
-    return _llm_profiles_response()
+    data = await user_profile_service.list_profiles(identity.user_id)
+    logger.info("llm_profiles_listed", user_id=identity.user_id, active=data.active)
+    return _llm_profiles_response(data)
 
 
 @router.post("/llm/settings", response_model=LlmProfilesResponse)
@@ -117,52 +111,19 @@ async def update_llm_settings(
     body: LlmSettingsUpdate,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> LlmProfilesResponse:
-    """用设置页提交的列表整体替换供应商档案.
-
-    写入服务端的档案文件并热重建注册表；只要原生效档案仍在新列表里就继续生效。
-    已存在的档案若提交时留空 API Key，则沿用服务端已存的密钥。
-    """
-    if not body.profiles:
-        raise HTTPException(status_code=400, detail="至少需要保留一个供应商档案")
-
-    saved = profile_store.load_profiles()
-    registry_keys = {str(e["name"]): str(e["api_key"]) for e in LLMRegistry.LLMS}
-    merged: list[dict] = []
-    seen: set[str] = set()
-    for profile in body.profiles:
-        item = {
-            "name": profile.name.strip(),
-            "model": profile.model.strip(),
-            "base_url": profile.base_url.strip(),
-            "api_key": profile.api_key.strip(),
-        }
-        item = dict(profile_store.keep_existing_key(item, saved, registry_keys))
-        if not all(item.values()):
-            missing = "API Key" if item["api_key"] == "" else "必填字段"
-            raise HTTPException(
-                status_code=400,
-                detail=f"档案 '{item['name'] or '?'}' 缺少{missing}（新档案必须提供 API Key）",
-            )
-        if item["name"] in seen:
-            raise HTTPException(status_code=400, detail=f"档案名称重复：{item['name']}")
-        seen.add(item["name"])
-        merged.append(item)
-
-    active_name = llm_service.active_model_name()
+    """只替换当前用户的个人档案；空列表表示仅使用基础模型."""
     try:
-        LLMRegistry.rebuild(merged)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    profile_store.save_profiles(merged)
-    llm_service.refresh_profiles(active_name=active_name)
-
-    logger.info(
-        "llm_settings_updated",
-        user_id=identity.user_id,
-        count=len(merged),
-        active=llm_service.active_model_name(),
-    )
-    return _llm_profiles_response()
+        data = await user_profile_service.save_profiles(
+            identity.user_id,
+            [
+                PersonalProfile(name=p.name, model=p.model, base_url=p.base_url, api_key=p.api_key)
+                for p in body.profiles
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info("llm_settings_updated", user_id=identity.user_id, count=len(body.profiles), active=data.active)
+    return _llm_profiles_response(data)
 
 
 @router.post("/llm/switch", response_model=LlmProfilesResponse)
@@ -172,16 +133,16 @@ async def switch_llm_profile(
     body: LlmSwitchRequest,
     identity: AuthIdentity = Depends(get_current_identity),
 ) -> LlmProfilesResponse:
-    """运行时切换生效的 LLM 供应商档案（全局生效，无需重启）."""
+    """切换当前用户的模型选择，不影响其他用户及已开始的请求."""
     try:
-        llm_service.activate_model(body.name)
+        data = await user_profile_service.switch_profile(identity.user_id, body.name)
         logger.info(
             "llm_profile_switched",
             user_id=identity.user_id,
             session_id=identity.session_id,
             active=body.name,
         )
-        return _llm_profiles_response()
+        return _llm_profiles_response(data)
     except ValueError as e:
         logger.warning("llm_profile_switch_rejected", user_id=identity.user_id, error=str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e

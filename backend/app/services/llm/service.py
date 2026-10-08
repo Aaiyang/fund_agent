@@ -2,6 +2,10 @@
 
 import asyncio
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from collections.abc import Iterator
 from typing import (
     Any,
     Callable,
@@ -32,9 +36,21 @@ from tenacity import (
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.services.llm.registry import LLMRegistry
+from app.services.llm.registry import LLMRegistry, _build_chat_model
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class RequestModels:
+    """单次请求的模型与降级位置，不共享用户选择."""
+
+    profiles: list[dict[str, str]]
+    models: list[Any]
+    index: int = 0
+
+
+_REQUEST_MODELS: ContextVar[RequestModels | None] = ContextVar("request_models", default=None)
 
 
 class LLMService:
@@ -147,10 +163,29 @@ class LLMService:
         Returns:
             Current ``BaseChatModel`` instance or ``None`` if not initialised.
         """
+        scoped = _REQUEST_MODELS.get()
+        if scoped is not None:
+            model = scoped.models[scoped.index]
+            return model.bind_tools(self._bound_tools) if self._bound_tools else model
         return self._llm
+
+    @contextmanager
+    def use_profiles(self, profiles: list[dict[str, str]]) -> Iterator[None]:
+        """冻结认证用户本次请求的配置，离开作用域后恢复原上下文."""
+        if not profiles:
+            raise ValueError("至少需要一个可用模型")
+        models = [_build_chat_model(p["model"], p["api_key"], p["base_url"]) for p in profiles]
+        token = _REQUEST_MODELS.set(RequestModels(profiles=[dict(p) for p in profiles], models=models))
+        try:
+            yield
+        finally:
+            _REQUEST_MODELS.reset(token)
 
     def active_model_name(self) -> str:
         """返回当前默认模型在注册表里的名称."""
+        scoped = _REQUEST_MODELS.get()
+        if scoped is not None:
+            return scoped.profiles[scoped.index]["name"]
         names = LLMRegistry.get_all_names()
         if 0 <= self._current_model_index < len(names):
             return names[self._current_model_index]
@@ -304,6 +339,9 @@ class LLMService:
             ``get_target`` returns ``self._llm`` (tool-bound).
             ``advance`` calls ``_switch_to_next_model`` so bindings persist.
         """
+        scoped = _REQUEST_MODELS.get()
+        if scoped is not None:
+            return await self._call_scoped(messages, scoped, model_name, response_format, model_kwargs)
 
         def _override_target(idx: int) -> Any:
             base = LLMRegistry.get(LLMRegistry.LLMS[idx]["name"], **model_kwargs)
@@ -337,6 +375,43 @@ class LLMService:
             advance = _default_advance
 
         return await self._fallback_loop(messages, start, get_target, advance)
+
+    async def _call_scoped(
+        self,
+        messages: LanguageModelInput,
+        scoped: RequestModels,
+        model_name: str | None,
+        response_format: Type[BaseModel] | None,
+        model_kwargs: dict,
+    ) -> Any:
+        """请求内重试与降级只访问该用户的模型集合，不改变全局服务."""
+        names = [profile["name"] for profile in scoped.profiles]
+        if model_name and model_name not in names:
+            raise ValueError("未找到本次请求的模型")
+        start = names.index(model_name) if model_name else scoped.index
+        one_off = bool(model_name or response_format or model_kwargs)
+        last_error: Exception | None = None
+        for offset in range(len(names)):
+            index = (start + offset) % len(names)
+            profile = scoped.profiles[index]
+            model = (
+                _build_chat_model(profile["model"], profile["api_key"], profile["base_url"], **model_kwargs)
+                if model_kwargs
+                else scoped.models[index]
+            )
+            if response_format:
+                model = model.with_structured_output(response_format)
+            elif not one_off and self._bound_tools:
+                model = model.bind_tools(self._bound_tools)
+            try:
+                result = await self._invoke_with_retry(model, messages)
+                if not one_off:
+                    scoped.index = index
+                return result
+            except OpenAIError as exc:
+                last_error = exc
+                logger.warning("user_model_call_failed", model=profile["name"], error_type=type(exc).__name__)
+        raise RuntimeError("用户模型与基础模型调用均失败") from last_error
 
     async def _fallback_loop(
         self,

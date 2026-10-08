@@ -53,6 +53,19 @@ class Message(BaseModel):
         return v
 
 
+class ChatInputMessage(BaseModel):
+    """客户端只允许提交用户消息，系统指令与模型历史由服务端构建."""
+
+    role: Literal["user"]
+    content: str = Field(..., min_length=1, max_length=3000)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        """沿用输入正文校验，不允许客户端伪造角色."""
+        return Message.validate_content(value)
+
+
 class ChatRequest(BaseModel):
     """chat 端点的请求模型.
 
@@ -60,7 +73,7 @@ class ChatRequest(BaseModel):
         messages: 本次对话的消息列表。
     """
 
-    messages: List[Message] = Field(
+    messages: List[ChatInputMessage] = Field(
         ...,
         description="List of messages in the conversation",
         min_length=1,

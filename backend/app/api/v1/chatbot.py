@@ -24,9 +24,12 @@ from app.models.session import Session
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
+    Message,
     StreamResponse,
 )
 from app.services.session_naming import maybe_name_session
+from app.services.llm import llm_service
+from app.services.llm.user_profiles import user_profile_service
 
 router = APIRouter()
 agent = LangGraphAgent()
@@ -59,12 +62,14 @@ async def chat(
             message_count=len(chat_request.messages),
         )
 
-        if settings.SESSION_NAMING_ENABLED:
-            maybe_name_session(session.id, session.name, chat_request.messages)
-
-        result = await agent.get_response(
-            chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
-        )
+        profiles = await user_profile_service.execution_profiles(session.user_id)
+        messages = [Message(role="user", content=m.content) for m in chat_request.messages]
+        with llm_service.use_profiles(profiles):
+            if settings.SESSION_NAMING_ENABLED:
+                maybe_name_session(session.id, session.name, messages)
+            result = await agent.get_response(
+                messages, session.id, user_id=str(session.user_id), username=session.username
+            )
 
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -101,8 +106,8 @@ async def chat_stream(
             message_count=len(chat_request.messages),
         )
 
-        if settings.SESSION_NAMING_ENABLED:
-            maybe_name_session(session.id, session.name, chat_request.messages)
+        profiles = await user_profile_service.execution_profiles(session.user_id)
+        messages = [Message(role="user", content=m.content) for m in chat_request.messages]
 
         async def event_generator():
             """Generate streaming events.
@@ -114,12 +119,15 @@ async def chat_stream(
                 Exception: If there's an error during streaming.
             """
             try:
-                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
-                    async for chunk in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
-                    ):
-                        response = StreamResponse(content=chunk, done=False)
-                        yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+                with llm_service.use_profiles(profiles):
+                    if settings.SESSION_NAMING_ENABLED:
+                        maybe_name_session(session.id, session.name, messages)
+                    with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
+                        async for chunk in agent.get_stream_response(
+                            messages, session.id, user_id=str(session.user_id), username=session.username
+                        ):
+                            response = StreamResponse(content=chunk, done=False)
+                            yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
 
                 # Send final message indicating completion
                 final_response = StreamResponse(content="", done=True)

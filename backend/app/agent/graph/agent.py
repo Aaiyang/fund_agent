@@ -632,8 +632,6 @@ class LangGraphAgent:
             Exception: 清空过程出错时抛出。
         """
         try:
-            # 会话清空后，下一次对话重建记忆快照
-            self._memory_snapshots.pop(session_id, None)
             # 确保连接池已在当前事件循环中初始化
             conn_pool = await self._get_connection_pool()
             if conn_pool is None:
@@ -641,12 +639,16 @@ class LangGraphAgent:
 
             # 用 pipeline 把所有 DELETE 合并到一次往返
             async with conn_pool.connection() as conn:
-                async with conn.pipeline():
-                    for table in settings.CHECKPOINT_TABLES:
-                        await conn.execute(
-                            sql.SQL("DELETE FROM {} WHERE thread_id = %s").format(sql.Identifier(table)),
-                            (session_id,),
-                        )
+                async with conn.transaction():
+                    async with conn.pipeline():
+                        for table in settings.CHECKPOINT_TABLES:
+                            await conn.execute(
+                                sql.SQL("DELETE FROM {} WHERE thread_id = %s").format(sql.Identifier(table)),
+                                (session_id,),
+                            )
+                        await conn.execute('UPDATE "session" SET context_state = NULL WHERE id = %s', (session_id,))
+                context_manager.forget_thread(session_id)
+                self._memory_snapshots.pop(session_id, None)
                 logger.info(
                     "checkpoint_tables_cleared_for_session",
                     tables=settings.CHECKPOINT_TABLES,

@@ -172,6 +172,10 @@ class Settings:
         self.LLM_PROFILES_FILE = os.getenv(
             "FUND_LLM_PROFILES_FILE", os.path.join(_backend_root, ".llm_profiles.local.json")
         )
+        self.LLM_PROFILE_ENCRYPTION_KEY = os.getenv("FUND_LLM_PROFILE_ENCRYPTION_KEY", "")
+        self.BASIC_LLM_MODEL = os.getenv("FUND_BASIC_LLM_MODEL", "glm-5.3-flash")
+        self.BASIC_LLM_BASE_URL = os.getenv("FUND_BASIC_LLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
+        self.BASIC_LLM_API_KEY = os.getenv("FUND_BASIC_LLM_API_KEY", "")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
         self.DEFAULT_LLM_TEMPERATURE = float(
             os.getenv("FUND_LLM_TEMPERATURE", os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
