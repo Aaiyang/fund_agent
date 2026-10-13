@@ -11,14 +11,14 @@
  */
 
 import { API_BASE_URL, apiError } from '@/api/client';
-import type { ChatImportReview } from '@/hooks/useChatImport';
+import type { ChatPendingAction } from '@/hooks/useChatImport';
 
 /** 后端 StreamResponse 的一帧；OpenAPI 里没有这个类型（流式响应没法描述）。 */
 export type ChatStreamChunk = {
   content?: string;
   done?: boolean;
   /** Agent 走到人工复核时会带着它：卡片只能由 HTTP 端点决定，聊天文本不算确认。 */
-  pending_action?: ChatImportReview | null;
+  pending_action?: ChatPendingAction | null;
 };
 
 /** 服务端把那一次生成的失败原因放在 done 帧的 content 里回传。 */
@@ -48,7 +48,7 @@ function parseFrame(frame: string, handlers: StreamHandlers): void {
   for (const line of frame.split('\n')) {
     if (!line.startsWith(DATA_PREFIX)) continue;
     const chunk = JSON.parse(line.slice(DATA_PREFIX.length)) as ChatStreamChunk;
-    if (chunk.pending_action) handlers.onPendingAction(chunk.pending_action);
+    if (chunk.pending_action || (chunk.done && Object.prototype.hasOwnProperty.call(chunk, 'pending_action'))) handlers.onPendingAction(chunk.pending_action ?? null);
     if (chunk.done) {
       // 正常收尾的 done 帧是空的；带内容的那一帧就是服务端的失败原因。
       if (chunk.content) throw new ChatStreamError(chunk.content);
@@ -60,7 +60,7 @@ function parseFrame(frame: string, handlers: StreamHandlers): void {
 
 type StreamHandlers = {
   onDelta: (delta: string) => void;
-  onPendingAction: (review: ChatImportReview) => void;
+  onPendingAction: (review: ChatPendingAction | null) => void;
 };
 
 /**
@@ -76,7 +76,7 @@ export function streamChatMessage(input: {
   holdingImportIds?: string[];
   signal: AbortSignal;
   onDelta: (delta: string) => void;
-  onPendingAction?: (review: ChatImportReview) => void;
+  onPendingAction?: (review: ChatPendingAction | null) => void;
 }): Promise<void> {
   const { token, text, holdingImportIds = [], signal } = input;
   const handlers: StreamHandlers = {
@@ -113,41 +113,63 @@ export function streamChatMessage(input: {
     };
 
     const onAbort = () => xhr.abort();
-    signal.addEventListener('abort', onAbort);
+    let settled = false;
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const fail = (error: unknown, stop = false) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+      // 先拒绝原始错误，abort 回调不能将它替换成“用户停止生成”。
+      if (stop) xhr.abort();
+    };
 
-    xhr.onprogress = () => drain(false);
+    xhr.onprogress = () => {
+      if (settled || (xhr.status !== 0 && (xhr.status < 200 || xhr.status >= 300))) return;
+      try {
+        drain(false);
+      } catch (error) {
+        // 异步事件回调抛出的异常不会被 Promise 自动捕获。
+        fail(error, true);
+      }
+    };
     xhr.onload = () => {
-      signal.removeEventListener('abort', onAbort);
+      if (settled) return;
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(apiError(xhr.status, xhr.statusText ?? '', xhr.responseText ?? ''));
+        fail(apiError(xhr.status, xhr.statusText ?? '', xhr.responseText ?? ''));
         return;
       }
       try {
         drain(true);
+        settled = true;
+        cleanup();
         resolve();
       } catch (error) {
-        reject(error);
+        fail(error);
       }
     };
     xhr.onerror = () => {
-      signal.removeEventListener('abort', onAbort);
-      reject(new Error('连接中断，这条回答没有生成完'));
+      fail(new Error('连接中断，这条回答没有生成完'));
     };
     xhr.ontimeout = xhr.onerror;
     xhr.onabort = () => {
-      signal.removeEventListener('abort', onAbort);
-      reject(abortError());
+      fail(abortError());
     };
+    signal.addEventListener('abort', onAbort);
 
     // 只发这一个问题：历史由服务端的 LangGraph 检查点按会话线程记着，
     // 整段重发会重复计入上下文。附件走结构化字段，不塞进正文——工具读的是
     // `holding_import_ids`，写在文本里它拿不到批次号，还会被后端当成编造的导入。
-    xhr.send(
-      JSON.stringify({
-        messages: [{ role: 'user', content: text }],
-        ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
-      }),
-    );
+    try {
+      xhr.send(
+        JSON.stringify({
+          messages: [{ role: 'user', content: text }],
+          ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
+        }),
+      );
+    } catch (error) {
+      fail(error, true);
+    }
   });
 }
 

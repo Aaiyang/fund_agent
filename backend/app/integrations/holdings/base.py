@@ -21,7 +21,7 @@ class ManualPositionInput(BaseModel):
 class HoldingImportPayload(BaseModel):
     """provider 的输入：手动录入的持仓行，和/或截图的本地文件路径."""
 
-    account_id: int
+    account_id: int | None
     manual_positions: list[ManualPositionInput] = Field(default_factory=list)
     image_paths: list[str] = Field(default_factory=list)
 

@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 
 from app.analytics import disclosed_change, period_return, window_return
+from app.analytics.allocation import position_weight
 from app.analytics.positions import (
     Direction,
     LedgerRow,
@@ -33,12 +34,14 @@ from app.repositories.portfolio_repository import portfolio_repository
 from app.schemas.portfolio import (
     AccountItem,
     PortfolioSummary,
+    PortfolioResearchSnapshot,
     PositionItem,
     TradeLeg,
     TradePreviewResponse,
     TransactionItem,
 )
-from app.utils.clock import business_today
+from app.utils.clock import business_today, utc_now
+from app.utils.market_quote_policy import finite_number
 
 
 class PositionConflictError(Exception):
@@ -187,6 +190,82 @@ class PortfolioService:
         for position in positions:
             items.append(await self._position_item(position, total_value, histories.get(position.fund_code), ledger))
         return items
+
+    async def research_snapshot(self, user_id: int, account_id: int | None = None) -> PortfolioResearchSnapshot:
+        """批量生成轻量研究快照，复用账本投影，不加载周/月历史或截断计算行."""
+        if account_id is not None:
+            await self.ensure_account(user_id, account_id)
+        positions = await portfolio_repository.list_positions(user_id, account_id)
+        codes = list(dict.fromkeys(row.fund_code for row in positions))
+        funds = await fund_repository.get_funds(codes)
+        navs = await fund_repository.get_latest_navs(codes)
+        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+        total = sum(finite_number(row.market_value) or 0.0 for row in positions)
+        summary = PortfolioSummary(fund_count=len(positions), total_market_value=total)
+        items: list[PositionItem] = []
+        for row in positions:
+            nav = navs.get(row.fund_code)
+            fund = funds.get(row.fund_code)
+            trades = ledger.get((row.account_id, row.fund_code), [])
+            projected = project_ledger(trades) if trades else None
+            figures = position_figures(
+                market_value=row.market_value,
+                shares=projected.shares if projected else row.shares,
+                cost_amount=projected.cost_amount if projected else row.cost_amount,
+                average_cost_nav=None if projected else row.average_cost_nav,
+                profit_loss=None if projected else row.profit_loss,
+                unit_nav=nav.unit_nav if nav else None,
+            )
+            summary.total_cost += figures.cost_amount or 0.0
+            summary.total_profit_loss += figures.profit_loss or 0.0
+            if nav and nav.fetched_at:
+                summary.data_updated_at = max(summary.data_updated_at or nav.fetched_at, nav.fetched_at)
+            items.append(
+                PositionItem(
+                    id=row.id,
+                    account_id=row.account_id,
+                    fund_code=row.fund_code,
+                    fund_name=fund.fund_name if fund else None,
+                    shares=figures.shares,
+                    market_value=row.market_value,
+                    cost_amount=figures.cost_amount,
+                    average_cost_nav=figures.average_cost_nav,
+                    profit_loss=figures.profit_loss,
+                    profit_loss_rate=figures.profit_loss_rate,
+                    position_ratio=position_weight(row.market_value, total),
+                    shares_derived=figures.shares_derived,
+                    cost_derived=figures.cost_derived,
+                    average_cost_nav_derived=figures.average_cost_nav_derived,
+                    profit_derived=figures.profit_derived,
+                    nav_date=nav.nav_date if nav else None,
+                    updated_at=row.updated_at,
+                    version=row.version,
+                )
+            )
+        if summary.total_cost > 0 and all(
+            item.cost_amount is not None and item.profit_loss is not None for item in items
+        ):
+            summary.total_profit_loss_rate = position_figures(
+                cost_amount=summary.total_cost, profit_loss=summary.total_profit_loss
+            ).profit_loss_rate
+        complete = all(
+            finite_number(row.market_value) is not None and (row.market_value or 0) >= 0 for row in positions
+        )
+        warnings = []
+        if not complete:
+            warnings.append("部分持仓市值缺失或无效，汇总仅覆盖已知金额，不能计算完整操作比例")
+        if any(item.cost_amount is None or item.profit_loss is None for item in items):
+            warnings.append("部分持仓成本未知，成本与盈亏汇总不代表完整账本")
+        items.sort(key=lambda item: item.market_value if item.market_value is not None else -1, reverse=True)
+        return PortfolioResearchSnapshot(
+            account_id=account_id,
+            status="available" if positions else "empty",
+            captured_at=utc_now(),
+            summary=summary,
+            positions=items,
+            market_values_complete=complete,
+            warnings=warnings,
+        )
 
     async def get_position(self, user_id: int, account_id: int, fund_code: str) -> PositionItem | None:
         """单条持仓及其派生指标（spec 3.5.2 的字段）."""

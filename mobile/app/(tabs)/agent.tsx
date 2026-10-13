@@ -1,37 +1,101 @@
 import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  ActivityIndicator,
+  Easing,
+  KeyboardAvoidingView,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  TextInput,
+  Text,
+  View,
+} from 'react-native';
 
-import { ErrorState, LoadingState, describeError } from '@/components/states';
+import { ErrorState, describeError } from '@/components/states';
 import { AgentSessionsPanel } from '@/components/AgentSessionsPanel';
-import { ImportReviewCard } from '@/components/ImportReviewCard';
+import { FundSelectionCard } from '@/components/FundSelectionCard';
+import { HoldingImportFlowCard } from '@/components/HoldingImportFlowCard';
 import { MarkdownText } from '@/components/MarkdownText';
-import { Screen } from '@/components/ui';
+import { Screen, Card, Button } from '@/components/ui';
 import { theme } from '@/constants/theme';
-import { useCreateAgentSession, useAgentSessions } from '@/hooks/useAgent';
+import { useCreateAgentSession } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
-import { useDecideChatImport, usePendingChatAction, useUploadChatScreenshots } from '@/hooks/useChatImport';
+import { useAdvanceChatImport, useChatImportProgress, useDecideChatImport, usePendingChatAction, useUploadChatScreenshots, useSelectAnalysisFund, useContinueAgentRun } from '@/hooks/useChatImport';
 import { useFundDetail } from '@/hooks/useFunds';
 import { useLlmProfiles } from '@/hooks/useLlmProfiles';
-import { useAccounts } from '@/hooks/usePortfolio';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
 
-/** 一条待发送的附件。选完只留在本地，点发送才上传——上传本身就是让服务端开始识别。 */
+/** 选完只留在本地，随问题发送附件；识别由后端子图启动。 */
 type Attachment = { key: string; images: PickedImage[] };
 
 /** 一个字都不打、只甩图过来时给模型的那句话：只说上传了什么、走的哪条通道，不替它判断内容。 */
 function attachmentFallback(attachments: Attachment[]): string {
   const count = attachments.reduce((sum, each) => sum + each.images.length, 0);
-  return `我刚上传了 ${count} 张图片（持仓截图导入通道）`;
+  return `我刚上传了 ${count} 张图片。`;
 }
 
 /** 用户那一句的底色：DeepSeek 式的浅蓝，不用实心蓝是因为白字在浅背景上读不动。 */
 const USER_BUBBLE = 'rgba(37, 99, 235, 0.10)';
 
 const SUGGESTIONS = ['我的持仓今天怎么样？', '帮我把自选里的基金排个序', '对比一下我持有的两只 QDII'];
+
+/** 距底部多少像素以内算"在看最新内容"，只有在这个范围内才跟随流式输出往下滚。 */
+const STICK_TO_BOTTOM_PX = 80;
+
+/** 骨架灰：比边框深一点、比正文浅很多，读起来是"这里要有内容"而不是"这是内容"。 */
+const SKELETON_BG = 'rgba(17, 24, 39, 0.06)';
+
+/**
+ * 读历史的骨架屏：按真实排版铺一段对话轮廓（用户一句浅蓝气泡在右、
+ * 小镜的回答是几行不套气泡的灰条），整块缓慢呼吸。
+ *
+ * 不换成页面正中一个转圈：那既不知道在等什么，消息到了还会把转圈顶走、
+ * 整屏跳一下。骨架占的位置就是内容将出现的位置。
+ */
+function ChatSkeleton({ label }: { label: string }) {
+  const [breath] = useState(() => new Animated.Value(0.55));
+
+  useEffect(() => {
+    const pulse = (toValue: number) =>
+      Animated.timing(breath, {
+        toValue,
+        duration: 760,
+        easing: Easing.inOut(Easing.quad),
+        // react-native-web 没有 native driver：开着它动画不跑。
+        useNativeDriver: Platform.OS !== 'web',
+      });
+    const loop = Animated.loop(Animated.sequence([pulse(1), pulse(0.55)]));
+    loop.start();
+    return () => loop.stop();
+  }, [breath]);
+
+  /** 高 12 的是回答的行，高 34 的是用户那句气泡；圆角取高度一半。 */
+  const block = (width: `${number}%`, height: number, gap: number, side?: 'flex-end') => (
+    <View style={{ width, height, borderRadius: height / 2, backgroundColor: SKELETON_BG, marginBottom: gap, alignSelf: side }} />
+  );
+
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel={label} accessibilityState={{ busy: true }}>
+      <Animated.View style={{ opacity: breath, padding: theme.gap, paddingTop: 16 }}>
+        {block('46%', 34, 20, 'flex-end')}
+        {block('82%', 12, 9)}
+        {block('67%', 12, 9)}
+        {block('41%', 12, 26)}
+        {block('31%', 34, 20, 'flex-end')}
+        {block('74%', 12, 9)}
+        {block('52%', 12, 0)}
+      </Animated.View>
+      <Text style={{ fontSize: 12, color: theme.textFaint, textAlign: 'center' }}>{label}</Text>
+    </View>
+  );
+}
 
 /**
  * 一条消息。借 DeepSeek 的排版：助手的回答不套气泡，直接铺在页面上，
@@ -94,17 +158,26 @@ export default function AgentScreen() {
   const setSessionId = useUiStore((state) => state.setAgentSessionId);
   const sessionsOpen = useUiStore((state) => state.agentSessionsOpen);
   const setSessionsOpen = useUiStore((state) => state.setAgentSessionsOpen);
-  const viewAccountId = useUiStore((state) => state.accountId);
-  const sessions = useAgentSessions();
   const createSession = useCreateAgentSession();
-  // 没手动选过会话时落在服务端的第一条，和 Web 端一个口径。
-  const sessionId = storedSessionId ?? sessions.data?.[0]?.session_id ?? null;
+  /**
+   * 只认这一次访问里显式选过的会话：进来就是空白新对话，要看历史从左上角面板挑。
+   *
+   * 之前兜底到"服务端最新一条"，于是每次刷新都接着上次的话头，而不是他要求的
+   * 新对话。空白会话不在服务端建档 —— 第一条消息（或第一个附件）发出去时
+   * 才由 ensureActiveSession 建出来。
+   */
+  const sessionId = storedSessionId;
 
   const context = useFundDetail(paramCode ?? null);
   const [contextDismissed, setContextDismissed] = useState(false);
   const [draft, setDraft] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
+  // 流式回答时"贴底才跟随"：contentSize 每个 token 都会变，无条件 scrollToEnd 会把
+  // 已经往上翻着看历史的人一遍遍拽回末尾。用户滚回底部后自动恢复跟随。
+  const atBottom = useRef(true);
+  const lastContentHeight = useRef(0);
+  const [offBottomDuringStream, setOffBottomDuringStream] = useState(false);
   // 面板的关闭回调要稳定：它进了那个滑动 effect 的依赖，每次渲染都换身份会让
   // 动画反复重启。
   const closeSessions = useCallback(() => setSessionsOpen(false), [setSessionsOpen]);
@@ -121,23 +194,79 @@ export default function AgentScreen() {
 
   const contextCode = paramCode && !contextDismissed ? paramCode : null;
 
-  const accounts = useAccounts();
+  function trackScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentSize, layoutMeasurement, contentOffset } = event.nativeEvent;
+    // 一条回答收尾时会先塌一下（本地这条撤掉、服务端历史还没重取回来）再长回来。
+    // 塌陷那几帧的 contentOffset 是被系统夹出来的，不是用户翻的，据此放手会把
+    // 刚说完的话顶出视野。
+    if (contentSize.height < lastContentHeight.current - 1) return;
+    // 内容不满一屏时这个差值是负的——本来就没历史可翻，当作在看最新。
+    const distanceToBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    const nearBottom = distanceToBottom <= STICK_TO_BOTTOM_PX;
+    if (nearBottom !== atBottom.current) {
+      atBottom.current = nearBottom;
+      setOffBottomDuringStream(!nearBottom);
+    }
+  }
+
+  /**
+   * 只在内容**长高**时往下贴：塌回去（换会话、历史重取把整列重建）也走这个回调，
+   * 那时跟着滚就是用户看到的"莫名其妙从头扫到底"。
+   */
+  function followIfAtBottom(_width: number, height: number) {
+    const grew = height > lastContentHeight.current + 1;
+    lastContentHeight.current = height;
+    if (!atBottom.current || !grew) return;
+    // animated: false：跟随每个 token 都开一次动画，观感就是一段段往下滑。
+    scroller.current?.scrollToEnd({ animated: false });
+  }
+
+  function stickToBottom() {
+    atBottom.current = true;
+    setOffBottomDuringStream(false);
+    scroller.current?.scrollToEnd({ animated: true });
+  }
+
   const upload = useUploadChatScreenshots();
   const decide = useDecideChatImport(sessionId);
+  const fundChoice = useSelectAnalysisFund(sessionId);
+  const continueRun = useContinueAgentRun(sessionId);
+  const currentSession = useRef(sessionId);
+  useEffect(() => { currentSession.current = sessionId; }, [sessionId]);
   const pending = usePendingChatAction(sessionId);
+  const advance = useAdvanceChatImport(sessionId);
+  const review = chat.review ?? pending.data?.pending_action ?? null;
+  const processing = review?.kind === 'holding_import_processing' ? review : null;
+  const progress = useChatImportProgress(sessionId, processing?.import_id ?? null);
+  const lastAdvance = useRef<string | null>(null);
+  const { mutate: advanceImport, isPending: advancing } = advance;
+  const { setReview, history: chatHistory } = chat;
+  const { refetch: refetchChatHistory } = chatHistory;
+  const { refetch: refetchPending } = pending;
+
+  useEffect(() => {
+    if (!sessionId || !processing?.interrupt_id || !progress.data || advancing) return;
+    if (['UPLOADED', 'PARSING'].includes(progress.data.import_batch.status)) return;
+    const key = `${sessionId}:${processing.import_id}:${processing.interrupt_id}`;
+    const active = sessionId;
+    if (lastAdvance.current === key) return;
+    lastAdvance.current = key;
+    advanceImport({ importId: processing.import_id, interruptId: processing.interrupt_id }, {
+      onSuccess: (result) => { if (currentSession.current !== active) return; setReview(result.pending_action ?? null); void refetchChatHistory(); },
+      onError: (error) => { if (currentSession.current !== active) return; setReview(null); setProblem(describeError(error)); void refetchPending(); },
+    });
+  }, [sessionId, processing, progress.data, advancing, advanceImport, setReview, refetchChatHistory, refetchPending]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
-  const canSend = !uploading && (Boolean(draft.trim()) || attachments.length > 0);
+  const canSend = !uploading && !advance.isPending && !decide.isPending && !fundChoice.isPending && !continueRun.isPending
+    && (!review || ((review.kind === 'holding_import_account' || review.kind === 'human_question') && !attachments.length))
+    && (Boolean(draft.trim()) || attachments.length > 0);
   // 回答上面标一句"是谁说的"：档案名是用户自己起的，标的是它底下那个模型号。
   const profiles = useLlmProfiles();
   const assistantLabel = profiles.data?.profiles.find((each) => each.name === profiles.data?.active)?.model;
 
-  /** 顶部导航选中的账户优先；汇总视图下落到第一个账户（与导入页同一口径）。 */
-  function targetAccountId(): number | null {
-    return viewAccountId ?? accounts.data?.items[0]?.id ?? null;
-  }
-
   async function pickAttachments() {
+    if (review || uploading || chat.sending) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       setProblem('没有相册权限，无法选图');
@@ -157,18 +286,16 @@ export default function AgentScreen() {
   /** 一次发送里每选一批是一个批次，各自换回一个后端校验得到的批次号。 */
   async function uploadAttachments(active: string): Promise<string[]> {
     if (!attachments.length) return [];
-    const accountId = targetAccountId();
-    if (!accountId) throw new Error('还没有账户，先去「我的 → 账户管理」建一个');
     const ids: string[] = [];
     for (const each of attachments) {
-      const accepted = await upload.mutateAsync({ sessionId: active, accountId, images: each.images });
+      const accepted = await upload.mutateAsync({ sessionId: active, images: each.images });
       ids.push(String(accepted.import_id));
     }
     return ids;
   }
 
   async function ask(text: string) {
-    if (chat.sending || uploading) return;
+    if (chat.sending || !canSend) return;
     const trimmed = text.trim();
     const body = trimmed || (attachments.length ? attachmentFallback(attachments) : '');
     if (!body) return;
@@ -190,34 +317,95 @@ export default function AgentScreen() {
     // 它走 `holding_import_ids` 这个结构化字段，工具才拿得到真实批次号。
     const name = context.data?.fund_name;
     const question = contextCode ? `（我正在看基金 ${contextCode}${name ? ` ${name}` : ''}）\n${body}` : body;
+    // 自己刚发的话得看得见：先把跟随打开，下一帧贴到底部。
+    atBottom.current = true;
+    setOffBottomDuringStream(false);
     void chat.send(question, importIds).catch((error: unknown) => setProblem(describeError(error)));
+    requestAnimationFrame(stickToBottom);
   }
 
   function decideImport(decision: 'confirm' | 'cancel') {
     const review = chat.review ?? pending.data?.pending_action ?? null;
-    if (!review) return;
+    if (!review || review.kind === 'fund_selection' || review.kind === 'human_question') return;
+    const active = sessionId;
     setProblem(null);
     decide.mutate(
       {
         importId: String(review.import_id),
         decision,
         interruptId: review.interrupt_id ?? '',
-        reviewDigest: review.review_digest,
+        reviewDigest: review.kind === 'holding_import_review' ? review.review_digest : undefined,
       },
       {
-        onSuccess: () => {
-          chat.setReview(null);
+        onSuccess: (result) => {
+          if (currentSession.current !== active) return;
+          chat.setReview(result.pending_action ?? null);
           void pending.refetch();
           // 决策会恢复 Agent 并让它接着说话，所以历史要重取一次。
           void chat.history.refetch();
         },
-        onError: (error) => setProblem(describeError(error)),
+        onError: (error) => { if (currentSession.current !== active) return; chat.setReview(null); setProblem(describeError(error)); void pending.refetch(); void chat.history.refetch(); },
       },
     );
   }
 
-  // 流里带回来的优先，其次问服务端这条会话还挂着哪张卡（刷新/重连后能恢复）。
-  const review = chat.review ?? pending.data?.pending_action ?? null;
+  function chooseFund(fundCode?: string) {
+    if (review?.kind !== 'fund_selection' || !review.interrupt_id || fundChoice.isPending) return;
+    const active = sessionId;
+    setProblem(null);
+    fundChoice.mutate({ interruptId: review.interrupt_id, fundCode }, {
+      onSuccess: (result) => {
+        if (currentSession.current !== active) return;
+        chat.setReview(result.pending_action ?? null);
+        void pending.refetch();
+        void chat.history.refetch();
+      },
+      onError: (error) => {
+        if (currentSession.current !== active) return;
+        setProblem(describeError(error));
+        chat.setReview(null);
+        void pending.refetch();
+        void chat.history.refetch();
+      },
+    });
+  }
+
+  function continueOriginalTask() {
+    const action = pending.data?.continuation;
+    if (!action || !sessionId || continueRun.isPending || chat.sending) return;
+    const active = sessionId;
+    setProblem(null);
+    continueRun.mutate({ turnId: action.turn_id }, {
+      onSuccess: (result) => {
+        if (currentSession.current !== active) return;
+        chat.reset();
+        chat.setReview(result.pending_action ?? null);
+        void pending.refetch();
+        void chat.history.refetch();
+      },
+      onError: (error) => {
+        if (currentSession.current !== active) return;
+        setProblem(describeError(error));
+        void pending.refetch();
+        void chat.history.refetch();
+      },
+    });
+  }
+
+  function continueImport(accountId?: number) {
+    if (!review?.interrupt_id || review.kind === 'fund_selection' || review.kind === 'human_question') return;
+    const active = sessionId;
+    setProblem(null);
+    if (review.kind === 'holding_import_processing'
+      && (!progress.data || ['UPLOADED', 'PARSING'].includes(progress.data.import_batch.status))) {
+      void progress.refetch();
+      return;
+    }
+    advance.mutate({ importId: review.import_id, interruptId: review.interrupt_id, accountId }, {
+      onSuccess: (result) => { if (currentSession.current !== active) return; chat.setReview(result.pending_action ?? null); void pending.refetch(); void chat.history.refetch(); },
+      onError: (error) => { if (currentSession.current !== active) return; chat.setReview(null); setProblem(describeError(error)); void pending.refetch(); void chat.history.refetch(); },
+    });
+  }
 
   return (
     <Screen scroll={false}>
@@ -244,7 +432,9 @@ export default function AgentScreen() {
         </View>
 
         {chat.loadingHistory ? (
-          <LoadingState label="正在读历史…" />
+          // 只有真选中了某条会话才有"读历史"这回事：空白新对话直接落在那张
+          // 问候页上，不先转一下骨架屏。
+          <ChatSkeleton label="正在读历史…" />
         ) : chat.historyError && !chat.turns.length ? (
           <ErrorState message={describeError(chat.historyError)} onRetry={chat.retryHistory} />
         ) : (
@@ -252,11 +442,13 @@ export default function AgentScreen() {
             ref={scroller}
             contentContainerStyle={{ padding: theme.gap, paddingTop: 16, paddingBottom: 16 }}
             keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
+            onScroll={trackScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={followIfAtBottom}
           >
             {!chat.turns.length ? (
               <View style={{ paddingTop: 36 }}>
-                <Text style={{ fontSize: 21, fontWeight: '700', color: theme.text, textAlign: 'center' }}>你好，我是基金助手</Text>
+                <Text style={{ fontSize: 21, fontWeight: '700', color: theme.text, textAlign: 'center' }}>你好，我是小镜</Text>
                 <Text style={{ fontSize: 14, lineHeight: 22, color: theme.textMuted, textAlign: 'center', marginTop: 8, paddingHorizontal: 16 }}>
                   可以问我的持仓、我的自选、某一只基金，{'\n'}或者让它对比两只。
                 </Text>
@@ -289,9 +481,48 @@ export default function AgentScreen() {
           </ScrollView>
         )}
 
+        {chat.sending && offBottomDuringStream ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="回到最新回答"
+            onPress={stickToBottom}
+            style={{
+              position: 'absolute',
+              right: theme.gap + 6,
+              bottom: 108,
+              zIndex: 6,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <Text style={{ fontSize: 13, color: theme.primary }}>回到最新 ↓</Text>
+          </Pressable>
+        ) : null}
+
+        {!review && pending.data?.continuation ? <View style={{ paddingHorizontal: theme.gap, paddingTop: theme.gap }}>
+          <Card>
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>继续原任务</Text>
+            {pending.data.continuation.selected_fund_code ? <Text style={{ color: theme.primary, fontSize: 12, marginTop: 6 }}>
+              {pending.data.continuation.selected_fund_name} · {pending.data.continuation.selected_fund_code}
+            </Text> : null}
+            <Text style={{ color: theme.textMuted, fontSize: 12, lineHeight: 18, marginVertical: 8 }}>{pending.data.continuation.notice}</Text>
+            <Button label={continueRun.isPending ? '正在继续…' : '继续已确认的任务'} disabled={continueRun.isPending || chat.sending || fundChoice.isPending || decide.isPending || advance.isPending} onPress={continueOriginalTask} />
+          </Card>
+        </View> : null}
         {review ? (
           <View style={{ paddingHorizontal: theme.gap, paddingTop: theme.gap }}>
-            <ImportReviewCard review={review} pending={decide.isPending ? decide.variables.decision : null} onDecide={decideImport} />
+            {review.kind === 'fund_selection' ? (
+              <FundSelectionCard action={review} busy={fundChoice.isPending} onSelect={chooseFund} onCancel={() => chooseFund()} />
+            ) : review.kind === 'human_question' ? <Card>
+              <Text style={{ color: theme.text, fontSize: 14 }}>{review.question}</Text>
+              <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>{review.notice}</Text>
+            </Card> : <HoldingImportFlowCard action={review} busy={advance.isPending || decide.isPending}
+              decision={decide.isPending ? decide.variables.decision : null}
+              onAccount={(accountId) => continueImport(accountId)} onContinue={() => continueImport()} onDecide={decideImport} />}
           </View>
         ) : null}
 
@@ -337,8 +568,8 @@ export default function AgentScreen() {
               accessibilityLabel="添加附件"
               hitSlop={10}
               onPress={() => void pickAttachments()}
-              disabled={uploading || chat.sending}
-              style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', opacity: uploading || chat.sending ? 0.4 : 1 }}
+              disabled={uploading || chat.sending || Boolean(review)}
+              style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', opacity: uploading || chat.sending || review ? 0.4 : 1 }}
             >
               {uploading ? (
                 <ActivityIndicator size="small" color={theme.primary} />

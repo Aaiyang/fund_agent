@@ -12,8 +12,9 @@ from langchain_core.messages import (
 from langchain_core.messages import trim_messages as _trim_messages
 
 from app.agent.context import state_store
-from app.agent.context.budget import ContextBudgetManager, token_estimator
+from app.agent.context.budget import ContextBudgetManager, token_estimator, tool_trace_blocks
 from app.agent.context.cache_policy import cache_policy
+from app.agent.context.repair import repair_unresolved_tool_calls
 from app.agent.context.summary import ConversationSummaryManager, turn_hash
 from app.agent.context.validator import context_validator
 from app.agent.context.models import CacheEpochMeta
@@ -115,6 +116,7 @@ def prepare_messages(messages: list[BaseMessage], system_prompt: str) -> list[Ba
     Returns:
         list[BaseMessage]: 组装完成的消息列表。
     """
+    messages, _ = repair_unresolved_tool_calls(messages)
     try:
         trimmed = _trim_messages(
             messages,
@@ -161,14 +163,14 @@ def _fit_budget(messages: list[BaseMessage]) -> list[BaseMessage]:
         return []
     kept = [messages[0]]
     total = _count_tokens_tiktoken(kept)
-    for msg in reversed(messages[1:]):
-        cost = _count_tokens_tiktoken([msg])
+    kept_blocks: list[list[BaseMessage]] = []
+    for block in reversed(tool_trace_blocks(messages[1:])):
+        cost = _count_tokens_tiktoken(block)
         if total + cost > settings.CONTEXT_TOKEN_BUDGET:
             break
-        kept.append(msg)
+        kept_blocks.append(block)
         total += cost
-    # kept 目前是 [提问, 最新, 次新...]，恢复成时间顺序
-    return [kept[0], *reversed(kept[1:])]
+    return [kept[0], *(message for block in reversed(kept_blocks) for message in block)]
 
 
 class ContextManager:
@@ -223,10 +225,17 @@ class ContextManager:
             ContextInvariantError: CURRENT_USER_TURN_MISSING /
                 CONTEXT_BUDGET_EXCEEDED / ONLY_SYSTEM_MESSAGE 等不变量被破坏。
         """
+        # 中断遗留的悬空 ToolCall 先补齐配对，否则校验器会永久拒绝该会话
+        messages, repaired = repair_unresolved_tool_calls(messages)
+        thread_key = request.conversation_id or ""
+        if repaired:
+            logger.warning(
+                "context_dangling_tool_calls_repaired",
+                repaired_count=repaired,
+                thread=thread_key,
+            )
         current_turn = self._find_current_user_turn(messages)
         all_turns = self._group_messages_into_turns(messages)
-
-        thread_key = request.conversation_id or ""
         # 进程重启后从 session.context_state 恢复摘要段与水位线（无状态则视为空）；
         # 摘要功能关闭时完全不加载——开关语义是"功能不可见"
         generation = self._generations.get(thread_key, 0)

@@ -9,7 +9,13 @@
 
 import type { components } from '@/api/schema';
 
-export type ChatSession = components['schemas']['SessionResponse'];
+/**
+ * 一条聊天会话。
+ *
+ * `created_at` 是后端刚补上的字段：`api/schema.ts` 那份生成物还没重跑到它，所以这里
+ * 先交叉出可选形状（下次 `npm run generate:api` 之后它会变成必填，这段不用改）。
+ */
+export type ChatSession = components['schemas']['SessionResponse'] & { created_at?: string };
 
 const tokens = new Map<string, string>();
 

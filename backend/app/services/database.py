@@ -288,17 +288,19 @@ class DatabaseService:
             return chat_session
 
     async def get_user_sessions(self, user_id: int) -> List[ChatSession]:
-        """Get all sessions for a user.
+        """取出某个用户的全部会话.
 
         Args:
-            user_id: The ID of the user
+            user_id: 用户的 ID
 
         Returns:
-            List[ChatSession]: List of user's sessions
+            List[ChatSession]: 该用户的会话列表，最近创建的排在最前面
         """
         with Session(self.engine) as session:
             statement = (
-                select(ChatSession).where(col(ChatSession.user_id) == user_id).order_by(col(ChatSession.created_at))
+                select(ChatSession)
+                .where(col(ChatSession.user_id) == user_id)
+                .order_by(col(ChatSession.created_at).desc())
             )
             sessions = session.exec(statement).all()
             return list(sessions)

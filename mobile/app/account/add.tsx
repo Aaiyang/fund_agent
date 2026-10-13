@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text } from 'react-native';
 
 import { Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { describeError } from '@/components/states';
@@ -17,7 +17,7 @@ export default function AccountAddScreen() {
   function submit() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setProblem('请输入账户名称');
+      setProblem('请填写账户名称');
       return;
     }
     // 重名后端也会校验；直接查已加载的账户列表就能判定，
@@ -38,13 +38,15 @@ export default function AccountAddScreen() {
   }
 
   return (
-    <Screen>
-      <Card>
-        <SectionTitle title="账户信息" />
-        <Field label="账户名称" value={name} onChangeText={setName} placeholder="请输入账户名称" />
-        {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
-        <Button label="创建账户" onPress={submit} loading={create.isPending} />
-      </Card>
-    </Screen>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Card>
+          <SectionTitle title="账户信息" />
+          <Field label="账户名称" value={name} onChangeText={setName} placeholder="请输入账户名称" />
+          {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
+          <Button label="创建账户" onPress={submit} loading={create.isPending} />
+        </Card>
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }

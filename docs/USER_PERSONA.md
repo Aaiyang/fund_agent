@@ -1,6 +1,18 @@
 # mem0 and database user profiles
 
-mem0 + pgvector retains semantic memories. PostgreSQL owns explicitly confirmed profile fields; existing memories are not automatically promoted. This release implements backend APIs and Agent integration. Frontend/mobile management panels are not included.
+mem0 + pgvector retains semantic memories. PostgreSQL owns explicitly confirmed profile fields; existing memories are not automatically promoted. Backend APIs, Agent integration and the mobile management page are implemented. The web management panel is not included.
+
+## Mobile management
+
+Open My account → User profile. A blue-and-white overview shows optional field completion, risk preference, horizon and goals. Tabs separate confirmed preferences, pending suggestions and history. Investment preferences, goals/horizon and response preferences each have a draft editor with one explicit save per group. Unknown fields receive no invented defaults.
+
+Canceling protects unsaved changes; failed saves retain the draft. Goals are limited to five entries of 120 characters, and horizons to integer months 1–600. Saving includes a newly typed goal even if Add was not pressed. Editors use the revision captured when opened; stale edits require reloading, with a discard guard for unsaved work.
+
+Suggestions compare old and new values and show actual user evidence and timestamps before accept/reject. The page explains that an edit or acceptance supersedes other pending proposals. History supports loading more and retrying failures. Data/privacy details explain erasure boundaries and require confirmation before clearing; semantic memory and chats remain separate.
+
+Design references: [Wealthfront preference review](https://support.wealthfront.com/hc/en-us/articles/4407740003604-How-do-I-retake-the-risk-questionnaire) and [ChatGPT memory management](https://help.openai.com/en/articles/8590148-memory-in-chatgpt). The existing seven fields remain unchanged; no risk score or goal-specific database entity is introduced.
+
+For local UI verification, run `node tests/fixtures/persona-preview-api.cjs` in `mobile/` and set the preview Expo process's `EXPO_PUBLIC_API_BASE_URL=http://localhost:8019/api/v1`. This loopback-only fixture uses fictitious data and never connects to the user database. Stop preview processes and restore the regular development server afterward.
 
 ## Data boundaries
 
@@ -36,7 +48,7 @@ Evidence checks prove origin, not correctness. Human review must check assumptio
 
 ## Deployment
 
-Apply migration `d31f9a6b8204` with `alembic upgrade head`, then restart the backend. USER_PERSONA_ENABLED=true by default enables automatic injection; false leaves management APIs available. Tool version v4; current system prompt fund-agent-v7.
+Apply migration `d31f9a6b8204` with `alembic upgrade head`, then restart the backend. USER_PERSONA_ENABLED=true by default enables automatic injection; false leaves management APIs available. Tool version v9; current system prompt fund-agent-v13.
 
 The existing LangGraph/Langfuse pipeline selects proposals without an additional extraction LLM. Unit/API/Graph tests cover validation, authentication, evidence and graceful degradation. Opt-in PostgreSQL tests (`FUND_TEST_POSTGRES=true`, tests/test_user_persona_postgres.py) cover isolation, idempotence, version conflicts, erasure and rollback. Temporary data is rolled back.
 

@@ -24,6 +24,10 @@ from app.schemas.portfolio import (
     TradePreviewResponse,
 )
 from app.analytics.positions import Operation
+from app.analytics.allocation import allocation_scenario, portfolio_scenario_inputs
+from app.schemas.research_card import AllocationChartReference, AllocationPreviewResponse
+from app.repositories.fund_repository import fund_repository
+from app.schemas.research import AllocationAction
 from app.services.portfolio_service import (
     AccountNotFoundError,
     NavNotPublishedError,
@@ -31,9 +35,48 @@ from app.services.portfolio_service import (
     TradeInputError,
     TradeTooLargeError,
     portfolio_service,
+    PortfolioService,
 )
 
 router = APIRouter()
+
+
+def get_portfolio_service() -> PortfolioService:
+    """当前用户账本服务依赖."""
+    return portfolio_service
+
+
+@router.get("/allocation-preview", response_model=AllocationPreviewResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["portfolio"][0])
+async def allocation_preview(
+    request: Request,
+    fund_code: str = Query(pattern=r"^\d{6}$"),
+    action: AllocationAction = Query(),
+    amount: float = Query(gt=0, le=1_000_000_000, allow_inf_nan=False),
+    account_id: int | None = Query(default=None, ge=1),
+    identity: AuthIdentity = Depends(get_current_identity),
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> AllocationPreviewResponse:
+    """只读操作情景；身份取自JWT，账户归属必须校验，不写交易."""
+    if action == "compare":
+        raise HTTPException(status_code=422, detail="请明确建仓、加仓、减仓或清仓")
+    try:
+        snapshot = await service.research_snapshot(identity.user_id, account_id)
+        if await fund_repository.get_fund(fund_code) is None:
+            raise HTTPException(status_code=404, detail="fund_not_found")
+        data = snapshot.model_dump(mode="json")
+        total, target = portfolio_scenario_inputs(data["summary"], {"positions": data["positions"]}, fund_code)
+        scenario = allocation_scenario(total=total, target=target, amount=amount, action=action)
+        return AllocationPreviewResponse(
+            reference=AllocationChartReference(
+                fund_code=fund_code, account_id=account_id, action=action, amount=amount
+            ),
+            captured_at=snapshot.captured_at,
+            scenario=scenario,
+            warnings=snapshot.warnings,
+        )
+    except AccountNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="account_not_found") from exc
 
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)

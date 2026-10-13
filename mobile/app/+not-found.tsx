@@ -9,9 +9,13 @@ export default function NotFoundScreen() {
       <Stack.Screen options={{ title: '页面不存在', headerBackVisible: false }} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: theme.background }}>
         <Text style={{ fontSize: 17, fontWeight: '600', color: theme.text }}>没有找到这个页面</Text>
-        <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 6 }}>可能是链接过期或输入有误。</Text>
-        <Link href="/" style={{ marginTop: 16, color: theme.primary, fontSize: 15 }}>
-          返回首页
+        <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>链接可能过期或地址输错了</Text>
+        <Link
+          href="/"
+          accessibilityRole="link"
+          style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 10, color: theme.primary, fontSize: 15 }}
+        >
+          回首页
         </Link>
       </View>
     </>

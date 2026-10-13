@@ -49,6 +49,19 @@ else:
 class MetricsMiddleware(BaseHTTPMiddleware):
     """采集 HTTP 请求指标的中间件."""
 
+    @staticmethod
+    def _endpoint_label(request: Request) -> str:
+        """用路由模板当标签，而不是实际路径.
+
+        实际路径里有 import_id(uuid)、session_id、基金代码，直接当 Prometheus
+        标签会让时间序列随流量无界增长，抓取端与本进程内存一起被打爆。
+        ``scope["route"]`` 由 FastAPI 在路由命中后写入，所以只能在请求处理
+        结束后（finally 里）读取。
+        """
+        route = request.scope.get("route")
+        path = getattr(route, "path", None)
+        return str(path) if path else "unmatched"
+
     @override
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """为每个请求记录指标.
@@ -72,9 +85,10 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             duration = time.time() - start_time
 
             # 记录指标
-            http_requests_total.labels(method=request.method, endpoint=request.url.path, status=status_code).inc()
+            endpoint = self._endpoint_label(request)
+            http_requests_total.labels(method=request.method, endpoint=endpoint, status=status_code).inc()
 
-            http_request_duration_seconds.labels(method=request.method, endpoint=request.url.path).observe(duration)
+            http_request_duration_seconds.labels(method=request.method, endpoint=endpoint).observe(duration)
 
         return response
 

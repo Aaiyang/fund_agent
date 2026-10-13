@@ -12,7 +12,7 @@ import { type GestureResponderEvent, Pressable, Text, View } from 'react-native'
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
-import { formatDate } from '@/utils/format';
+import { formatDate, formatReturnPoints, trendColor } from '@/utils/format';
 
 type FundPoint = { nav_date: string; unit_nav?: number | null };
 type BenchmarkPoint = { trade_date: string; close?: number | null };
@@ -61,7 +61,7 @@ export function NavChart({
   if (fund.length < 2) {
     return (
       <View style={{ height: HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: theme.textFaint, fontSize: 13 }}>净值数据不足，暂无法绘制走势</Text>
+        <Text style={{ color: theme.textMuted, fontSize: 14 }}>还没有足够的净值数据，等净值更新后再看</Text>
       </View>
     );
   }
@@ -121,7 +121,7 @@ export function NavChart({
   const chipLeft = marker ? Math.min(Math.max(markerX - CHIP_W / 2, 0), Math.max(width - CHIP_W, 0)) : 0;
 
   const pickerArrow = (
-    <Text style={{ fontSize: 10, color: theme.textFaint, marginLeft: 3 }}>{benchmarkPicker?.open ? '▴' : '▾'}</Text>
+    <Text style={{ fontSize: 11, color: theme.textFaint, marginLeft: 3 }}>{benchmarkPicker?.open ? '▴' : '▾'}</Text>
   );
   const benchmarkLegend =
     benchmarkSeries.length && benchmark ? (
@@ -176,6 +176,7 @@ export function NavChart({
                     <Pressable
                       key={option.value}
                       accessibilityRole="menuitem"
+                      hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}
                       onPress={() => benchmarkPicker.onPick(option.value)}
                       style={{ paddingHorizontal: 12, paddingVertical: 9 }}
                     >
@@ -243,7 +244,7 @@ export function NavChart({
             {marker ? (
               <Circle cx={x(marker.time)} cy={y(marker.change)} r={3.5} fill={theme.primary} />
             ) : (
-              <Circle cx={x(last.time)} cy={y(lastChange)} r={3} fill={lastChange >= 0 ? theme.up : theme.down} />
+              <Circle cx={x(last.time)} cy={y(lastChange)} r={3} fill={trendColor(lastChange)} />
             )}
           </Svg>
           {marker ? (
@@ -261,7 +262,7 @@ export function NavChart({
                 paddingVertical: 2,
               }}
             >
-              <Text style={{ fontSize: 10, color: theme.text, textAlign: 'center' }}>{formatDate(marker.label)}</Text>
+              <Text style={{ fontSize: 11, color: theme.text, textAlign: 'center' }}>{formatDate(marker.label)}</Text>
             </View>
           ) : null}
         </View>
@@ -272,7 +273,7 @@ export function NavChart({
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
         <Text style={{ fontSize: 11, color: theme.textFaint }}>{formatDate(points[0].nav_date)}</Text>
         <Text style={{ fontSize: 11, color: marker ? theme.text : theme.textFaint }}>
-          {marker ? formatDate(marker.label) : `${min.toFixed(2)}% ~ ${max.toFixed(2)}%`}
+          {marker ? formatDate(marker.label) : `${formatReturnPoints(min)} ~ ${formatReturnPoints(max)}`}
         </Text>
         <Text style={{ fontSize: 11, color: theme.textFaint }}>{formatDate(points[points.length - 1].nav_date)}</Text>
       </View>
@@ -297,9 +298,7 @@ function Legend({
       <View style={{ width: 12, height: 2, backgroundColor: color, marginRight: 5 }} />
       <Text style={{ fontSize: 12, color: theme.textMuted }}>{label}</Text>
       {trailing}
-      <Text style={{ fontSize: 12, marginLeft: 4, color: (value ?? 0) >= 0 ? theme.up : theme.down }}>
-        {value === null ? '--' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`}
-      </Text>
+      <Text style={{ fontSize: 12, marginLeft: 4, color: trendColor(value) }}>{formatReturnPoints(value)}</Text>
     </View>
   );
 }

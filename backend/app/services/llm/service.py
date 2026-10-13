@@ -19,6 +19,7 @@ from typing import (
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables.config import ensure_config, merge_configs
 from openai import (
     APIError,
     APITimeoutError,
@@ -29,7 +30,7 @@ from pydantic import BaseModel
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -37,6 +38,7 @@ from tenacity import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.llm.registry import LLMRegistry, _build_chat_model
+from app.services.llm.timeouts import LLMCallProgress, LLMResponseInterrupted, LLMStartTimeout, call_progress
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -51,6 +53,11 @@ class RequestModels:
 
 
 _REQUEST_MODELS: ContextVar[RequestModels | None] = ContextVar("request_models", default=None)
+
+
+def _retryable_llm_error(error: BaseException) -> bool:
+    """首段等待耗尽直接降级，已有输出的中断不进入重试."""
+    return isinstance(error, (RateLimitError, APITimeoutError, APIError)) and not isinstance(error, LLMStartTimeout)
 
 
 class LLMService:
@@ -145,17 +152,40 @@ class LLMService:
             RuntimeError: When all models fail after retries or the total
                 timeout budget is exceeded.
         """
+        progress = LLMCallProgress(settings.LLM_STREAM_IDLE_TIMEOUT)
+        progress_token = call_progress.set(progress)
+        total_deadline = asyncio.timeout(settings.LLM_TOTAL_TIMEOUT)
         try:
-            return await asyncio.wait_for(
-                self._call_with_fallback(messages, model_name, response_format, model_kwargs),
-                timeout=settings.LLM_TOTAL_TIMEOUT,
+            async with total_deadline:
+                result = await self._call_with_fallback(messages, model_name, response_format, model_kwargs)
+            metadata = result.response_metadata if isinstance(result, BaseMessage) else {}
+            usage = getattr(result, "usage_metadata", None) or {}
+            logger.info(
+                "llm_call_completed",
+                finish_reason=metadata.get("finish_reason"),
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                **progress.diagnostics(),
             )
+            return result
         except asyncio.TimeoutError:
+            if not total_deadline.expired():
+                raise
             logger.exception(
                 "llm_total_timeout_exceeded",
                 timeout_seconds=settings.LLM_TOTAL_TIMEOUT,
+                **progress.diagnostics(),
             )
-            raise RuntimeError(f"llm call timed out after {settings.LLM_TOTAL_TIMEOUT}s total budget")
+            raise LLMResponseInterrupted("total")
+        except Exception as exc:
+            logger.exception(
+                "llm_call_failed",
+                failure_reason=getattr(exc, "reason", type(exc).__name__),
+                **progress.diagnostics(),
+            )
+            raise
+        finally:
+            call_progress.reset(progress_token)
 
     def get_llm(self) -> Any:
         """Return the current tool-bound default LLM instance.
@@ -257,7 +287,7 @@ class LLMService:
     @retry(
         stop=stop_after_attempt(settings.MAX_LLM_CALL_RETRIES),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError)),
+        retry=retry_if_exception(_retryable_llm_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
@@ -274,25 +304,51 @@ class LLMService:
         Raises:
             OpenAIError: Propagated after all retry attempts are exhausted.
         """
+        progress = call_progress.get()
+        chunks_before = progress.progress_chunks if progress else 0
         try:
-            response = await llm.ainvoke(messages)
+            if progress is None:
+                response = await llm.ainvoke(messages)
+            else:
+                progress.attempts += 1
+                deadline = asyncio.timeout(settings.LLM_REQUEST_TIMEOUT)
+                progress.deadline = deadline
+                try:
+                    async with deadline:
+                        # 添加观察回调，原 LangGraph 流式、Langfuse 和身份配置保留。
+                        config = merge_configs(ensure_config(), {"callbacks": [progress]})
+                        response = await llm.ainvoke(messages, config=config)
+                except asyncio.TimeoutError:
+                    if not deadline.expired():
+                        raise
+                    if progress.progress_chunks > chunks_before:
+                        raise LLMResponseInterrupted("idle")
+                    raise LLMStartTimeout()
             logger.debug("llm_call_successful")
             return response
         except (RateLimitError, APITimeoutError, APIError) as e:
+            if progress and progress.progress_chunks > chunks_before:
+                raise LLMResponseInterrupted("upstream") from e
             logger.warning(
-                "llm_call_failed_retrying",
+                "llm_attempt_failed",
                 error_type=type(e).__name__,
                 error=str(e),
                 exc_info=True,
+                retryable=_retryable_llm_error(e),
             )
             raise
         except OpenAIError as e:
-            logger.error(
+            if progress and progress.progress_chunks > chunks_before:
+                raise LLMResponseInterrupted("upstream") from e
+            logger.exception(
                 "llm_call_failed",
                 error_type=type(e).__name__,
                 error=str(e),
             )
             raise
+        finally:
+            if progress:
+                progress.deadline = None
 
     def _switch_to_next_model(self) -> bool:
         """Advance the default model to the next entry in the registry (circular).
@@ -404,6 +460,9 @@ class LLMService:
             elif not one_off and self._bound_tools:
                 model = model.bind_tools(self._bound_tools)
             try:
+                progress = call_progress.get()
+                if progress:
+                    progress.models_tried.append(profile["model"])
                 result = await self._invoke_with_retry(model, messages)
                 if not one_off:
                     scoped.index = index
@@ -442,6 +501,9 @@ class LLMService:
         for models_tried in range(1, total + 1):
             current_name = LLMRegistry.LLMS[current]["name"]
             try:
+                progress = call_progress.get()
+                if progress:
+                    progress.models_tried.append(LLMRegistry.LLMS[current].get("model", current_name))
                 return await self._invoke_with_retry(get_target(current), messages)
             except OpenAIError as e:
                 last_error = e

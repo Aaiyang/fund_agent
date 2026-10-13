@@ -1,73 +1,81 @@
-# Agent 图片持仓导入：后端接入协议
+# Agent 持仓截图同步：后端与移动端
 
-本阶段完成后端。网页端和移动端共用下述接口，下一阶段再添加选图、上传、识别进度和人工复核界面。现有聊天界面尚不能直接操作这些新增能力。
+截图随本轮问题提交：选图先保存在移动端，点击发送时上传附件，再发送问题及服务端批次号。上传只创建 UPLOADED 草稿，不识别、不写正式持仓。主图先通过本轮普通模型调用理解用户需求；明确要求从图片导入、同步或更新持仓时，调用无参数的 start_holding_import，再由路由节点检查本轮附件。仅上传图片、分析截图、诊断持仓或明确不导入均不构成导入授权；需求不清晰时先询问。网页端本阶段未接入。
 
-流程为：选定自己的账户 → 上传截图 → 后台 OCR 识别 → Agent 查询草稿 → LangGraph 暂停等待人工复核 → 人工确认或取消 → 恢复 Agent。上传和工具调用均不直接写正式持仓；只有认证后的人工决策请求可以应用草稿。已有持仓页面的导入流程仍可使用。
+## 流程
 
-## 两个客户端的调用顺序
+```mermaid
+flowchart TD
+  question[本轮问题与可选附件] --> intent[主图 chat 理解需求]
+  intent -->|分析或需求不清晰| ordinary[正常回答或澄清]
+  intent -->|start_holding_import| route[route_attachments 检查本轮附件]
+  route -->|无附件| upload[提示上传持仓截图]
+  route -->|有附件| load[子图 load_draft]
+  load -->|UPLOADED| queue[启动现有 OCR 队列]
+  queue --> wait[wait_processing 中断]
+  wait -->|移动端轮询完成并恢复| load
+  load -->|PARSE_FAILED| retry[提示非持仓图、无法识别或服务故障]
+  load -->|未指定目标账户| choose[choose_account 中断]
+  choose --> bind[只绑定草稿账户]
+  bind --> load
+  load -->|识别完成且账户明确| review[human_review 中断]
+  review -->|人工确认或取消| result[读取数据库终态]
+  result -->|全部批次已处理| chat[主图回答原问题]
+```
 
-所有路径都以 `/api/v1` 为前缀，并携带**当前聊天会话的 access token**，不能用用户 token 或 refresh token 代替。账户可以通过现有账户接口选择。
+识别复用现有 Taskiq worker 和本地 OCR；Redis broker 需要截图识别 worker，开发环境可用已有进程内 broker。子图没有额外聊天模型调用。等待通过 checkpoint 和 interrupt 实现，不持续占用 HTTP 连接。识别完成由移动端轮询后恢复；服务端不向离线客户端主动推送。
 
-| 操作 | 方法与路径 | 关键参数 / 返回值 |
+意图判断复用主图原有模型调用，不新增独立分类请求。识别、选账户和人工复核等待期间不轮询模型；全部完成后主图继续回答。缺图和识别失败使用固定提示，不额外调用模型。OCR 内容检查区分明显无关图、模糊或空白图、持仓列表不完整；这是启发式检查，不能保证识别所有图片类型。多图部分失败时保留有效草稿，并在复核卡片提示核对完整性。只有人工确认才更新正式持仓。
+
+本轮明确的 holding_account_id 或自有账户名称传入子图，识别完成后跳过账户询问。缺失、含糊或否定的目标必须询问，不能根据截图文字、历史消息或第一个账户猜测。即使只有一个账户，未指定时也需要选择。
+
+## 接口
+
+路径以 /api/v1 为前缀，均使用当前聊天会话的 access token。
+
+| 操作 | 接口 | 参数 / 结果 |
 | --- | --- | --- |
-| 上传截图 | `POST /chatbot/holding-imports/screenshots?account_id=7` | multipart 字段 `files`，返回 202、`import_id`、`image_count`、`status=PARSING` |
-| 查询进度和完整草稿 | `GET /chatbot/holding-imports/{import_id}` | `import_batch.status` 和 `items` |
-| 发给 Agent | `POST /chatbot/chat` 或 `/chatbot/chat/stream` | 用户消息 + `holding_import_ids` |
-| 恢复待确认卡片 | `GET /chatbot/pending-action` | `pending_action`，没有待确认时为 null |
-| 确认 / 取消 | `POST /chatbot/holding-imports/{import_id}/decision` | `decision`、`interrupt_id`、`review_digest` |
-
-默认允许 1～5 张 PNG/JPEG/WEBP，每张最多 8 MiB，沿用 `HOLDING_IMPORT_MAX_IMAGES` 和 `HOLDING_IMPORT_MAX_IMAGE_MB`。识别任务复用现有 Taskiq 队列和本地 OCR；原图不会作为 base64 或 URL 发给聊天模型。配置 Redis broker 时需要现有截图识别 worker；未配置时使用进程内 broker。
-
-客户端应轮询进度，待 `REVIEW_REQUIRED` 后发起 Agent 请求。若提前发送，Agent 可以告知仍在识别，之后需再次查询；本版本不在识别完成后自动唤醒聊天。
+| 保存附件 | POST /chatbot/holding-imports/screenshots | multipart files；可选 query account_id；202 返回 import_id 和 UPLOADED |
+| 发送问题 | POST /chatbot/chat 或 /chatbot/chat/stream | messages、holding_import_ids、可选 holding_account_id |
+| 查询识别 | GET /chatbot/holding-imports/{id} | 状态和完整草稿 |
+| 恢复卡片 | GET /chatbot/pending-action | pending_action 或 null |
+| 识别结束后继续 | POST /chatbot/holding-imports/{id}/continue | interrupt_id |
+| 补充账户 | POST /chatbot/holding-imports/{id}/account | interrupt_id、account_id；只绑定草稿 |
+| 确认 / 取消 | POST /chatbot/holding-imports/{id}/decision | interrupt_id、decision；确认必须附 review_digest，取消无需指纹 |
 
 ```json
 {
-  "messages": [{"role": "user", "content": "帮我同步这些截图里的持仓，并让我确认"}],
+  "messages": [{"role": "user", "content": "把截图持仓同步到支付宝，再分析我的持仓"}],
   "holding_import_ids": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
 }
 ```
 
-将示例 ID 替换为上传接口返回的 ID。后端验证每个批次的用户和会话归属，再把 ID 放入本轮动态上下文。模型工具仅接受批次 ID，不能提交图片路径、用户 ID、识别金额或基金代码。
+批次号必须使用真实上传结果，后端核验用户及会话归属。原图不以 URL/base64 发给主图模型，工具只能提交批次号。沿用现有图片格式、数量及大小校验。
 
-## 工具与人工复核
+## 三种可恢复状态
 
-- `get_holding_import(import_id)`：查询进度和最多 20 条草稿预览，完整草稿由 HTTP 接口提供。不会更新持仓。
-- `request_holding_import_confirmation(import_id)`：对 `REVIEW_REQUIRED` 批次生成真实草稿的复核卡，通过 LangGraph `interrupt()` 暂停。不会调用持仓确认服务。
+- holding_import_processing：父图等待识别。移动端每 3 秒查批次，结束后自动 continue；识别未结束的继续请求返回 409。
+- holding_import_account：识别完成但账户未指定，列出用户自己的账户。可以点选或在聊天中回复名称。没有账户时先创建，再返回选择。
+- holding_import_review：展示明确目标账户、完整条目、真实中断 ID 和草稿指纹。只有独立人工确认接口会应用持仓；聊天“确认”不能批准导入。
 
-普通聊天响应 `ChatResponse.pending_action`、`GET /messages` 和流式最后一条 `done=true` 事件均可携带结构化复核卡。客户端应渲染 `items` 中的基金、金额、份额、识别置信度、校验问题、用户裁决和当前持仓对比，并显示 `notice` 中的覆盖语义。
+普通响应、消息历史和流式最后一帧均可返回卡片。刷新或重连通过 pending-action 恢复，移动端本地状态和缓存按会话隔离。普通聊天仅在待选账户阶段接受账户补充，其他等待阶段返回 409。
 
-复核卡提供 `kind=holding_import_review`、`import_id`、`account_id`、`image_count`、`interrupt_id`、`review_digest` 和完整 `items`。图 checkpoint 保存中断，重连或重启后通过 `/pending-action` 恢复。其正文仅提示打开复核面板，不以 Python 字典字符串展示卡片。
+## 复核与一致性
 
-人工点击确认或取消时，从卡片复制两个标识，提交：
+复核列表可以滚动查看全部行，显示金额、份额、置信度、校验问题和当前持仓金额。聊天卡片提供查看、确认及取消；修正条目仍使用现有 PATCH /holding-imports/{id}/items/{item_id}。编辑后刷新获取新指纹，旧指纹确认返回 409，不写持仓。
 
-```json
-{
-  "decision": "confirm",
-  "interrupt_id": "复制卡片的 interrupt_id",
-  "review_digest": "复制卡片的 review_digest"
-}
-```
+确认按基金覆盖选定账户的快照，截图未出现的持仓保留。持仓、IMPORT_ADJUSTMENT 调整流水和 APPLIED 状态在同一事务内提交；重复确认不会重复写入。只有 APPLIED 才能表示同步成功。
 
-`decision` 为 `confirm` 或 `cancel`。成功响应包含确定的 `import_id`、`status`（`APPLIED` / `CANCELLED`）、`applied`、`skipped`、恢复后的 `messages` 和可能的下一张 `pending_action`。客户端应依赖这些结构化字段确认结果，不根据模型措辞推测写入成功。
+识别中、待选账户和待复核均可取消。识别结果保存前重新锁定并检查状态，迟到的成功或失败结果都不能重新激活 CANCELLED 草稿。多个批次依次复核，全部处理后父图继续，每个 ToolCall 保持一个对应 ToolMessage。
 
-普通聊天中的“确认”不会批准导入。存在待复核卡时普通聊天接口返回 409 `holding_import_review_pending`，客户端需先处理复核面板。确认接口核验实际中断 ID 和批次，模型无法伪造人工决策。
+启动识别使用批次行锁去重，账户补充、继续及决策共用会话锁；并发恢复返回 409。多 API worker 部署需配置可用 Valkey/Redis，内存锁用于单进程。恢复失败或超时后先查询批次状态及 pending-action，再重试；已经应用的批次不会重复写入。
 
-## 编辑、时效和失败恢复
+未发送成功的附件保持 UPLOADED，不启动 OCR，可通过现有取消接口清理；本阶段没有新增定时清理作业。
 
-已有 `PATCH /holding-imports/{import_id}/items/{item_id}` 用于修正草稿或设置 UPDATE / EDIT / SKIP。编辑后重新获取 `/chatbot/pending-action`，显示最新草稿和新指纹；旧指纹确认返回 409 `import_review_changed`，不写持仓。指纹覆盖全部条目、用户裁决及当前持仓对比，排除会变化的基金候选列表。
+## 迁移与验证
 
-确认保持现有快照导入语义：按基金覆盖选定账户中本次采纳的字段，不删除截图中未出现的其他持仓，不制造买卖交易；每条生效持仓记录一条 IMPORT_ADJUSTMENT 调整流水。既有持仓保留原持有日期。
+迁移 f1a6c8b4d209 允许尚未绑定账户的会话截图草稿。数据库约束仍要求普通导入及 APPLIED 批次有账户。其他环境运行 APP_ENV=<环境> alembic upgrade head，然后重启后端。
 
-持仓、调整流水、账户导入时间和批次 APPLIED 状态在同一数据库事务内提交。批次确认、编辑及取消共用行锁。已应用批次重复确认返回原数量，不重复写入流水；失败事务完整回滚，回滚前不清理原图。确认或取消后清理临时图片，识别失败沿用原流程清理。
+父图入口：backend/app/agent/graph/agent.py 的 route_attachments；子图：backend/app/agent/graph/holding_import.py；移动端：mobile/app/(tabs)/agent.tsx。移动端类型由后端 OpenAPI 生成。
 
-决策和图恢复按会话串行处理。配置 Valkey 时锁获取失败不会放行人工决策；单进程开发环境使用内存锁。多 API worker 部署应配置可用的 Valkey/Redis 缓存。并发决策返回 409 `holding_import_decision_in_progress`。
-
-如果返回 503 `holding_import_decision_failed_check_status` 或 504 `holding_import_decision_timeout_check_status`，先查询批次状态，再重试同一决策。持仓应用可能已经提交而模型恢复失败；已应用状态不会重复导入。取消与已应用状态冲突会返回 409。跨用户、跨会话或非聊天上传的批次返回 404。
-
-## 迁移和验证
-
-迁移 `a62d8b409e15` 给 `holding_import` 增加可空 `chat_session_id` 及索引；已有普通导入保持 NULL。开发数据库已升级。其他环境运行 `APP_ENV=<环境> ... alembic upgrade head` 后重启后端。工具集与系统提示词的当前版本以注册表及提示词模块常量为准。
-
-验证包括真实 LangGraph 的人工中断/恢复、流式卡片、刷新恢复、归属隔离、旧指纹拒绝、普通聊天拒绝确认、重复与并发决策、恢复失败重试、有效及无效图片上传。另用 PostgreSQL 回滚事务验证中途失败没有部分持仓或流水，以及重复确认的幂等性。自动测试不调用真实聊天模型。
-
-2026-10-08 验证结果：全量后端测试 465 项通过、4 项可选数据库测试跳过；本功能的 2 项 PostgreSQL 测试另行启用后全部通过。Ruff、Pyright 和当前后端环境导入检查通过；OpenAPI 已包含四个新增接口，两个新工具均已注册，本地 OCR 运行时可用。未进行网页/移动端交互验证，也未使用用户真实截图调用聊天模型。
+自动测试覆盖真实中断和恢复、明确及缺失账户、聊天补充账户、跨用户/会话隔离、重复及并发请求、识别失败、取消期间识别结束和多批次顺序处理。PostgreSQL 测试用回滚事务验证无目标草稿保存、账户绑定和确认写入。自动测试不使用真实用户截图或调用真实聊天模型。

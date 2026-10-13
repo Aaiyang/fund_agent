@@ -39,22 +39,31 @@ export default function TransactionsScreen() {
           范围：{params.fund_code ? `基金 ${params.fund_code}` : '全部基金'} ·{' '}
           {accountId ? `账户 ${accounts.data?.items.find((item) => item.id === accountId)?.name ?? accountId}` : '全部账户'}
         </Text>
-        <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 6 }}>
-          买入、定投、转换与期初持仓是流水，持仓份额与成本由它们累计得出；导入修正与手工修正只是快照覆盖的审计记录。
+        <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 6 }}>
+          买入、定投、转换与期初持仓会累计成份额与成本；导入修正与手工修正只是快照覆盖的审计记录。
         </Text>
       </Card>
 
       <Card>
         <Async
           query={transactions}
-          empty={(data) => (data.items.length === 0 ? <EmptyState title="暂无记录" hint="录入或确认导入持仓后会生成调整记录" /> : null)}
+          empty={(data) =>
+            data.items.length === 0 ? <EmptyState title="还没有交易记录" hint="去「持有」页导入或手动录入持仓" /> : null
+          }
         >
           {(data) => (
             <View>
               {data.items.map((item) => (
-                <View key={item.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                <View
+                  key={item.id}
+                  style={{
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 15, color: theme.text, flex: 1 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 15, color: theme.text, flex: 1, marginRight: 8 }} numberOfLines={1}>
                       {item.fund_name ?? item.fund_code}
                     </Text>
                     <Badge
@@ -62,13 +71,19 @@ export default function TransactionsScreen() {
                       tone={TRADES.includes(item.transaction_type) ? 'muted' : 'warning'}
                     />
                   </View>
-                  <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 4 }}>
-                    {formatDate(item.trade_date)}
-                    {item.confirm_date && item.confirm_date !== item.trade_date ? ` 确认 ${formatDate(item.confirm_date)}` : ''} ·
-                    份额 {formatNumber(item.shares)} · 净值 {formatNumber(item.nav)} · 金额 {formatMoney(item.amount)}
-                    {item.fee ? ` · 费用 ${formatMoney(item.fee)}` : ''}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 4 }}>
+                    <Text style={{ flex: 1, fontSize: 12, color: theme.textFaint }}>
+                      {formatDate(item.trade_date)}
+                      {item.confirm_date && item.confirm_date !== item.trade_date ? ` 确认 ${formatDate(item.confirm_date)}` : ''} ·
+                      份额 {formatNumber(item.shares)} · 净值 {formatNumber(item.nav)}
+                      {item.fee ? ` · 费用 ${formatMoney(item.fee)}` : ''}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.textFaint, marginLeft: 8 }}>金额</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 4 }}>
+                      {formatMoney(item.amount)}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }}>
                     来源 {item.source}
                     {item.external_transaction_id ? ` · 导入批次 ${item.external_transaction_id.slice(0, 8)}…` : ''}
                   </Text>

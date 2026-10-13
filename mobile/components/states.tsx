@@ -54,7 +54,7 @@ export function Async<T>({
     if (query.isError) {
       return <ErrorState message={describeError(query.error)} onRetry={() => void query.refetch()} />;
     }
-    return <EmptyState title="暂无数据" />;
+    return <EmptyState title="没有读到数据" hint="下拉刷新试试。" />;
   }
   const placeholder = empty ? empty(data) : null;
   if (placeholder) return placeholder;

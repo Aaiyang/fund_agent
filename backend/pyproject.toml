@@ -42,6 +42,7 @@ dependencies = [
     "alembic>=1.18.4",
     "asyncpg>=0.30.0",
     "akshare>=1.16.0",
+    "beautifulsoup4>=4.12.0",
     "taskiq>=0.11.0",
     "taskiq-redis>=1.1.0",
     "redis>=7.4.0",

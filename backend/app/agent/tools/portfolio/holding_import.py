@@ -8,6 +8,20 @@ from app.agent.tools.result import ToolResult
 from app.agent.tools.runtime import get_tool_runtime
 from app.services.agent_holding_import_service import agent_holding_import_service
 from app.services.holding_import_service import ImportStateError
+from app.utils.screenshot_errors import screenshot_failure_message
+
+
+@tool
+@tool_result
+async def start_holding_import() -> str:
+    """用户明确要求从图片导入、同步或更新持仓时，声明本轮持仓导入需求.
+
+    不接受模型填写附件、账户、持仓或身份参数；路由节点读取本轮真实上传的附件。
+    没有附件时提示用户上传完整、清晰的基金持仓截图。有附件后进入识别及人工确认子图。
+    仅上传图片、分析截图、查询持仓、诊断持仓或明确不导入时，不调用这个工具。
+    """
+    get_tool_runtime()
+    return ToolResult.ok({"intent": "holding_import"}, source="agent_router").to_text()
 
 
 @tool
@@ -24,6 +38,9 @@ async def get_holding_import(import_id: str) -> str:
         detail = await agent_holding_import_service.detail(runtime.user_id, runtime.thread_id, import_id)
     except ImportStateError:
         return ToolResult.fail("IMPORT_NOT_FOUND", "当前会话没有该图片导入批次").to_text()
+    if detail.status == "PARSE_FAILED":
+        code, notice = screenshot_failure_message(detail.error_message)
+        return ToolResult.fail(code, notice).to_text()
     data = detail.model_dump(mode="json", exclude={"error_message", "items"})
     data["items"] = [
         item.model_dump(mode="json", exclude={"candidates", "validation_issues"}) for item in detail.items[:20]

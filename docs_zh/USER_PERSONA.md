@@ -1,6 +1,18 @@
 # mem0 与数据库用户画像
 
-长期语义记忆继续使用 mem0 + pgvector。画像由 PostgreSQL 管理，只有用户直接编辑或人工确认的字段生效，不从已有 mem0 记录自动推断。当前完成后端，frontend/mobile 画像管理页面尚未接入。
+长期语义记忆继续使用 mem0 + pgvector。画像由 PostgreSQL 管理，只有用户直接编辑或人工确认的字段生效，不从已有 mem0 记录自动推断。后端与移动端管理页面已接入，网页端管理页面尚未接入。
+
+## 移动端管理体验
+
+入口为「我的 → 用户画像」。蓝白色概览展示已设置项、风险偏好、期限和目标；七个字段均可选，未填写不自动补值。页面提供「我的画像 / 待确认 / 变更记录」三个页签，按投资偏好、目标与期限、回答习惯分组编辑。
+
+编辑面板使用本地草稿，每组点击保存时才提交一次。退出时保护未保存修改，失败后保留输入；目标最多五条、每条 120 字，期限为 1–600 月。输入了新目标但未点「添加」时，保存也会包含它。编辑使用打开面板时的版本，冲突后重新读取；重新载入前也会确认放弃草稿。
+
+AI 建议展示旧值、新值、用户原文依据及时间，由用户接受或拒绝。直接编辑或接受建议会让其他待确认建议失效，页面明确提示此行为。变更记录支持继续加载、失败重试；「数据与隐私」说明用途和清除范围，清除前再次确认。清除画像不清除语义记忆或聊天。
+
+体验参考 [Wealthfront 的偏好复核入口](https://support.wealthfront.com/hc/en-us/articles/4407740003604-How-do-I-retake-the-risk-questionnaire) 与 [ChatGPT 的记忆管理说明](https://help.openai.com/en/articles/8590148-memory-in-chatgpt)，采用分组编辑、可查看来源和用户自主修改。当前沿用现有七个字段，没有新增风险评分或按资金用途划分的目标数据库。
+
+在 `mobile/` 运行 `node tests/fixtures/persona-preview-api.cjs` 可启动仅绑定本机的模拟 API；预览 Expo 进程需设置 `EXPO_PUBLIC_API_BASE_URL=http://localhost:8019/api/v1`。模拟数据不连接真实用户数据库，预览结束后停止这些进程并恢复正常开发服务。
 
 ## 信息与字段
 
@@ -60,6 +72,6 @@
 
 运行 `alembic upgrade head`，迁移 `d31f9a6b8204` 新增三张表，随后重启后端。`USER_PERSONA_ENABLED=true` 默认开启 Agent 自动读取；false只关闭自动注入，管理接口仍可用。
 
-工具版本 `v4`，当前提示词版本 `fund-agent-v7`。画像提议沿用已有 LangGraph/Langfuse 调用链，没有额外画像提取 LLM。单元/API/Graph 测试覆盖白名单、鉴权、证据和故障降级；`FUND_TEST_POSTGRES=true` 运行 `tests/test_user_persona_postgres.py` 验证真实数据库隔离、幂等、旧版本保护、清除和回滚，临时数据最终回滚。
+工具版本 `v9`，当前提示词版本 `fund-agent-v13`。画像提议沿用已有 LangGraph/Langfuse 调用链，没有额外画像提取 LLM。单元/API/Graph 测试覆盖白名单、鉴权、证据和故障降级；`FUND_TEST_POSTGRES=true` 运行 `tests/test_user_persona_postgres.py` 验证真实数据库隔离、幂等、旧版本保护、清除和回滚，临时数据最终回滚。
 
 增量记忆写入、可靠队列、按问题动态召回和人工纠错已接入，详见 [语义记忆](SEMANTIC_MEMORY.md)。旧 mem0 条目暂时隔离，不自动转成已确认画像。

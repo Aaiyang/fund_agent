@@ -16,6 +16,7 @@ export type TransactionItem = components['schemas']['TransactionItem'];
 function invalidateAccounts(client: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.accounts }),
+    client.invalidateQueries({ queryKey: queryKeys.chatPendingAction }),
     client.invalidateQueries({ queryKey: queryKeys.portfolio }),
     client.invalidateQueries({ queryKey: queryKeys.transactionsAll }),
   ]);
@@ -35,6 +36,33 @@ export function usePortfolioSummary(accountId: number | null) {
     queryKey: queryKeys.portfolioSummary(accountId),
     queryFn: () =>
       api.get<components['schemas']['PortfolioSummaryResponse']>('/portfolio/summary', { account_id: accountId }),
+  });
+}
+
+export type AccountSummaryRow = { accountId: number; summary: PortfolioSummary | null };
+
+/**
+ * 首页那种"每个账户一张汇总卡"要一次拿齐所有账户。
+ *
+ * 后端没有跨账户的批量汇总端点，所以逐只并发取；某一只失败只让那张卡显示
+ * "没取到"，不能把整屏判成失败——其余账户的数字是真的。
+ */
+export function usePortfolioSummaries(accountIds: number[]) {
+  const key = [...accountIds].sort((a, b) => a - b).join(',');
+  return useQuery({
+    queryKey: [...queryKeys.portfolio, 'summaries', key],
+    queryFn: async (): Promise<AccountSummaryRow[]> => {
+      const settled = await Promise.allSettled(
+        accountIds.map((id) =>
+          api.get<components['schemas']['PortfolioSummaryResponse']>('/portfolio/summary', { account_id: id }),
+        ),
+      );
+      return settled.map((result, index) => ({
+        accountId: accountIds[index],
+        summary: result.status === 'fulfilled' ? result.value.summary : null,
+      }));
+    },
+    enabled: accountIds.length > 0,
   });
 }
 

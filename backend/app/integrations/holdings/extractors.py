@@ -20,6 +20,13 @@ from app.integrations.holdings.rows import read_rows
 # ONNX Runtime 算一页时自己就会把计算铺到多个线程上；并行到第二页足够让
 # worker 一直有活干，再多只会让模型副本跟着排队，并不会更快。
 _CONCURRENCY = 2
+_HOLDING_MARKERS = ("持仓", "持有", "份额", "市值", "持有收益", "持仓成本")
+_FUND_MARKERS = ("混合", "债券", "股票型", "指数", "联接", "ETF", "LOF", "QDII")
+_CHART_MARKERS = ("业绩走势", "净值走势", "走势图", "K线", "日K", "周K", "月K")
+
+
+class ScreenshotContentError(ValueError):
+    """OCR 已运行，但图中没有可导入的持仓内容，错误正文为稳定原因码."""
 
 
 def image_hash(path: str) -> str:
@@ -65,6 +72,8 @@ class ScreenshotPositionExtractor:
                     # 引擎缺失时每张都会以同样的方式失败；说一句清楚的重话，
                     # 胜过一堆逐文件的噪音。
                     raise
+                except ScreenshotContentError as exc:
+                    return [], str(exc)
                 except Exception as e:
                     logger.warning("screenshot_extraction_failed", path=path, error=str(e))
                     return [], f"{Path(path).name}: {e}"
@@ -91,9 +100,27 @@ class ScreenshotPositionExtractor:
         page = await screenshot_ocr.read(path)
         layout = build_layout(page)
         rows = read_rows(page, layout)
-        if not rows:
+        positions = to_positions(rows, layout)
+        text = " ".join(block.text for block in page.blocks)
+        holding_context = any(marker in text for marker in _HOLDING_MARKERS)
+        fund_rows = any(any(marker in (row.fund_name or "") for marker in _FUND_MARKERS) for row in positions)
+        holding_values = any(
+            any(value is not None for value in (row.market_value, row.shares, row.cost_amount, row.profit_loss))
+            for row in positions
+        )
+        chart_only = not holding_context and any(marker in text for marker in _CHART_MARKERS)
+        if positions and not chart_only and (holding_context or fund_rows or holding_values):
+            return positions
+        if not positions:
             logger.warning("screenshot_no_rows_detected", image=Path(path).name, blocks=len(page.blocks))
-        return to_positions(rows, layout)
+        if not page.blocks:
+            raise ScreenshotContentError("screenshot_unreadable")
+        fund_context = any(marker in text for marker in _FUND_MARKERS)
+        if (holding_context or fund_context) and not chart_only:
+            raise ScreenshotContentError("no_positions_detected")
+        if chart_only or (len(page.blocks) >= 3 and all(block.score >= 0.8 for block in page.blocks)):
+            raise ScreenshotContentError("not_holding_screenshot")
+        raise ScreenshotContentError("screenshot_unreadable")
 
 
 screenshot_position_extractor = ScreenshotPositionExtractor()

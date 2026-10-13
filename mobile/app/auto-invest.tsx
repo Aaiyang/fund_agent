@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { Async, describeError } from '@/components/states';
+import { Async, EmptyState, describeError } from '@/components/states';
 import { DateField } from '@/components/DateField';
 import { Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -30,32 +30,41 @@ export default function AutoInvestScreen() {
   const [creating, setCreating] = useState(false);
 
   return (
-    <Screen>
-      <Async query={plans} empty={() => <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有定投计划</Text>}>
-        {(data) => (
-          <>
-            {data.items.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} />
-            ))}
-            {(data.settled ?? 0) > 0 ? (
-              <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 10 }}>
-                本次打开补记了 {data.settled} 期定投扣款。
-              </Text>
-            ) : null}
-          </>
-        )}
-      </Async>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Async
+          query={plans}
+          empty={(data) =>
+            data.items.length === 0 ? (
+              <EmptyState title="还没有定投计划" hint="点下方“新建定投计划”，先把扣款排期定下来" />
+            ) : null
+          }
+        >
+          {(data) => (
+            <>
+              {data.items.map((plan) => (
+                <PlanCard key={plan.id} plan={plan} />
+              ))}
+              {(data.settled ?? 0) > 0 ? (
+                <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 10 }}>
+                  本次打开补记了 {data.settled} 期定投扣款。
+                </Text>
+              ) : null}
+            </>
+          )}
+        </Async>
 
-      <Card>
-        <Button
-          label={creating ? '收起新建计划' : '+ 新建定投计划'}
-          variant={creating ? 'secondary' : 'primary'}
-          onPress={() => setCreating(!creating)}
-        />
-      </Card>
+        <Card>
+          <Button
+            label={creating ? '收起新建计划' : '+ 新建定投计划'}
+            variant={creating ? 'secondary' : 'primary'}
+            onPress={() => setCreating(!creating)}
+          />
+        </Card>
 
-      {creating ? <CreatePlan accountId={accountId} create={create} onDone={() => setCreating(false)} /> : null}
-    </Screen>
+        {creating ? <CreatePlan accountId={accountId} create={create} onDone={() => setCreating(false)} /> : null}
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -84,7 +93,8 @@ function PlanCard({ plan }: { plan: AutoInvestPlan }) {
           <Button
             label={plan.active ? '暂停' : '启用'}
             variant="secondary"
-            loading={update.isPending}
+            // 计划卡各自成一张，共用一个 isPending 会让所有卡片同时显示“处理中”…
+            loading={update.isPending && update.variables?.planId === plan.id}
             onPress={() =>
               update.mutate(
                 { planId: plan.id, active: !plan.active },
@@ -97,7 +107,7 @@ function PlanCard({ plan }: { plan: AutoInvestPlan }) {
           <Button
             label="删除"
             variant="danger"
-            loading={remove.isPending}
+            loading={remove.isPending && remove.variables?.planId === plan.id}
             onPress={() =>
               remove.mutate(
                 // 每期定投都是真实发生的资金流水，只有当计划本身建错了，
@@ -138,16 +148,16 @@ function CreatePlan({
       return;
     }
     if (!/^\d{6}$/.test(fundCode.trim())) {
-      setProblem('基金代码需要是 6 位数字');
+      setProblem('请填写基金代码，需为 6 位数字');
       return;
     }
-    if (amount.trim() === '' || Number(amount) <= 0) {
-      setProblem('请填写每期定投金额');
+    if (amount.trim() === '' || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+      setProblem('请填写每期定投金额，需为大于 0 的数字');
       return;
     }
     const day = max === null ? 1 : Number(runDay);
     if (max !== null && (!Number.isInteger(day) || day < 1 || day > max)) {
-      setProblem(`扣款日要在 1-${max} 之间`);
+      setProblem(`扣款日需为 1-${max} 的整数`);
       return;
     }
     create.mutate(
@@ -185,7 +195,7 @@ function CreatePlan({
           value={runDay}
           onChangeText={setRunDay}
           keyboardType="numeric"
-          placeholder={frequency === 'monthly' ? '请输入 1-31' : '请输入 1-7'}
+          placeholder={frequency === 'monthly' ? '请输入 1-31 的整数' : '请输入 1-7 的整数'}
         />
       ) : null}
       <DateField label="开始日期" value={startDate} onChange={setStartDate} placeholder="请选择开始扣款的日期" />

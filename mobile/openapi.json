@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Fund Agent",
+    "title": "持见",
     "description": "A production-ready FastAPI template with LangGraph and Langfuse integration",
     "version": "1.0.0"
   },
@@ -392,7 +392,7 @@
           "Chatbot"
         ],
         "summary": "Upload Holding Screenshots",
-        "description": "聊天图片上传：目标账户属于当前用户，创建识别草稿并绑定当前会话.",
+        "description": "随问题发送的附件：先保存并绑定会话，目标可稍后补充，子图启动识别.",
         "operationId": "upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post",
         "security": [
           {
@@ -403,9 +403,16 @@
           {
             "name": "account_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "integer",
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Account Id"
             }
           }
@@ -471,6 +478,100 @@
         ]
       }
     },
+    "/api/v1/chatbot/continue": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Continue Agent Run",
+        "description": "在人工选择后的执行错误或断线后继续原任务；会话、轮次和中断由服务端核验.",
+        "operationId": "continue_agent_run_api_v1_chatbot_continue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentContinueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chatbot/fund-selection/decision": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Choose Analysis Fund",
+        "description": "仅接受当前会话真实候选和中断 ID，选择后恢复原问题的分析.",
+        "operationId": "choose_analysis_fund_api_v1_chatbot_fund_selection_decision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FundSelectionDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chatbot/holding-imports/{import_id}": {
       "get": {
         "tags": [
@@ -502,6 +603,122 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chatbot/holding-imports/{import_id}/continue": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Continue Holding Import",
+        "description": "识别任务已结束时恢复子图；不会确认或应用持仓.",
+        "operationId": "continue_holding_import_api_v1_chatbot_holding_imports__import_id__continue_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldingImportContinueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chatbot/holding-imports/{import_id}/account": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Choose Holding Import Account",
+        "description": "人工补充目标账户，只推进到复核阶段，不写正式持仓.",
+        "operationId": "choose_holding_import_account_api_v1_chatbot_holding_imports__import_id__account_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldingImportAccountDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
                 }
               }
             }
@@ -1548,6 +1765,184 @@
         }
       }
     },
+    "/api/v1/sectors/market": {
+      "get": {
+        "tags": [
+          "Sectors"
+        ],
+        "summary": "Sector Market",
+        "description": "客户端卡片按真实BK代码取数，不接受模型行情序列.",
+        "operationId": "sector_market_api_v1_sectors_market_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "title": "Keyword"
+            }
+          },
+          {
+            "name": "sector_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "industry",
+                "concept",
+                "all"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Sector Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 1,
+              "default": 3,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectorMarketResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sectors/board": {
+      "get": {
+        "tags": [
+          "Sectors"
+        ],
+        "summary": "Sector Board",
+        "description": "板块榜；涨跌幅单位是百分点，取不到数时返回 503 而不是空榜.",
+        "operationId": "sector_board_api_v1_sectors_board_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "industry",
+                "concept"
+              ],
+              "type": "string",
+              "description": "industry 行业板块、concept 概念板块",
+              "default": "industry",
+              "title": "Kind"
+            },
+            "description": "industry 行业板块、concept 概念板块"
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "desc",
+                "asc"
+              ],
+              "type": "string",
+              "description": "desc 从大到小、asc 从小到大",
+              "default": "desc",
+              "title": "Order"
+            },
+            "description": "desc 从大到小、asc 从小到大"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "change_pct",
+                "amount"
+              ],
+              "type": "string",
+              "description": "排名指标：change_pct 涨幅、amount 成交额",
+              "default": "change_pct",
+              "title": "Sort"
+            },
+            "description": "排名指标：change_pct 涨幅、amount 成交额"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "返回条数，最多 50",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "返回条数，最多 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectorBoardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/watchlist/groups": {
       "get": {
         "tags": [
@@ -1923,6 +2318,99 @@
                     "type": "string"
                   },
                   "title": "Response Update Watchlist Entry Api V1 Watchlist  Fund Code  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/allocation-preview": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Allocation Preview",
+        "description": "只读操作情景；身份取自JWT，账户归属必须校验，不写交易.",
+        "operationId": "allocation_preview_api_v1_portfolio_allocation_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fund_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{6}$",
+              "title": "Fund Code"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "build",
+                "increase",
+                "reduce",
+                "exit",
+                "compare"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 1000000000,
+              "exclusiveMinimum": 0,
+              "title": "Amount"
+            }
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationPreviewResponse"
                 }
               }
             }
@@ -3538,6 +4026,611 @@
         ]
       }
     },
+    "/api/v1/agent/user-profile": {
+      "get": {
+        "tags": [
+          "User Profile"
+        ],
+        "summary": "Get Persona",
+        "description": "只返回当前用户的已确认画像与待复核候选.",
+        "operationId": "get_persona_api_v1_agent_user_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "User Profile"
+        ],
+        "summary": "Clear Persona",
+        "description": "清除全部画像字段、候选、证据和历史；版本继续递增.",
+        "operationId": "clear_persona_api_v1_agent_user_profile_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaClear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "User Profile"
+        ],
+        "summary": "Update Persona",
+        "description": "用户直接编辑，客户端不能提交其他用户 ID 或非白名单字段.",
+        "operationId": "update_persona_api_v1_agent_user_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/user-profile/history": {
+      "get": {
+        "tags": [
+          "User Profile"
+        ],
+        "summary": "Persona History",
+        "description": "读取本用户的已确认变更，最多100条.",
+        "operationId": "persona_history_api_v1_agent_user_profile_history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PersonaHistoryOut"
+                  },
+                  "title": "Response Persona History Api V1 Agent User Profile History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/user-profile/proposals/{proposal_id}/decision": {
+      "post": {
+        "tags": [
+          "User Profile"
+        ],
+        "summary": "Decide Persona",
+        "description": "人工确认或拒绝候选；过期版本409，其他用户候选404.",
+        "operationId": "decide_persona_api_v1_agent_user_profile_proposals__proposal_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/memories": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "List Memories",
+        "description": "只列出当前用户未删除、未过期的事实及来源.",
+        "operationId": "list_memories_api_v1_agent_memories_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryItemOut"
+                  },
+                  "title": "Response List Memories Api V1 Agent Memories Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Clear Memories",
+        "description": "立即抹除应用记忆正文，取消旧写入，向量删除交由可恢复任务完成.",
+        "operationId": "clear_memories_api_v1_agent_memories_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryClear"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/memories/settings": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Get Memory Settings",
+        "description": "读取用户开关与并发控制版本.",
+        "operationId": "get_memory_settings_api_v1_agent_memories_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySettingsOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Update Memory Settings",
+        "description": "关闭停止召回与新写入；已有事实仍可通过管理接口查看/删除.",
+        "operationId": "update_memory_settings_api_v1_agent_memories_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/memories/jobs": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Memory Jobs",
+        "description": "任务账本不暴露聊天原文或底层错误文本.",
+        "operationId": "memory_jobs_api_v1_agent_memories_jobs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryJobOut"
+                  },
+                  "title": "Response Memory Jobs Api V1 Agent Memories Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/memories/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Retry Memory Job",
+        "description": "仅当前用户可重新排队当前代际失败任务.",
+        "operationId": "retry_memory_job_api_v1_agent_memories_jobs__job_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/memories/{memory_id}": {
+      "patch": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Edit Memory",
+        "description": "直接按用户提交内容纠错，不让模型再次解释或猜测.",
+        "operationId": "edit_memory_api_v1_agent_memories__memory_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Delete Memory",
+        "description": "带版本保护地忘记一条记忆，立即阻止旧向量召回.",
+        "operationId": "delete_memory_api_v1_agent_memories__memory_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryDelete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health Check",
@@ -3756,6 +4849,154 @@
         "title": "AccountsResponse",
         "description": "GET /accounts 响应体."
       },
+      "AgentContinueRequest": {
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Turn Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "turn_id"
+        ],
+        "title": "AgentContinueRequest",
+        "description": "旧界面不得推进另一轮任务，身份始终由会话令牌决定."
+      },
+      "AgentRunContinuation": {
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "title": "Turn Id"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "原任务尚未完成，可继续执行；已经确认的对象和操作会保留。"
+          },
+          "selected_fund_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Fund Code"
+          },
+          "selected_fund_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Fund Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn_id"
+        ],
+        "title": "AgentRunContinuation",
+        "description": "checkpoint中尚未完成且不等待人工决定的原任务."
+      },
+      "AllocationChartReference": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "type": {
+            "type": "string",
+            "const": "fund_allocation",
+            "title": "Type",
+            "default": "fund_allocation"
+          },
+          "fund_code": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "title": "Fund Code"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "build",
+              "increase",
+              "reduce",
+              "exit"
+            ],
+            "title": "Action"
+          },
+          "amount": {
+            "type": "number",
+            "maximum": 1000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fund_code",
+          "action",
+          "amount"
+        ],
+        "title": "AllocationChartReference",
+        "description": "本人基金账本的只读条件试算引用."
+      },
+      "AllocationPreviewResponse": {
+        "properties": {
+          "reference": {
+            "$ref": "#/components/schemas/AllocationChartReference"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "scenario": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scenario"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reference",
+          "captured_at",
+          "scenario"
+        ],
+        "title": "AllocationPreviewResponse",
+        "description": "当前账本的只读条件试算，没有交易写入."
+      },
       "AutoInvestPlanCreateRequest": {
         "properties": {
           "account_id": {
@@ -3770,7 +5011,7 @@
           },
           "amount": {
             "type": "number",
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Amount"
           },
           "frequency": {
@@ -3786,8 +5027,8 @@
           },
           "run_day": {
             "type": "integer",
-            "maximum": 31,
-            "minimum": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
             "title": "Run Day",
             "description": "每周几（1-7）或每月几号（1-31）",
             "default": 1
@@ -3929,7 +5170,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -3958,8 +5199,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 31,
-                "minimum": 1
+                "maximum": 31.0,
+                "minimum": 1.0
               },
               {
                 "type": "null"
@@ -4189,7 +5430,7 @@
           "content"
         ],
         "title": "ChatInputMessage",
-        "description": "客户端只允许提交用户消息，系统指令与模型历史由服务端构建."
+        "description": "客户端输入独立校验：仅用户角色，正文最多 3000 字符."
       },
       "ChatRequest": {
         "properties": {
@@ -4210,6 +5451,18 @@
             "type": "array",
             "maxItems": 5,
             "title": "Holding Import Ids"
+          },
+          "holding_account_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holding Account Id"
           }
         },
         "type": "object",
@@ -4238,7 +5491,44 @@
           "pending_action": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/HoldingImportReview"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HoldingImportReview"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportProcessing"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportAccountSelection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FundSelectionAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HumanQuestionAction"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fund_selection": "#/components/schemas/FundSelectionAction",
+                    "holding_import_account": "#/components/schemas/HoldingImportAccountSelection",
+                    "holding_import_processing": "#/components/schemas/HoldingImportProcessing",
+                    "holding_import_review": "#/components/schemas/HoldingImportReview",
+                    "human_question": "#/components/schemas/HumanQuestionAction"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunContinuation"
               },
               {
                 "type": "null"
@@ -5241,6 +6531,115 @@
         "title": "FundSearchResponse",
         "description": "GET /funds/search 响应体."
       },
+      "FundSelectionAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fund_selection",
+            "title": "Kind",
+            "default": "fund_selection"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "title": "Interrupt Id",
+            "default": ""
+          },
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FundSelectionOption"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Candidates"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "以下是名称最接近的基金候选，请确认要分析的基金，注意 A/C 等份额区别。"
+          }
+        },
+        "type": "object",
+        "required": [
+          "keyword",
+          "candidates"
+        ],
+        "title": "FundSelectionAction",
+        "description": "由 checkpoint 保存的前三个候选."
+      },
+      "FundSelectionDecision": {
+        "properties": {
+          "interrupt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Interrupt Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "select",
+              "cancel"
+            ],
+            "title": "Decision"
+          },
+          "fund_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fund Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "interrupt_id",
+          "decision"
+        ],
+        "title": "FundSelectionDecision",
+        "description": "人工决策只能选择候选代码或取消，不能上传新的候选."
+      },
+      "FundSelectionOption": {
+        "properties": {
+          "fund_code": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "title": "Fund Code"
+          },
+          "fund_name": {
+            "type": "string",
+            "title": "Fund Name"
+          },
+          "fund_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fund Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fund_code",
+          "fund_name"
+        ],
+        "title": "FundSelectionOption",
+        "description": "保留基金全名和代码，避免混淆不同份额."
+      },
       "FundSyncStatusResponse": {
         "properties": {
           "request_id": {
@@ -5290,6 +6689,102 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HoldingAccountOption": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "HoldingAccountOption",
+        "description": "仅列出认证用户自己的目标账户."
+      },
+      "HoldingImportAccountDecision": {
+        "properties": {
+          "interrupt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Interrupt Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "interrupt_id",
+          "account_id"
+        ],
+        "title": "HoldingImportAccountDecision",
+        "description": "人工目标选择只更新导入草稿，不写入正式持仓."
+      },
+      "HoldingImportAccountSelection": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "holding_import_account",
+            "title": "Kind",
+            "default": "holding_import_account"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "title": "Interrupt Id",
+            "default": ""
+          },
+          "import_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Import Id"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingAccountOption"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "截图已识别，请选择要同步到的持仓账户，再核对识别结果。"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_id",
+          "accounts"
+        ],
+        "title": "HoldingImportAccountSelection",
+        "description": "识别完成但未指定目标账户，等待用户选择，不猜测第一个账户."
+      },
+      "HoldingImportContinueRequest": {
+        "properties": {
+          "interrupt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Interrupt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "interrupt_id"
+        ],
+        "title": "HoldingImportContinueRequest",
+        "description": "只恢复真实中断，不能直接确认持仓."
+      },
       "HoldingImportDecision": {
         "properties": {
           "decision": {
@@ -5307,16 +6802,22 @@
             "title": "Interrupt Id"
           },
           "review_digest": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Review Digest"
           }
         },
         "type": "object",
         "required": [
           "decision",
-          "interrupt_id",
-          "review_digest"
+          "interrupt_id"
         ],
         "title": "HoldingImportDecision",
         "description": "仅由人工界面提交，不是 LLM 工具参数或普通聊天消息."
@@ -5340,7 +6841,44 @@
           "pending_action": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/HoldingImportReview"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HoldingImportReview"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportProcessing"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportAccountSelection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FundSelectionAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HumanQuestionAction"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fund_selection": "#/components/schemas/FundSelectionAction",
+                    "holding_import_account": "#/components/schemas/HoldingImportAccountSelection",
+                    "holding_import_processing": "#/components/schemas/HoldingImportProcessing",
+                    "holding_import_review": "#/components/schemas/HoldingImportReview",
+                    "human_question": "#/components/schemas/HumanQuestionAction"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunContinuation"
               },
               {
                 "type": "null"
@@ -5380,6 +6918,37 @@
         "title": "HoldingImportDecisionResponse",
         "description": "人工操作结果由数据库确定，客户端不依赖模型生成的成功描述."
       },
+      "HoldingImportProcessing": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "holding_import_processing",
+            "title": "Kind",
+            "default": "holding_import_processing"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "title": "Interrupt Id",
+            "default": ""
+          },
+          "import_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Import Id"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "正在识别持仓截图，完成后继续选择账户和人工复核。"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_id"
+        ],
+        "title": "HoldingImportProcessing",
+        "description": "子图等待后台识别；客户端可刷新或断线后恢复，不调用主图 LLM."
+      },
       "HoldingImportReview": {
         "properties": {
           "kind": {
@@ -5401,6 +6970,11 @@
           "account_id": {
             "type": "integer",
             "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name",
+            "default": ""
           },
           "image_count": {
             "type": "integer",
@@ -5433,6 +7007,36 @@
         ],
         "title": "HoldingImportReview",
         "description": "结构化 HITL 卡片，图 checkpoint 保存它，客户端刷新可恢复."
+      },
+      "HumanQuestionAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "human_question",
+            "title": "Kind",
+            "default": "human_question"
+          },
+          "interrupt_id": {
+            "type": "string",
+            "title": "Interrupt Id",
+            "default": ""
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "请在输入框回答，发送后会继续原任务。"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "HumanQuestionAction",
+        "description": "刷新后仍能看到真实问题；回答通过原会话聊天入口恢复."
       },
       "ImportCandidate": {
         "properties": {
@@ -5495,7 +7099,14 @@
             "title": "Id"
           },
           "account_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Account Id"
           },
           "import_type": {
@@ -5854,7 +7465,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5866,7 +7477,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5878,7 +7489,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -5890,7 +7501,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6382,7 +7993,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6394,7 +8005,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6406,7 +8017,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6418,7 +8029,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6453,6 +8064,252 @@
         "title": "ManualPositionInput",
         "description": "一条手动录入的持仓."
       },
+      "MemoryClear": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "MemoryClear",
+        "description": "版本保护的全量语义记忆清除."
+      },
+      "MemoryDelete": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "MemoryDelete",
+        "description": "版本保护的单条删除."
+      },
+      "MemoryEdit": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "content"
+        ],
+        "title": "MemoryEdit",
+        "description": "人工纠错不会重新让模型猜测用户的意思."
+      },
+      "MemoryItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "research_preference",
+              "analysis_event"
+            ],
+            "title": "Kind"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "source_quote": {
+            "type": "string",
+            "title": "Source Quote"
+          },
+          "source_session_id": {
+            "type": "string",
+            "title": "Source Session Id"
+          },
+          "source_message_id": {
+            "type": "string",
+            "title": "Source Message Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "index_state": {
+            "type": "string",
+            "title": "Index State"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "content",
+          "source_quote",
+          "source_session_id",
+          "source_message_id",
+          "version",
+          "index_state",
+          "expires_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryItemOut",
+        "description": "只返回数据库当前版本，不返回向量里的旧文本."
+      },
+      "MemoryJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "source_session_id": {
+            "type": "string",
+            "title": "Source Session Id"
+          },
+          "source_message_id": {
+            "type": "string",
+            "title": "Source Message Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "attempts",
+          "error_code",
+          "source_session_id",
+          "source_message_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryJobOut",
+        "description": "任务观察不暴露完整聊天载荷或底层异常详情."
+      },
+      "MemorySettingsOut": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision",
+            "default": 0
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation",
+            "default": 0
+          },
+          "globally_enabled": {
+            "type": "boolean",
+            "title": "Globally Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "globally_enabled"
+        ],
+        "title": "MemorySettingsOut",
+        "description": "用户控制开关与检索缓存使用的版本."
+      },
+      "MemorySettingsUpdate": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "enabled"
+        ],
+        "title": "MemorySettingsUpdate",
+        "description": "关闭停止新写入与召回，保留已有内容供用户管理."
+      },
       "Message": {
         "properties": {
           "role": {
@@ -6467,10 +8324,9 @@
           },
           "content": {
             "type": "string",
-            "maxLength": 3000,
             "minLength": 1,
             "title": "Content",
-            "description": "The content of the message"
+            "description": "The complete content of the message"
           }
         },
         "type": "object",
@@ -6479,7 +8335,7 @@
           "content"
         ],
         "title": "Message",
-        "description": "chat 端点的消息模型.\n\nAttributes:\n    role: 消息发送方角色（user 或 assistant）。\n    content: 消息正文。"
+        "description": "服务端内部、回答与历史消息，不套用客户端输入的长度或正文校验.\n\nAttributes:\n    role: 消息发送方角色（user 或 assistant）。\n    content: 消息正文。"
       },
       "MinuteExternalPoint": {
         "properties": {
@@ -6556,7 +8412,44 @@
           "pending_action": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/HoldingImportReview"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HoldingImportReview"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportProcessing"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HoldingImportAccountSelection"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FundSelectionAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HumanQuestionAction"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fund_selection": "#/components/schemas/FundSelectionAction",
+                    "holding_import_account": "#/components/schemas/HoldingImportAccountSelection",
+                    "holding_import_processing": "#/components/schemas/HoldingImportProcessing",
+                    "holding_import_review": "#/components/schemas/HoldingImportReview",
+                    "human_question": "#/components/schemas/HumanQuestionAction"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunContinuation"
               },
               {
                 "type": "null"
@@ -6568,22 +8461,466 @@
         "title": "PendingActionResponse",
         "description": "查询当前会话仍等待人工操作的复核卡片."
       },
+      "PersonaClear": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "PersonaClear",
+        "description": "画像清除协议，版本保护并发更新."
+      },
+      "PersonaDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Decision"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "expected_revision"
+        ],
+        "title": "PersonaDecision",
+        "description": "只允许人工 HTTP 接口确认或拒绝候选."
+      },
+      "PersonaFields": {
+        "properties": {
+          "response_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Language"
+          },
+          "response_detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "concise",
+                  "balanced",
+                  "detailed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Detail"
+          },
+          "investment_experience": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "beginner",
+                  "intermediate",
+                  "experienced"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Experience"
+          },
+          "risk_preference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "conservative",
+                  "balanced",
+                  "aggressive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Preference"
+          },
+          "investment_horizon_months": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 600.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Horizon Months"
+          },
+          "investment_goals": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Goals"
+          },
+          "excluded_fund_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "equity",
+                    "bond",
+                    "money_market",
+                    "mixed",
+                    "index",
+                    "qdii",
+                    "fof",
+                    "reit",
+                    "commodity"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Fund Types"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PersonaFields",
+        "description": "只表示用户声明的偏好；不包含持仓、金额、凭证或交易授权."
+      },
+      "PersonaHistoryOut": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changes"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "changes",
+          "source",
+          "created_at"
+        ],
+        "title": "PersonaHistoryOut",
+        "description": "一次已提交变更的版本与来源；清除画像时一并删除."
+      },
+      "PersonaOut": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision",
+            "default": 0
+          },
+          "fields": {
+            "$ref": "#/components/schemas/PersonaFields"
+          },
+          "provenance": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Provenance"
+          },
+          "pending_proposals": {
+            "items": {
+              "$ref": "#/components/schemas/PersonaProposalOut"
+            },
+            "type": "array",
+            "title": "Pending Proposals"
+          }
+        },
+        "type": "object",
+        "title": "PersonaOut",
+        "description": "已确认画像、来源与当前待确认候选."
+      },
+      "PersonaPatch": {
+        "properties": {
+          "response_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Language"
+          },
+          "response_detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "concise",
+                  "balanced",
+                  "detailed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Detail"
+          },
+          "investment_experience": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "beginner",
+                  "intermediate",
+                  "experienced"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Experience"
+          },
+          "risk_preference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "conservative",
+                  "balanced",
+                  "aggressive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Preference"
+          },
+          "investment_horizon_months": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 600.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Horizon Months"
+          },
+          "investment_goals": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Goals"
+          },
+          "excluded_fund_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "equity",
+                    "bond",
+                    "money_market",
+                    "mixed",
+                    "index",
+                    "qdii",
+                    "fof",
+                    "reit",
+                    "commodity"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Fund Types"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PersonaPatch",
+        "description": "部分更新；显式 null 删除字段，省略字段保持原值."
+      },
+      "PersonaProposalOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "base_revision": {
+            "type": "integer",
+            "title": "Base Revision"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changes"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "source_session_id": {
+            "type": "string",
+            "title": "Source Session Id"
+          },
+          "source_message_id": {
+            "type": "string",
+            "title": "Source Message Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "REJECTED",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "base_revision",
+          "changes",
+          "evidence",
+          "source_session_id",
+          "source_message_id",
+          "status",
+          "created_at"
+        ],
+        "title": "PersonaProposalOut",
+        "description": "候选只作为复核数据返回，不参与回答上下文."
+      },
+      "PersonaUpdate": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          },
+          "changes": {
+            "$ref": "#/components/schemas/PersonaPatch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "changes"
+        ],
+        "title": "PersonaUpdate",
+        "description": "用户直接编辑已确认画像，必须携带读到的版本."
+      },
       "PortfolioSummary": {
         "properties": {
           "total_market_value": {
             "type": "number",
             "title": "Total Market Value",
-            "default": 0
+            "default": 0.0
           },
           "total_cost": {
             "type": "number",
             "title": "Total Cost",
-            "default": 0
+            "default": 0.0
           },
           "total_profit_loss": {
             "type": "number",
             "title": "Total Profit Loss",
-            "default": 0
+            "default": 0.0
           },
           "total_profit_loss_rate": {
             "anyOf": [
@@ -6599,7 +8936,7 @@
           "daily_profit_loss": {
             "type": "number",
             "title": "Daily Profit Loss",
-            "default": 0
+            "default": 0.0
           },
           "fund_count": {
             "type": "integer",
@@ -6941,7 +9278,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6953,7 +9290,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -6965,7 +9302,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -7124,6 +9461,440 @@
         "title": "ScreenshotImportAccepted",
         "description": "POST /holding-imports/screenshots 响应体（HTTP 202）."
       },
+      "SectorBoardItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector_type": {
+            "type": "string",
+            "enum": [
+              "industry",
+              "concept"
+            ],
+            "title": "Sector Type"
+          },
+          "stock_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Count"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "leading_stock": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SectorBoardStock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "sector_type"
+        ],
+        "title": "SectorBoardItem",
+        "description": "一个板块的当日快照；缺数就是 None，不补成 0 也不猜涨跌方向."
+      },
+      "SectorBoardResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id",
+            "description": "Unique identifier for this request"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "sector_type": {
+            "type": "string",
+            "enum": [
+              "industry",
+              "concept"
+            ],
+            "title": "Sector Type"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "title": "Order"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "change_pct",
+              "amount"
+            ],
+            "title": "Sort"
+          },
+          "change_pct_unit": {
+            "type": "string",
+            "title": "Change Pct Unit",
+            "default": "percentage_points"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "quote_time_verified": {
+            "type": "boolean",
+            "title": "Quote Time Verified",
+            "default": false
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SectorBoardItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_available": {
+            "type": "integer",
+            "title": "Total Available",
+            "default": 0
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "sector_type",
+          "order",
+          "sort",
+          "fetched_at"
+        ],
+        "title": "SectorBoardResponse",
+        "description": "板块涨跌榜.\n\n上游不带报价时间戳，所以 `fetched_at` 只是我们抓取的时刻，不能当开市证明；\n`quote_time_verified` 恒为 False，并由 warnings 说明这一层限制。"
+      },
+      "SectorBoardStock": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "SectorBoardStock",
+        "description": "板块内领涨（跌幅榜时为该板块内相对最强的一只）个股."
+      },
+      "SectorMarketResult": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "requested_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Requested Date"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "default": "Asia/Shanghai"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "eastmoney_sector_quotes"
+          },
+          "change_pct_unit": {
+            "type": "string",
+            "title": "Change Pct Unit",
+            "default": "percentage_points"
+          },
+          "fetched_at_timezone": {
+            "type": "string",
+            "title": "Fetched At Timezone",
+            "default": "UTC"
+          },
+          "sectors": {
+            "items": {
+              "$ref": "#/components/schemas/SectorQuote"
+            },
+            "type": "array",
+            "title": "Sectors"
+          },
+          "total_matches": {
+            "type": "integer",
+            "title": "Total Matches",
+            "default": 0
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "unavailable_catalogs": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "industry",
+                "concept"
+              ]
+            },
+            "type": "array",
+            "title": "Unavailable Catalogs"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "keyword",
+          "requested_date"
+        ],
+        "title": "SectorMarketResult",
+        "description": "查询范围、报价日期与缺失项均公开，变化率单位为百分点."
+      },
+      "SectorQuote": {
+        "properties": {
+          "sector_code": {
+            "type": "string",
+            "pattern": "^BK\\d{4,6}$",
+            "title": "Sector Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector_type": {
+            "type": "string",
+            "enum": [
+              "industry",
+              "concept"
+            ],
+            "title": "Sector Type"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "quote_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Time"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Date"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "same_day",
+                  "delayed",
+                  "previous_session",
+                  "unknown_time",
+                  "future_time"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": true
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "from_cache": {
+            "type": "boolean",
+            "title": "From Cache",
+            "default": false
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sector_code",
+          "name",
+          "sector_type"
+        ],
+        "title": "SectorQuote",
+        "description": "单个板块的当前可用行情，单项失败不伪造数值."
+      },
       "SessionResponse": {
         "properties": {
           "request_id": {
@@ -7147,15 +9918,22 @@
           "token": {
             "$ref": "#/components/schemas/Token",
             "description": "The authentication token for the session"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When this session was created"
           }
         },
         "type": "object",
         "required": [
           "session_id",
-          "token"
+          "token",
+          "created_at"
         ],
         "title": "SessionResponse",
-        "description": "创建会话的响应模型.\n\nAttributes:\n    session_id: 聊天会话的唯一标识\n    name: 会话名称（默认为空字符串）\n    token: 该会话的鉴权 token"
+        "description": "创建会话的响应模型.\n\nAttributes:\n    session_id: 聊天会话的唯一标识\n    name: 会话名称（默认为空字符串）\n    token: 该会话的鉴权 token\n    created_at: 会话创建时间（naive UTC）；列表按它倒序排，客户端拿它标时间"
       },
       "SymbolCompanyResponse": {
         "properties": {
@@ -7702,7 +10480,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -7715,7 +10493,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"

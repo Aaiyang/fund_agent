@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChatMessage, ChatStreamError } from '@/api/chatStream';
 import { queryKeys } from '@/api/queries';
 import { ensureSessionToken, useAgentMessages } from '@/hooks/useAgent';
-import type { ChatImportReview } from '@/hooks/useChatImport';
+import type { ChatPendingAction } from '@/hooks/useChatImport';
 import type { ChatMessage } from '@/hooks/useAgent';
 
 export type ChatTurn = ChatMessage & {
@@ -43,8 +43,8 @@ export function useAgentChat(input: {
   // useQuery 的结果对象每次渲染都是新的，依赖里只放解构出来的 refetch。
   const { refetch: refetchHistory } = history;
   const [overlay, setOverlay] = useState<Overlay | null>(null);
-  // Agent 走到人工复核时由流里带回来的一张卡片；它只能由 decision 端点消解。
-  const [review, setReview] = useState<ChatImportReview | null>(null);
+  // 流里的识别、选账户和复核卡片按会话隔离，恢复后以服务端状态为准。
+  const [pending, setPending] = useState<{ sessionId: string; action: ChatPendingAction | null } | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
 
@@ -73,7 +73,7 @@ export function useAgentChat(input: {
               ? { ...prev, answer: prev.answer + delta }
               : prev
           )),
-          onPendingAction: setReview,
+          onPendingAction: (action) => setPending((prev) => abort.signal.aborted ? prev : { sessionId: active, action }),
         });
       } catch (error) {
         if ((error as Error).name === 'AbortError') stopped = true;
@@ -81,6 +81,7 @@ export function useAgentChat(input: {
         else failed = (error as Error).message || '这条回答没生成出来';
       } finally {
         controller.current = null;
+        void client.invalidateQueries({ queryKey: [...queryKeys.chatPendingAction, active] });
       }
 
       // 停止与正常收尾都以服务端的历史为准；失败时保留本地这条，好让"重试"还在。
@@ -99,6 +100,9 @@ export function useAgentChat(input: {
   );
 
   const stop = useCallback(() => controller.current?.abort(), []);
+  const setReview = useCallback((action: ChatPendingAction | null) => {
+    if (sessionId) setPending({ sessionId, action });
+  }, [sessionId]);
 
   // 本地这一轮属于哪条会话：跳到会话列表换了一条，半截的旧回答不能跟过来。
   const current = overlay?.sessionId === sessionId ? overlay : null;
@@ -131,7 +135,7 @@ export function useAgentChat(input: {
     loadingHistory: Boolean(sessionId) && history.isPending,
     historyError: history.isError && history.data === undefined ? history.error : null,
     retryHistory: () => void history.refetch(),
-    review,
+    review: pending?.sessionId === sessionId ? pending.action : null,
     /** 刷新后要把服务端还挂着的复核卡片灌进来；决策完成后置 null。 */
     setReview,
     history,
@@ -142,6 +146,7 @@ export function useAgentChat(input: {
     reset: () => {
       controller.current?.abort();
       setOverlay(null);
+      setPending(null);
     },
   };
 }

@@ -28,15 +28,15 @@ export function FundReference({
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
-      <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }} numberOfLines={2}>
+      <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }} numberOfLines={2}>
         {name || code}
       </Text>
-      <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>
+      <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
         {code} · 最新净值 {formatNumber(nav, 4)}（{formatDate(navDate)}）·{' '}
         <Text style={{ color: trendColor(dailyReturn), fontWeight: '600' }}>{formatReturnPoints(dailyReturn)}</Text>
       </Text>
       {note ? (
-        <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 4 }}>{note}</Text>
+        <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 4 }}>{note}</Text>
       ) : null}
     </View>
   );

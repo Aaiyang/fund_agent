@@ -1,7 +1,8 @@
 """真实 PostgreSQL 验证持仓确认的事务回滚、复核指纹和幂等性；测试数据全部回滚."""
 
 import os
-from datetime import date
+from datetime import date, timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,9 @@ from app.models.user import User
 from app.repositories.import_repository import import_repository
 from app.repositories.portfolio_repository import portfolio_repository
 from app.services.holding_import_service import ImportStateError, holding_import_service
+from app.services.agent_holding_import_service import agent_holding_import_service
+from app.services import holding_import_service as holding_module
+from app.utils.clock import utc_now
 from app.utils.holding_review import holding_review_digest
 
 pytestmark = pytest.mark.skipif(os.getenv("FUND_TEST_POSTGRES") != "true", reason="requires PostgreSQL opt-in")
@@ -128,3 +132,45 @@ async def test_confirm_requires_current_snapshot_and_applies_only_once(database_
             await db.execute(select(func.count()).select_from(Transaction).where(col(Transaction.user_id) == user_id))
         ).scalar_one()
     assert count == 2 and cleanups == [import_id, import_id]
+
+
+async def test_staged_recognition_starts_once_and_uses_actual_start_time(database_import, monkeypatch):
+    user_id, account_id, import_id, cleanups = database_import
+    async with database.transaction_scope():
+        record = await import_repository.get_import(user_id, import_id, for_update=True)
+        record.status = "UPLOADED"
+        record.chat_session_id = f"fixture-{uuid4().hex}"
+        record.account_id = None
+        record.started_at = utc_now() - timedelta(hours=1)
+    before = utc_now()
+    enqueue = AsyncMock()
+    monkeypatch.setattr(holding_module, "enqueue", enqueue)
+    await holding_import_service.start_screenshot_import(user_id, import_id)
+    await holding_import_service.start_screenshot_import(user_id, import_id)
+    record = await import_repository.get_import(user_id, import_id)
+    assert record.status == "PARSING" and record.started_at >= before
+    assert record.account_id is None and cleanups == []
+    enqueue.assert_awaited_once()
+
+
+async def test_unassigned_agent_draft_persists_and_selection_precedes_confirmation(database_import):
+    user_id, account_id, import_id, cleanups = database_import
+    session_id = f"fixture-{uuid4().hex}"
+    async with database.transaction_scope():
+        record = await import_repository.get_import(user_id, import_id, for_update=True)
+        record.account_id = None
+        record.chat_session_id = session_id
+    assert (await import_repository.get_import(user_id, import_id)).account_id is None
+    with pytest.raises(ImportStateError, match="import_account_required"):
+        await holding_import_service.confirm_import(user_id, import_id)
+    await agent_holding_import_service.select_account(user_id, session_id, import_id, account_id)
+    detail = await agent_holding_import_service.detail(user_id, session_id, import_id)
+    assert detail.account_id == account_id and detail.status == "REVIEW_REQUIRED"
+    positions = await portfolio_repository.list_positions(user_id, account_id)
+    assert len(positions) == 1 and positions[0].market_value == 50 and cleanups == []
+    review = await agent_holding_import_service.review(user_id, session_id, import_id)
+    result = await agent_holding_import_service.decide(
+        user_id, session_id, import_id, decision="confirm", review_digest=review.review_digest
+    )
+    assert result["applied"] == 2
+    assert (await import_repository.get_import(user_id, import_id)).status == "APPLIED"

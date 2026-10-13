@@ -6,6 +6,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { FlatList, Text, View } from 'react-native';
 
+import { EmptyState, ErrorState, LoadingState, describeError } from '@/components/states';
 import { Card, Screen } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useFundNavPages } from '@/hooks/useFunds';
@@ -29,7 +30,7 @@ export default function NavHistoryScreen() {
           {code ? `基金 ${code}` : ''} · 每次加载 30 条
         </Text>
         {pages.isError ? (
-          <Text style={{ fontSize: 13, color: theme.danger, marginTop: 8 }}>净值加载失败，返回上一页重试</Text>
+          <ErrorState message={describeError(pages.error)} onRetry={() => void pages.refetch()} />
         ) : null}
         <View
           style={{
@@ -41,7 +42,7 @@ export default function NavHistoryScreen() {
           }}
         >
           <Text style={{ flex: 1, fontSize: 12, color: theme.textMuted }}>日期</Text>
-          <Text style={{ width: 88, fontSize: 12, color: theme.textMuted }}>净值</Text>
+          <Text style={{ width: 88, fontSize: 12, color: theme.textMuted, textAlign: 'right' }}>净值</Text>
           <Text style={{ width: 76, fontSize: 12, color: theme.textMuted, textAlign: 'right' }}>日涨幅</Text>
         </View>
       </Card>
@@ -62,7 +63,9 @@ export default function NavHistoryScreen() {
             }}
           >
             <Text style={{ flex: 1, fontSize: 14, color: theme.text }}>{formatDate(item.nav_date)}</Text>
-            <Text style={{ width: 88, fontSize: 14, color: theme.text }}>{formatNumber(item.unit_nav)}</Text>
+            <Text style={{ width: 88, fontSize: 14, color: theme.text, textAlign: 'right' }}>
+              {formatNumber(item.unit_nav)}
+            </Text>
             <Text style={{ width: 76, fontSize: 14, textAlign: 'right', color: trendColor(item.daily_return) }}>
               {formatReturnPoints(item.daily_return)}
             </Text>
@@ -70,8 +73,10 @@ export default function NavHistoryScreen() {
         )}
         ListEmptyComponent={
           pages.isPending ? (
-            <Text style={{ padding: theme.gap, fontSize: 13, color: theme.textMuted }}>加载中…</Text>
-          ) : null
+            <LoadingState />
+          ) : pages.isError ? null : (
+            <EmptyState title="还没有净值记录" hint="返回基金详情下拉刷新可触发同步" />
+          )
         }
         onEndReached={() => {
           if (pages.hasNextPage && !pages.isFetchingNextPage) void pages.fetchNextPage();
@@ -82,7 +87,7 @@ export default function NavHistoryScreen() {
             {pages.isFetchingNextPage ? (
               <Text style={{ fontSize: 12, color: theme.textMuted }}>加载中…</Text>
             ) : rows.length && !pages.hasNextPage ? (
-              <Text style={{ fontSize: 12, color: theme.textFaint }}>已到最早一条</Text>
+              <Text style={{ fontSize: 11, color: theme.textFaint }}>已到最早一条</Text>
             ) : null}
           </View>
         }

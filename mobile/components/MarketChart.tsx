@@ -15,7 +15,7 @@ import Svg, { Line, Polyline, Rect } from 'react-native-svg';
 
 import { theme } from '@/constants/theme';
 import { useDragScroll } from '@/hooks/useDragScroll';
-import { formatCompact, formatDate } from '@/utils/format';
+import { formatCompact, formatDate, formatPrice, formatReturnPoints, trendColor } from '@/utils/format';
 
 export type ChartBar = {
   trade_date: string;
@@ -120,9 +120,12 @@ export function MarketChart({
     : `minutes:${slots.length}:${slots[0]?.label ?? ''}`;
 
   if (slots.length < 2) {
+    // 没有序列就整块留白配一句指引，不画一条看着像 0 的平线。
     return (
       <View style={{ height: PRICE_HEIGHT + VOLUME_HEIGHT + GAP, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: theme.textFaint, fontSize: 13 }}>{isCandle ? '暂无K线数据' : '当前没有分时数据（未开盘）'}</Text>
+        <Text style={{ color: theme.textMuted, fontSize: 14 }}>
+          {isCandle ? '还没有K线数据，下拉刷新试试' : '还没有分时数据，开盘后再看'}
+        </Text>
       </View>
     );
   }
@@ -221,8 +224,9 @@ export function MarketChart({
 
             {isCandle
               ? slots.map((slot, index) => {
-                  const color = slot.up ? theme.up : theme.down;
                   const open = slot.open ?? slot.price;
+                  // 单根颜色走 trendColor：平收（含十字星）给灰，不硬猜方向。
+                  const color = trendColor(slot.price - open);
                   const top = y(Math.max(open, slot.price));
                   const bottom = y(Math.min(open, slot.price));
                   return [
@@ -327,22 +331,22 @@ export function MarketChart({
                 paddingHorizontal: 4,
               }}
             >
-              <Text style={{ fontSize: 10, color: theme.text, textAlign: 'center' }}>
+              <Text style={{ fontSize: 11, color: theme.text, textAlign: 'center' }}>
                 {isCandle ? formatDate(shown.label) : shown.label}
               </Text>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: theme.text, textAlign: 'center' }}>
-                {shown.price.toFixed(2)}
-                {isCandle && shown.open !== undefined ? ` 开${shown.open.toFixed(2)} 高${(shown.high ?? 0).toFixed(2)}` : ''}
+              <Text style={{ fontSize: 12, fontWeight: '600', color: theme.text, textAlign: 'center' }}>
+                {formatPrice(shown.price)}
+                {isCandle && shown.open !== undefined ? ` 开${formatPrice(shown.open)} 高${formatPrice(shown.high ?? 0)}` : ''}
               </Text>
               {shown.changePct === null ? null : (
                 <Text
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     textAlign: 'center',
-                    color: shown.changePct >= 0 ? theme.up : theme.down,
+                    color: trendColor(shown.changePct),
                   }}
                 >
-                  {`${shown.changePct > 0 ? '+' : ''}${shown.changePct.toFixed(2)}%`}
+                  {formatReturnPoints(shown.changePct)}
                 </Text>
               )}
             </View>
@@ -373,7 +377,7 @@ export function MarketChart({
               borderRadius: 3,
             }}
           >
-            <Text style={{ fontSize: 10, color: readout.up ? theme.up : theme.down }}>
+            <Text style={{ fontSize: 11, color: readout.up ? theme.up : theme.down }}>
               {`量 ${formatCompact(readout.volume)}${volumeUnit ?? ''}`}
             </Text>
           </View>
@@ -400,8 +404,8 @@ export function MarketChart({
           </Text>
           <Text style={{ fontSize: 11, color: theme.textFaint }}>
             {reference
-              ? `${(((high - reference) / reference) * 100).toFixed(2)}% ~ ${(((low - reference) / reference) * 100).toFixed(2)}%`
-              : `${low.toFixed(2)} ~ ${high.toFixed(2)}`}
+              ? `${formatReturnPoints(((high - reference) / reference) * 100)} ~ ${formatReturnPoints(((low - reference) / reference) * 100)}`
+              : `${formatPrice(low)} ~ ${formatPrice(high)}`}
           </Text>
           <Text style={{ fontSize: 11, color: theme.textFaint }}>
             {isCandle ? formatDate(slots[slots.length - 1].label) : slots[slots.length - 1].label}

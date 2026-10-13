@@ -32,7 +32,9 @@ cp .env.example .env.development
 | `DEFAULT_LLM_TEMPERATURE` | `0.2` | 否 | 聊天补全的温度参数 |
 | `MAX_TOKENS` | `2000` | 否 | 每次 LLM 响应的最大 token 数 |
 | `MAX_LLM_CALL_RETRIES` | `3` | 否 | 切换到回退模型之前，每个模型的重试次数 |
-| `LLM_TOTAL_TIMEOUT` | `60` | 否 | 整个回退循环的最大秒数 |
+| `FUND_LLM_TIMEOUT_SECONDS` | `120` | 否 | 首段进度等待及 HTTP 超时，可由 `FUND_LLM_REQUEST_TIMEOUT_SECONDS` 优先覆盖 |
+| `FUND_LLM_STREAM_IDLE_TIMEOUT_SECONDS` | `60` | 否 | 输出开始后有效流式进度之间的最大间隔 |
+| `FUND_LLM_TOTAL_TIMEOUT_SECONDS` | `300` | 否 | 单次 LLM 调用的硬上限，包含重试和回退；优先于旧变量 `LLM_TOTAL_TIMEOUT` |
 | `SESSION_NAMING_ENABLED` | `true` | 否 | 使用 LLM 后台任务，根据用户的第一条消息自动生成会话标题 |
 
 ---

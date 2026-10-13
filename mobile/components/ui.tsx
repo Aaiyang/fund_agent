@@ -67,7 +67,13 @@ export function SectionTitle({ title, action, onAction }: { title: string; actio
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
       <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{title}</Text>
       {action ? (
-        <Pressable onPress={onAction}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action}
+          hitSlop={10}
+          onPress={onAction}
+          style={({ pressed }) => [{ paddingHorizontal: 4, paddingVertical: 2 }, pressed && { opacity: 0.7 }]}
+        >
           <Text style={{ fontSize: 13, color: theme.primary }}>{action}</Text>
         </Pressable>
       ) : null}
@@ -95,8 +101,8 @@ export function Stat({
   );
 }
 
-export function Row({ children }: { children: ReactNode }) {
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{children}</View>;
+export function Row({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <View style={[{ flexDirection: 'row', flexWrap: 'wrap' }, style]}>{children}</View>;
 }
 
 export function Button({
@@ -136,13 +142,18 @@ export function Button({
   );
 }
 
-/** 带边框的胶囊：卡片与表单里切换、标签的样式。 */
+/**
+ * 带边框的胶囊：卡片与表单里切换、标签的样式。
+ *
+ * 不传 `onPress` 时它是只读标签（比如"未接入"），所以按压态只在可点时才给。
+ */
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={onPress ? label : undefined}
       onPress={onPress}
-      style={{
+      style={({ pressed }) => ({
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 999,
@@ -151,7 +162,8 @@ export function Chip({ label, active, onPress }: { label: string; active?: boole
         backgroundColor: active ? theme.primary : theme.surface,
         borderWidth: 1,
         borderColor: active ? theme.primary : theme.border,
-      }}
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
       <Text style={{ fontSize: 13, color: active ? '#FFFFFF' : theme.text }}>{label}</Text>
     </Pressable>
@@ -178,14 +190,15 @@ export function NavTab({
     <Pressable
       accessibilityRole={onPress ? 'tab' : undefined}
       accessibilityState={{ selected: Boolean(active) }}
-      hitSlop={{ top: 6, bottom: 6 }}
+      hitSlop={{ top: 10, bottom: 10 }}
       onPress={onPress}
-      style={{
+      style={({ pressed }) => ({
         marginRight: 18,
         paddingBottom: 5,
         borderBottomWidth: 2,
         borderBottomColor: active ? theme.primary : 'transparent',
-      }}
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
       <Text
         style={{

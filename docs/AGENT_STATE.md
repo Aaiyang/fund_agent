@@ -1,0 +1,16 @@
+# Parent/subgraph task state
+
+The main graph now routes new tasks through `route_task` and `continue_research`.
+See [research workflows](RESEARCH_WORKFLOWS.md) for the graph and parent/private-child contracts.
+
+GraphState carries a turn_id and a typed fund_selection_result. Streaming and non-streaming new questions use the same _new_turn_state entry: create the turn identifier once and clear the old result. Human resume preserves both. add_messages retains history independently of this per-turn reset.
+
+FundSelectionResult carries the turn, original tool call, status, keyword, real fund and confirmation flag. Resolved results require a fund; cancelled/not-found results must omit it. The parent uses results matching the current turn to stop or continue research, adding the parsed target to dynamic context. Other research objects still need their own evidence. ToolMessages remain paired with original calls. Old checkpoints without structured results retain safe text-parsing fallback. FundSelectionCall accepts legacy dictionaries while typing the stored call. Existing node names and checkpoint namespaces remain compatible.
+
+Holding import's holding_account_id and holding_instruction remain initial parent inputs. Manual account selection writes private resolved_account_id and resolved_import_id for the current batch only. Completion clears these private values; finishing the subgraph clears parent attachment IDs, initial account and instruction. Initially explicit account requests can cover multiple batches; otherwise each batch requires its own account selection.
+
+Holding import routing now follows current user intent before attachments: the ordinary parent chat call selects start_holding_import only for explicit image-import requests. route_attachments checks server-issued current-turn holding_import_ids, asks for an image when absent and enters the child only when present. Attachments alone do not trigger the child. The intent tool has no model-supplied IDs or account parameters. An older UPLOADED batch cannot be started through legacy review tools without a current attachment; already processing or recognized drafts remain queryable. Missing-image and OCR-content failure paths return paired tool results and an actionable assistant notice.
+
+Resume values have three typed forms: processing continuation, account selection and human decision receipt. Invalid values do not authorize progress; legacy dictionaries are converted when valid. Account IDs reject booleans, strings and nonpositive values. Processing/account nodes validate the active import ID and phase before advancing. Processing cancellation still reads the database's actual terminal state.
+
+Authenticated HTTP decisions remain responsible for holdings writes. The graph verifies database state after resume rather than applying holdings from a submitted decision. The database owns business facts; checkpoints own workflow progress. Regression tests cover per-turn results, new questions after cancellation, malformed tool text, wrong-batch and malformed resumes, separate accounts across batches, and legacy checkpoints. Whole-session concurrency control remains separate work; this state change does not add a common execution lock.

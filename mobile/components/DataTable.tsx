@@ -15,11 +15,17 @@ import { theme } from '@/constants/theme';
 const NAME_W = 132;
 const ACTION_W = 56;
 const ROW_H = 58;
+/**
+ * 每格的内容从行顶往下 CELL_TOP 起排，整行才有一条共同的首行基线。
+ * 带副文本的格子最高（13px 值 + 2 + 11px 副文本 = 34），按它居中：(58-34)/2。
+ * 之前是每格各自居中，单行格子和两行格子差了 8px，一行数字看着是锯齿。
+ */
+const CELL_TOP = 12;
 
 const nameCellStyle = {
   width: NAME_W,
   height: ROW_H,
-  justifyContent: 'center',
+  paddingTop: CELL_TOP,
   paddingEnd: 8,
   borderBottomWidth: 1,
   borderColor: theme.border,
@@ -30,8 +36,8 @@ export type DataCell = {
   color?: string;
   sub?: string;
   subColor?: string;
-  /** 非数字的占位内容（新增/未接入）居中排更好看。 */
-  align?: 'left' | 'center';
+  /** 数字列右对齐才比得出来大小；非数字的占位（新增/未接入）用 center。 */
+  align?: 'left' | 'center' | 'right';
 };
 
 export type DataColumn<T> = {
@@ -169,7 +175,8 @@ export function DataTable<T>({
                 style={{
                   flexDirection: 'row',
                   height: ROW_H,
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
+                  paddingTop: CELL_TOP,
                   borderBottomWidth: 1,
                   borderColor: theme.border,
                 }}

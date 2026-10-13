@@ -17,6 +17,9 @@ export const queryKeys = {
   indexHistory: (code: string, range: string) => ['indexes', code, range] as const,
 
   markets: ['markets'] as const,
+  sectors: ['sectors'] as const,
+  sectorBoard: (kind: string, order: string, sort: string, limit: number) =>
+    ['sectors', 'board', kind, order, sort, limit] as const,
   marketQuote: (symbol: string) => ['markets', 'quote', symbol] as const,
   marketHistory: (symbol: string, period: string, range: string) =>
     ['markets', 'history', symbol, period, range] as const,
@@ -53,6 +56,8 @@ export const queryKeys = {
 
   agentSessions: ['agent', 'sessions'] as const,
   agentMessages: (sessionId: string | null) => ['agent', 'messages', sessionId] as const,
+  userPersona: ['agent', 'user-profile'] as const,
+  userPersonaHistory: ['agent', 'user-profile', 'history'] as const,
   chatImports: ['chat', 'imports'] as const,
   chatImport: (importId: string | null) => ['chat', 'imports', importId] as const,
   chatPendingAction: ['chat', 'pending-action'] as const,

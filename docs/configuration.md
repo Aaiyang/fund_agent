@@ -32,7 +32,9 @@ cp .env.example .env.development
 | `DEFAULT_LLM_TEMPERATURE` | `0.2` | No | Temperature for chat completions |
 | `MAX_TOKENS` | `2000` | No | Max tokens per LLM response |
 | `MAX_LLM_CALL_RETRIES` | `3` | No | Retries per model before switching to fallback |
-| `LLM_TOTAL_TIMEOUT` | `60` | No | Max seconds for the entire fallback loop |
+| `FUND_LLM_TIMEOUT_SECONDS` | `120` | No | Initial-progress / HTTP timeout; overridden by `FUND_LLM_REQUEST_TIMEOUT_SECONDS` |
+| `FUND_LLM_STREAM_IDLE_TIMEOUT_SECONDS` | `60` | No | Max gap between meaningful stream chunks after output starts |
+| `FUND_LLM_TOTAL_TIMEOUT_SECONDS` | `300` | No | Hard cap per LLM call, including retries and fallback; overrides legacy `LLM_TOTAL_TIMEOUT` |
 | `SESSION_NAMING_ENABLED` | `true` | No | Auto-generate a session title from the user's first message using an LLM background task |
 
 ---

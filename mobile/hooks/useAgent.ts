@@ -89,16 +89,20 @@ export function useAgentMessages(sessionId: string | null) {
   });
 }
 
-/** 清空当前会话的消息，会话本身留着（和 Web 端一个口径）。 */
-export function useClearAgentMessages(sessionId: string | null) {
+/**
+ * 清空某条会话的消息，会话本身留着（和 Web 端一个口径）。
+ *
+ * session_id 走 mutation 的入参而不是构造参数：会话列表页要为每一行各发起一次，
+ * 在 map 里调 hook 是非法的。
+ */
+export function useClearAgentMessages() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
-      if (!sessionId) throw new Error('还没有会话');
+    mutationFn: async (sessionId: string) => {
       const token = await ensureSessionToken(client, sessionId);
       return request<{ message: string }>('/chatbot/messages', { method: 'DELETE', bearer: token });
     },
-    onSuccess: () => {
+    onSuccess: (_data, sessionId) => {
       void client.invalidateQueries({ queryKey: queryKeys.agentMessages(sessionId) });
     },
   });

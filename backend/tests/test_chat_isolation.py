@@ -33,7 +33,7 @@ class FakeModel:
     def get_name(self):
         return self.model
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, config=None):
         await asyncio.sleep(0)
         if self.model == "broken":
             raise OpenAIError("fixture failure")
@@ -87,10 +87,14 @@ def test_chat_routes_use_authenticated_owners_scope_and_reject_forged_roles(monk
     async def get_pending_holding_review(session_id):
         return None
 
+    async def get_run_continuation(session_id):
+        return None
+
     monkeypatch.setattr(chatbot.user_profile_service, "execution_profiles", execution_profiles)
     monkeypatch.setattr(chatbot.agent, "get_response", get_response)
     monkeypatch.setattr(chatbot.agent, "get_stream_response", get_stream_response)
     monkeypatch.setattr(chatbot.agent, "get_pending_holding_review", get_pending_holding_review)
+    monkeypatch.setattr(chatbot.agent, "get_run_continuation", get_run_continuation)
     app = FastAPI()
     app.state.limiter = limiter
     app.include_router(chatbot.router)

@@ -129,6 +129,18 @@ class PortfolioSummaryResponse(BaseResponse):
     accounts: list[AccountItem]
 
 
+class PortfolioResearchSnapshot(BaseModel):
+    """同一次研究读取的完整账本；展示裁剪不改变计算范围."""
+
+    account_id: int | None = None
+    status: Literal["available", "empty"]
+    captured_at: datetime
+    summary: PortfolioSummary
+    positions: list[PositionItem]
+    market_values_complete: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
 class PositionUpsertRequest(BaseModel):
     """同步持仓：按持仓页面显示的结果重述（允许只填一部分）.
 

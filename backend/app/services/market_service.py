@@ -14,7 +14,7 @@ from app.analytics.returns import NavPoint, range_return
 from app.core.cache import cache_key, cache_service
 from app.core.logging import logger
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
-from app.integrations.fund_data.models import CandleExternalBar
+from app.integrations.fund_data.models import CandleExternalBar, MarketExternalQuote
 from app.integrations.fund_data.normalizer import market_kind, tencent_symbol
 from app.integrations.fund_data.tencent_client import (
     fetch_candles,
@@ -32,12 +32,16 @@ from app.schemas.market import (
     IndexPoint,
     IndexQuoteItem,
     MarketPeriod,
+    RealtimeIndexQuote,
+    RealtimeMarketRequest,
+    RealtimeMarketSnapshot,
     SymbolCompanyResponse,
     SymbolHistoryResponse,
     SymbolIntradayResponse,
     SymbolQuoteResponse,
 )
-from app.utils.clock import business_today, range_start
+from app.utils.clock import business_now, business_today, range_start, utc_now
+from app.utils.market_quote_policy import MAINLAND_MARKET_TZ, clock_expects_updates, normalize_realtime_index
 
 # 选择器用的固定目录。代码先在这里查，再决定是否访问 AKShare，
 # 所以调用方可控的字符串永远不会传进第三方客户端。
@@ -49,6 +53,25 @@ BENCHMARK_INDEXES: dict[str, str] = {
     "sz399006": "创业板指",
     "sh000012": "国债指数",
 }
+
+# 与收盘基准目录分开；全部代码均通过真实腾讯批量报价验证。
+REALTIME_INDEXES: dict[str, str] = {
+    "sh000001": "上证指数",
+    "sz399001": "深证成指",
+    "sh000300": "沪深300",
+    "sz399006": "创业板指",
+    "sh000016": "上证50",
+    "sh000905": "中证500",
+    "sh000852": "中证1000",
+    "sh000688": "科创50",
+    "sz399673": "创业板50",
+    "sz399005": "中小100",
+    "sh000015": "红利指数",
+    "sh000903": "中证A100",
+    "sh000985": "中证全指",
+    "bj899050": "北证50",
+}
+_REALTIME_INDEX_TTL_SECONDS = 15
 
 # 每天只动一次的公开序列：每个指数在每个窗口内只抓一次数据源。
 _SYNC_TTL_SECONDS = 6 * 3600
@@ -79,6 +102,95 @@ class MarketService:
     def catalog(self) -> list[IndexCatalogItem]:
         """可供选择的业绩比较基准，按选择器里的顺序."""
         return [IndexCatalogItem(index_code=code, name=name) for code, name in BENCHMARK_INDEXES.items()]
+
+    async def get_realtime_quotes(self, request: RealtimeMarketRequest) -> RealtimeMarketSnapshot | None:
+        """批量查询主要指数，默认在线刷新；只缓存完整成功结果，不回退日线."""
+        codes = list(dict.fromkeys(request.index_codes or REALTIME_INDEXES))
+        # 服务层再次白名单校验，构造请求和读取缓存之前拒绝任意 URL / 个股。
+        if any(code not in REALTIME_INDEXES for code in codes):
+            raise ValueError("仅支持主要A股指数目录中的代码")
+        key = cache_key("market_realtime_indexes:v1", *sorted(codes))
+        cached = None
+        if not request.refresh:
+            try:
+                raw = await cache_service.get(key)
+                if raw:
+                    cached = RealtimeMarketSnapshot.model_validate_json(raw)
+            except Exception:
+                logger.exception("market_realtime_cache_read_failed")
+
+        now = business_now().astimezone(MAINLAND_MARKET_TZ)
+        if cached is not None:
+            age = (utc_now() - cached.fetched_at).total_seconds() if cached.fetched_at.tzinfo is None else float("inf")
+            if not (
+                0 <= age < _REALTIME_INDEX_TTL_SECONDS
+                and cached.requested_date == now.date()
+                and not cached.stale
+                and not cached.missing_indexes
+                and {item.index_code for item in cached.indexes} == set(codes)
+            ):
+                cached = None
+        if cached is None:
+            quotes = await fetch_quotes(codes)
+            fetched_at = utc_now()
+        else:
+            # 即使跨越了午休/开盘边界，也重新核对每只指数的时效。
+            quotes = [
+                MarketExternalQuote(
+                    **item.model_dump(exclude={"index_code", "trade_date", "freshness", "stale", "quote_time"}),
+                    symbol=item.index_code,
+                    kind="index",
+                    quote_time=item.quote_time.isoformat() if item.quote_time else None,
+                )
+                for item in cached.indexes
+            ]
+            fetched_at = cached.fetched_at
+
+        # 获取完成后再判断新鲜度，避免请求期间跨越业务日期。
+        now = business_now().astimezone(MAINLAND_MARKET_TZ)
+        by_symbol = {quote.symbol: quote for quote in quotes if quote.symbol in codes}
+        indexes: list[RealtimeIndexQuote] = []
+        missing: list[IndexCatalogItem] = []
+        for code in codes:
+            quote = by_symbol.get(code)
+            item = normalize_realtime_index(quote, REALTIME_INDEXES[code], now) if quote else None
+            if item is None:
+                missing.append(IndexCatalogItem(index_code=code, name=REALTIME_INDEXES[code]))
+            else:
+                indexes.append(item)
+        if not indexes:
+            logger.warning("market_realtime_quotes_empty", requested=len(codes))
+            return None
+
+        warnings = [
+            "公开行情快照可能延迟，实际交易日未核验；请按每只指数的 quote_time 判断，不保证交易所级实时性。",
+            "指数成分可能重叠，各指数成交额不能相加当作全市场成交额；也不代表个股涨跌家数或资金流向。",
+        ]
+        if not clock_expects_updates(now):
+            warnings.append("当前按时钟处于盘前、午间、收盘后或周末，返回最近可用报价；实际交易日未核验。")
+        if missing:
+            warnings.append("部分指数未返回有效点位：" + "、".join(item.name for item in missing))
+        stale = any(item.stale for item in indexes)
+        if stale:
+            warnings.append("部分报价不是今日数据、盘中可能延迟或时间不可核验；不能称为今日实时行情。")
+        if any(item.change_pct is None for item in indexes):
+            warnings.append("部分指数缺少涨跌幅，不可把缺失值当作零。")
+        response = RealtimeMarketSnapshot(
+            requested_date=now.date(),
+            fetched_at=fetched_at,
+            from_cache=cached is not None,
+            indexes=indexes,
+            missing_indexes=missing,
+            stale=stale,
+            warnings=warnings,
+        )
+        if cached is None and not stale and not missing and all(item.change_pct is not None for item in indexes):
+            try:
+                await cache_service.set(key, response.model_dump_json(), ttl=_REALTIME_INDEX_TTL_SECONDS)
+            except Exception:
+                logger.exception("market_realtime_cache_write_failed")
+        logger.info("market_realtime_quotes_ready", requested=len(codes), returned=len(indexes), stale=stale)
+        return response
 
     async def get_history(self, index_code: str, range_key: NavRange) -> IndexHistoryResponse | None:
         """某个基准的收盘价序列，以及该区间内的累计涨跌幅.

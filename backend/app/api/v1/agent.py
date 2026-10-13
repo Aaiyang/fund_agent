@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from httpx import (
     AsyncClient,
     HTTPError as HttpxError,
+    Response,
 )
 
 from app.api.v1.auth import AuthIdentity, get_current_identity
@@ -24,6 +25,7 @@ from app.core.limiter import limiter
 from app.core.logging import logger
 from app.schemas.base import BaseResponse
 from app.services.llm.user_profiles import PersonalProfile, UserProfiles, user_profile_service
+from app.utils.provider_url import validate_provider_base_url
 
 router = APIRouter()
 
@@ -90,6 +92,24 @@ def _llm_profiles_response(data: UserProfiles) -> LlmProfilesResponse:
     return LlmProfilesResponse(
         active=data.active, profiles=[LlmProfileItem(**profile.model_dump()) for profile in data.profiles]
     )
+
+
+def _safe_json_object(response: Response) -> dict:
+    """非 JSON、非对象的响应体一律当空对象，不让解析异常变成 500."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _vendor_error_message(payload: dict) -> str | None:
+    """只取厂家错误里可安全展示的一句话，其余响应体不回传给客户端."""
+    error = payload.get("error")
+    if isinstance(error, dict) and isinstance(error.get("message"), str):
+        return error["message"]
+    message = payload.get("message")
+    return message if isinstance(message, str) else None
 
 
 @router.get("/llm/profiles", response_model=LlmProfilesResponse)
@@ -159,9 +179,15 @@ async def list_vendor_models(
 
     让设置页直接列出这把 Key 真正可用的模型，而不是写死一份猜测。
     """
-    base_url = body.base_url.strip().rstrip("/")
-    if not base_url or not body.api_key.strip():
+    if not body.base_url.strip() or not body.api_key.strip():
         raise HTTPException(status_code=400, detail="接口地址和 API Key 都必填")
+    # 这是服务端替用户发起的请求，先把可达范围框住，否则它就是访问内网的跳板。
+    try:
+        base_url = validate_provider_base_url(
+            body.base_url, allow_private_network=settings.LLM_PROVIDER_ALLOW_PRIVATE_NETWORK
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         async with AsyncClient(timeout=15) as client:
@@ -169,15 +195,15 @@ async def list_vendor_models(
                 f"{base_url}/models",
                 headers={"Authorization": f"Bearer {body.api_key.strip()}"},
             )
+            payload = _safe_json_object(response)
             if response.status_code != 200:
                 detail = f"厂家返回 {response.status_code}"
-                payload = response.json()
-                message = (payload.get("error") or {}).get("message") or payload.get("message")
+                message = _vendor_error_message(payload)
                 if message:
                     detail = f"{detail}：{message}"
                 raise HTTPException(status_code=502, detail=detail)
-            data = response.json().get("data", [])
-            models = sorted(str(m["id"]) for m in data)
+            data = payload.get("data", [])
+            models = sorted(str(item["id"]) for item in data if isinstance(item, dict) and "id" in item)
             return LlmModelsResponse(models=models)
     except HttpxError as e:
         logger.warning("llm_vendor_models_unreachable", error=str(e))

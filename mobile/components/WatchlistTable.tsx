@@ -23,7 +23,9 @@ const COLUMNS: DataColumn<WatchlistFund>[] = [
   { key: 'nav', title: '最新净值', width: 80, sortValue: (item) => item.latest_nav, cell: (item) => ({ text: formatNumber(item.latest_nav) }) },
   {
     key: 'daily',
-    title: '当日涨跌',
+    // 叫「最新涨幅」而不是「当日涨跌」：净值可能来自更早的交易日（下面那行副文本
+    // 就是它的净值日期），与持仓表同一说法，两屏口径才对得上。
+    title: '最新涨幅',
     width: 84,
     sortValue: (item) => item.daily_return,
     cell: (item) => ({

@@ -52,9 +52,9 @@ export function PurchaseDateField({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="买入时间怎么算"
-            hitSlop={8}
+            hitSlop={10}
             onPress={() => setExplaining(true)}
-            style={{ marginLeft: 6 }}
+            style={({ pressed }) => [{ marginLeft: 6, opacity: pressed ? 0.85 : 1 }]}
           >
             <SymbolView
               name={{ ios: 'exclamationmark.circle', android: 'error', web: 'error' }}
@@ -138,5 +138,5 @@ export function initialPurchaseDate(stored: string | null | undefined, snapshotA
 export function purchaseDateProblem(value: string, required = false): string | null {
   const trimmed = value.trim();
   if (trimmed === '') return required ? '请填写买入确认日期' : null;
-  return isCalendarDate(trimmed) ? null : '买入确认日期格式应为 YYYY-MM-DD';
+  return isCalendarDate(trimmed) ? null : '买入确认日期需为 YYYY-MM-DD';
 }

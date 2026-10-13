@@ -9,7 +9,7 @@ import hashlib
 import json
 
 import tiktoken
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from app.agent.context.models import ContextEnvelope, ConversationTurn, ContextInvariantError
 from app.core.config import settings
@@ -39,6 +39,15 @@ class TokenEstimator:
     def count_text(self, text: str) -> int:
         """统计一段文本的 token 数."""
         return len(self._encoding.encode(text))
+
+    def truncate_text(self, text: str, max_tokens: int) -> str:
+        """按 token 截取前缀，丢弃边界上未完成的 UTF-8 字符."""
+        tokens = self._encoding.encode(text)[: max(0, max_tokens)]
+        clipped = self._encoding.decode_bytes(tokens).decode("utf-8", errors="ignore")
+        while tokens and self.count_text(clipped) > max_tokens:
+            tokens.pop()
+            clipped = self._encoding.decode_bytes(tokens).decode("utf-8", errors="ignore")
+        return clipped
 
     def count_message(self, message) -> int:
         """统计单条消息：固定 4 开销 + 内容。全局唯一的计价单元."""
@@ -128,22 +137,44 @@ def hard_limit_tool_trace(
 
     返回（新列表, 被截断的条数）。
     """
+    if limit <= 0:
+        raise ValueError("tool_message_limit must be positive")
     result: list = []
     compacted = 0
     for message in messages:
         if isinstance(message, ToolMessage) and estimator.count_text(str(message.content)) > limit:
             compacted += 1
-            clipped = str(message.content)[: limit * 2]
-            result.append(
-                ToolMessage(
-                    content=f"{clipped}\n[TRUNCATED: 单条工具结果超出 {limit} token 上限，已被截断]",
-                    name=message.name,
-                    tool_call_id=message.tool_call_id,
-                )
-            )
+            marker = f"\n[TRUNCATED: 单条工具结果超出 {limit} token 上限，已被截断]"
+            if estimator.count_text(marker) > limit:
+                marker = estimator.truncate_text("[TRUNCATED]", limit)
+            available = max(0, limit - estimator.count_text(marker))
+            clipped = estimator.truncate_text(str(message.content), available) + marker
+            while estimator.count_text(clipped) > limit and available > 0:
+                available -= max(1, estimator.count_text(clipped) - limit)
+                clipped = estimator.truncate_text(str(message.content), available) + marker
+            result.append(message.model_copy(update={"content": clipped}))
         else:
             result.append(message)
     return result, compacted
+
+
+def tool_trace_blocks(messages: list[BaseMessage]) -> list[list[BaseMessage]]:
+    """把一次 AI 并行调用及其所有结果作为不可拆分的预算单元.
+
+    只分组，不补造或删除非法消息；原始轨迹的问题仍由校验器拒绝。
+    """
+    blocks: list[list[BaseMessage]] = []
+    for message in messages:
+        if (
+            isinstance(message, ToolMessage)
+            and blocks
+            and isinstance(blocks[-1][0], AIMessage)
+            and any(call["id"] == message.tool_call_id for call in blocks[-1][0].tool_calls)
+        ):
+            blocks[-1].append(message)
+        else:
+            blocks.append([message])
+    return blocks
 
 
 def select_recent_turns(
@@ -188,12 +219,16 @@ def fit_context(
     system_and_trace = fixed_cost + estimator.count_messages(messages)
 
     if system_and_trace > max_tokens:
-        # spec 16 第 5 步：保留"最小必要轨迹"——当前提问 + 最近 2 轮工具交互。
-        # 更早的当前轮工具轮次放弃（与历史 Turn 的淘汰语义一致）。
-        # 压缩后仍超预算才是真正的不可服务状态，此时抛异常拒绝调用 LLM。
-        keep_tail = 4  # (AI tool_call + ToolMessage) × 2 轮
-        if len(messages) > 1 + keep_tail:
-            messages = [messages[0], *messages[-keep_tail:]]
+        # 保留当前提问 + 最近最多两次完整交互。一次调用可能有多个
+        # ToolMessage，不能按消息条数截尾；预算不足时再整组淘汰较早交互。
+        blocks = tool_trace_blocks(messages[1:])
+        keep = min(2, len(blocks))
+        candidate = [messages[0], *(message for block in blocks[-keep:] for message in block)] if keep else messages
+        while keep > 1 and fixed_cost + estimator.count_messages(candidate) > max_tokens:
+            keep -= 1
+            candidate = [messages[0], *(message for block in blocks[-keep:] for message in block)]
+        if len(candidate) < len(messages):
+            messages = candidate
             compacted += 1
             system_and_trace = fixed_cost + estimator.count_messages(messages)
 

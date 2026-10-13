@@ -17,6 +17,7 @@ export type MarketHistory = components['schemas']['SymbolHistoryResponse'];
 export type MarketIntraday = components['schemas']['SymbolIntradayResponse'];
 export type MarketCompany = components['schemas']['SymbolCompanyResponse'];
 export type MarketPeriod = components['schemas']['SymbolHistoryResponse']['period'];
+export type MarketQuoteRow = { symbol: string; quote: MarketQuote | null };
 
 export function useMarketQuote(symbol: string | null) {
   return useQuery({
@@ -60,5 +61,33 @@ export function useMarketCompany(symbol: string | null) {
     queryFn: () => api.get<MarketCompany>(`/markets/${symbol}/company`),
     enabled: Boolean(symbol),
     staleTime: 1000 * 60 * 60 * 24,
+  });
+}
+
+/**
+ * 概览页一屏要同时看几只指数的盘中价。
+ *
+ * 后端没有批量指数实时端点（`/indexes/quotes` 那个读的是落库收盘，昨日口径），
+ * 所以逐只并发取快照。单只失败只让那一行留空：整屏不能因为一个上游抖动
+ * 就判成失败，也不能拿昨收充成实时。
+ */
+export function useMarketQuotes(symbols: string[]) {
+  // 键用排序后的代码串，数组每次渲染都是新的。
+  const key = [...symbols].sort().join(',');
+  return useQuery({
+    queryKey: [...queryKeys.markets, 'batch', key],
+    queryFn: async (): Promise<MarketQuoteRow[]> => {
+      const settled = await Promise.allSettled(
+        symbols.map((symbol) => api.get<MarketQuote>(`/markets/${symbol}/quote`)),
+      );
+      return settled.map((result, index) => ({
+        symbol: symbols[index],
+        quote: result.status === 'fulfilled' ? result.value : null,
+      }));
+    },
+    enabled: symbols.length > 0,
+    refetchInterval: 1000 * 30,
+    refetchIntervalInBackground: false,
+    staleTime: 1000 * 30,
   });
 }

@@ -13,7 +13,27 @@ import { Card, Screen, SectionTitle } from '@/components/ui';
 import { DataTable, type DataColumn } from '@/components/DataTable';
 import { theme } from '@/constants/theme';
 import { useFundDetail, useFundHoldings, type FundHoldingItem } from '@/hooks/useFunds';
-import { formatDate, formatNumber, formatPoints, formatReturnPoints, trendColor } from '@/utils/format';
+import { formatDate, formatDay, formatNumber, formatPoints, formatReturnPoints, localToday, trendColor } from '@/utils/format';
+
+/**
+ * 行情时间戳的上游形状随市场而变（A股 `2026-10-08 14:30:00`、港股带斜杠、美股是另一套），
+ * 这一列只是让人扫读，所以认得出日期与时分才显示：今天/昨天用相对说法，更早给月日，跨年补年份。
+ * 认不出来就留 `--`，不把原始串糊进表格。
+ */
+function formatQuoteTime(value: string | null | undefined): string {
+  if (!value) return '--';
+  const matched = /^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}:\d{2})/.exec(value.trim());
+  if (!matched) return '--';
+  const [, year, month, day, clock] = matched;
+  const dayValue = `${year}-${month}-${day}`;
+  const now = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dayValue === localToday()) return `今天 ${clock}`;
+  if (dayValue === formatDay(yesterday)) return `昨天 ${clock}`;
+  return year === String(now.getFullYear()) ? `${month}-${day} ${clock}` : dayValue;
+}
+
 const COLUMNS: DataColumn<FundHoldingItem>[] = [
   { key: 'weight', title: '持仓占比', width: 84, sortValue: (item) => item.weight, cell: (item) => ({ text: formatPoints(item.weight) }) },
   {
@@ -24,7 +44,7 @@ const COLUMNS: DataColumn<FundHoldingItem>[] = [
     cell: (item) => ({
       text: formatReturnPoints(item.change_pct),
       color: trendColor(item.change_pct),
-      sub: item.quote_time ? item.quote_time.slice(5, 16).replace('/', '-') : '--',
+      sub: formatQuoteTime(item.quote_time),
     }),
   },
   {
@@ -61,13 +81,13 @@ export default function FundHoldingsScreen() {
                   {data.previous_quarter ? ` · 对比 ${data.previous_quarter}` : ''}
                 </Text>
                 {items.length === 0 ? (
-                  <EmptyState title="暂无重仓股披露" hint="该基金尚未公布定期报告的股票持仓" />
+                  <EmptyState title="还没有重仓股披露" hint="这只基金还没公布定期报告，返回详情可看净值走势" />
                 ) : (
                   <DataTable
                     items={items}
                     padded={false}
                     scrollRows={false}
-                    style={{ marginTop: 10 }}
+                    style={{ marginTop: 8 }}
                     keyOf={(item) => item.stock_code}
                     hrefOf={(item) => ({ pathname: '/market/[symbol]', params: { symbol: item.symbol ?? item.stock_code } })}
                     nameOf={(item) => ({ title: item.stock_name ?? item.stock_code, sub: item.stock_code })}
@@ -87,7 +107,7 @@ export default function FundHoldingsScreen() {
           return (
             <Card>
               <SectionTitle title="行业分布" />
-              <Text style={{ fontSize: 11, color: theme.textFaint, marginBottom: 10 }}>
+              <Text style={{ fontSize: 11, color: theme.textFaint, marginBottom: 8 }}>
                 占净值比例 · 披露截止 {formatDate(data.industries_as_of)}
               </Text>
               {industries.map((industry) => (
@@ -110,7 +130,7 @@ function IndustryBar({ name, weight, share }: { name: string; weight: number | n
   const value = weight ?? 0;
   const width = share > 0 ? Math.max((value / share) * 100, 1.5) : 0;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
       <Text style={{ width: 104, fontSize: 12, color: theme.textMuted, marginRight: 8 }} numberOfLines={1}>
         {name}
       </Text>

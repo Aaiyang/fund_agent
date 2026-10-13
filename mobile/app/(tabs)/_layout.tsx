@@ -3,7 +3,6 @@ import { router, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
 import { theme } from '@/constants/theme';
-import { useCreateAgentSession } from '@/hooks/useAgent';
 import { useUiStore } from '@/stores/ui';
 
 /**
@@ -49,11 +48,13 @@ function SessionsButton() {
 }
 
 /**
- * 新建会话。放在表头标题右边，取代原来面板里那个「新建」文字按钮：
- * 建完直接选中并把面板收起，回到聊天页就是新的一条空白对话。
+ * 新建会话：只把聊天页切回空白，不在服务端建档。
+ *
+ * 之前这里一点就 POST /auth/session，于是"建了却没说话"的会话会留在历史列表里，
+ * 越攒越多。空白会话本来就是未发生的事，第一条消息发出去时聊天页的
+ * ensureActiveSession 再去建那条。
  */
 function NewChatButton() {
-  const create = useCreateAgentSession();
   const setSessionId = useUiStore((state) => state.setAgentSessionId);
   const setSessionsOpen = useUiStore((state) => state.setAgentSessionsOpen);
   return (
@@ -61,9 +62,11 @@ function NewChatButton() {
       accessibilityRole="button"
       accessibilityLabel="新建会话"
       hitSlop={10}
-      disabled={create.isPending}
-      onPress={() => create.mutate(undefined, { onSuccess: (session) => { setSessionId(session.session_id); setSessionsOpen(false); } })}
-      style={{ paddingHorizontal: 16, opacity: create.isPending ? 0.5 : 1 }}
+      onPress={() => {
+        setSessionId(null);
+        setSessionsOpen(false);
+      }}
+      style={{ paddingHorizontal: 16 }}
     >
       <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.primary} size={22} />
     </Pressable>
@@ -108,10 +111,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="market"
+        options={{
+          title: '行情',
+          headerTitle: '行情',
+          tabBarIcon: ({ color, size }) => (
+            <SymbolView
+              name={{ ios: 'chart.line.uptrend.xyaxis', android: 'show_chart', web: 'show_chart' }}
+              tintColor={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="agent"
         options={{
-          title: 'Agent',
-          headerTitle: 'AI 基金助手',
+          title: '小镜',
+          headerTitle: '小镜',
           headerLeft: () => <SessionsButton />,
           headerRight: () => <NewChatButton />,
           tabBarIcon: ({ color, size }) => (

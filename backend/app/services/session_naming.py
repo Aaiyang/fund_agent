@@ -1,12 +1,12 @@
-"""Session auto-naming feature.
+"""会话自动命名.
 
-On the first message of a new session this module:
-  1. Atomically claims the session in Postgres (prevents duplicate LLM calls
-     across concurrent requests and multiple uvicorn workers).
-  2. Writes a placeholder name derived from the user's message so the session
-     always has a sensible name even if the LLM call later fails.
-  3. Fires a background asyncio task that calls a fast nano model with
-     structured output to generate a proper title and overwrites the placeholder.
+新会话的第一条消息进来时，本模块按下面三步走：
+  1. 在 Postgres 上原子地认领这个会话。有了这一步，并发的多个请求之间、
+     多个 uvicorn worker 之间，都不会把同一次命名重复调一遍 LLM。
+  2. 先从用户消息里截出一个占位名写上去，这样即使后面那次 LLM 调用失败，
+     会话列表里也不会剩下空白名字。
+  3. 再挂一个后台 asyncio 任务，用快的 nano 模型带结构化输出生成正式标题，
+     生成成功后覆盖掉占位名。
 """
 
 import asyncio
@@ -37,10 +37,10 @@ def _build_placeholder(user_message: str) -> str:
 
 
 def _claim_session(session_id: str, placeholder: str) -> bool:
-    """Return True iff this caller wins the atomic Postgres claim.
+    """本次调用抢到那个原子的 Postgres 认领时返回 True.
 
-    Executes UPDATE … WHERE name = '' in a single round-trip so exactly one
-    concurrent caller receives rowcount == 1.
+    一条 `UPDATE … WHERE name = ''` 一次往返就完成，所以并发的多个调用者里
+    恰好只有一个能拿到 rowcount == 1。
     """
     with DBSession(database_service.engine) as db:
         stmt = (
@@ -73,10 +73,10 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
 
 
 def maybe_name_session(session_id: str, session_name: str, messages: list) -> None:
-    """Trigger session auto-naming if the session is still unnamed.
+    """会话还没名字时，触发自动命名.
 
-    Safe to call from any chat endpoint — concurrent callers for the same
-    session are deduplicated by the Postgres claim.
+    任何聊天端点都可以直接调它——同一个会话的并发调用会被前面那步
+    Postgres 原子认领去重，最终只生效一次。
     """
     if session_name:
         return

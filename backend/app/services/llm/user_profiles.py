@@ -1,7 +1,5 @@
 """个人模型配置服务：基础 GLM Flash 只读，用户档案存数据库."""
 
-from urllib.parse import urlparse
-
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -9,6 +7,7 @@ from app.repositories.user_llm_repository import user_llm_repository
 from app.services.llm.credentials import decrypt_key, encrypt_key
 from app.services.llm.profile_store import key_hint
 from app.services.llm.registry import LLMRegistry
+from app.utils.provider_url import validate_provider_base_url
 
 DEFAULT_PROFILE_NAME = "默认 GLM Flash"
 
@@ -110,9 +109,9 @@ class UserProfileService:
                 raise ValueError("基础 GLM Flash 档案不能修改，请创建个人档案")
             if name in names:
                 raise ValueError(f"档案名称重复：{name}")
-            url = urlparse(base_url)
-            if url.scheme not in {"https", "http"} or not url.hostname or url.username or url.password:
-                raise ValueError("接口地址必须是有效的 HTTP 或 HTTPS 地址")
+            base_url = validate_provider_base_url(
+                base_url, allow_private_network=settings.LLM_PROVIDER_ALLOW_PRIVATE_NETWORK
+            )
             previous = saved_by_name.get(name)
             api_key = profile.api_key.strip()
             if not api_key:

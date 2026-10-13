@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { FundReference } from '@/components/FundReference';
@@ -127,11 +127,12 @@ function TradeForm({
     }
     const value = entry.byMoney ? amount : shares;
     if (value.trim() === '' || Number.isNaN(Number(value)) || Number(value) <= 0) {
-      setProblem(entry.byMoney ? '请填写金额' : '请填写份额');
+      // 「缺什么 + 期望格式」：只说“请输入金额”的人不知道该不该带小数点。
+      setProblem(`请填写${entry.byMoney ? entry.amountLabel : '转出份额'}，需为大于 0 的数字`);
       return;
     }
     if (operation === 'CONVERT' && !/^\d{6}$/.test(targetCode.trim())) {
-      setProblem('请填写转入基金的 6 位代码');
+      setProblem('请填写转入基金代码，需为 6 位数字');
       return;
     }
     record.mutate(
@@ -152,81 +153,85 @@ function TradeForm({
     );
   }
 
+  // 表单最后一屏就是下单，键盘必须顶开而不是把按钮压住：
+  // Screen 自带的 ScrollView 会在避让容器里整体缩小，滚动区结构不动。
   return (
-    <Screen>
-      <Card>
-        <SectionTitle title="持仓账户" />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {accounts.map((account) => (
-            <Chip
-              key={account.id}
-              label={account.name}
-              active={accountId === account.id}
-              onPress={() => onSelectAccount(account.id)}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Card>
+          <SectionTitle title="持仓账户" />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {accounts.map((account) => (
+              <Chip
+                key={account.id}
+                label={account.name}
+                active={accountId === account.id}
+                onPress={() => onSelectAccount(account.id)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <Card>
+          <SectionTitle title="加减仓" />
+          <FundReference
+            code={fundCode}
+            name={detail.data?.fund_name ?? existing?.fund_name}
+            nav={detail.data?.latest_nav ?? existing?.unit_nav}
+            navDate={detail.data?.nav_date ?? existing?.nav_date}
+            dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
+            note={`当前持有 ${formatNumber(held, 2)} 份 · 市值 ${formatMoney(existing?.market_value)}`}
+          />
+          <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>{entry.label}</Text>
+          {entry.pickDate ? (
+            <PurchaseDateFields
+              required
+              value={tradeDate}
+              onChangeText={setTradeDate}
+              afterCutoff={afterCutoff}
+              onAfterCutoff={setAfterCutoff}
             />
-          ))}
-        </View>
-      </Card>
+          ) : (
+            <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>
+              本期扣款日 {tradeDate}，按 15:00 前的净值计算。
+            </Text>
+          )}
+          {entry.byMoney ? (
+            <Field
+              label={entry.amountLabel}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="numeric"
+              placeholder="请输入金额"
+            />
+          ) : (
+            <Field
+              label="转出份额"
+              value={shares}
+              onChangeText={setShares}
+              keyboardType="numeric"
+              placeholder={`当前持有 ${formatNumber(held, 2)} 份`}
+            />
+          )}
+          {operation === 'CONVERT' ? (
+            <Field
+              label="转入基金代码"
+              value={targetCode}
+              onChangeText={setTargetCode}
+              keyboardType="numeric"
+              placeholder="请输入 6 位基金代码"
+            />
+          ) : null}
+          {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
+        </Card>
 
-      <Card>
-        <SectionTitle title="加减仓" />
-        <FundReference
-          code={fundCode}
-          name={detail.data?.fund_name ?? existing?.fund_name}
-          nav={detail.data?.latest_nav ?? existing?.unit_nav}
-          navDate={detail.data?.nav_date ?? existing?.nav_date}
-          dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
-          note={`当前持有 ${formatNumber(held, 2)} 份 · 市值 ${formatMoney(existing?.market_value)}`}
-        />
-        <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>{entry.label}</Text>
-        {entry.pickDate ? (
-          <PurchaseDateFields
-            required
-            value={tradeDate}
-            onChangeText={setTradeDate}
-            afterCutoff={afterCutoff}
-            onAfterCutoff={setAfterCutoff}
-          />
-        ) : (
-          <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 12 }}>
-            本期扣款日 {tradeDate}，按 15:00 前的净值计算。
-          </Text>
-        )}
-        {entry.byMoney ? (
-          <Field
-            label={entry.amountLabel}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            placeholder="请输入金额"
-          />
-        ) : (
-          <Field
-            label="转出份额"
-            value={shares}
-            onChangeText={setShares}
-            keyboardType="numeric"
-            placeholder={`当前持有 ${formatNumber(held, 2)} 份`}
-          />
-        )}
-        {operation === 'CONVERT' ? (
-          <Field
-            label="转入基金代码"
-            value={targetCode}
-            onChangeText={setTargetCode}
-            keyboardType="numeric"
-            placeholder="请输入转入基金的 6 位代码"
-          />
-        ) : null}
-        {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
-      </Card>
+        {sized ? <Preview query={preview} byMoney={entry.byMoney} /> : null}
 
-      {sized ? <Preview query={preview} byMoney={entry.byMoney} /> : null}
-
-      <Card>
-        <Button label={entry.verb} onPress={submit} loading={record.isPending} />
-      </Card>
-    </Screen>
+        <Card>
+          <Button label={entry.verb} onPress={submit} loading={record.isPending} />
+        </Card>
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
 

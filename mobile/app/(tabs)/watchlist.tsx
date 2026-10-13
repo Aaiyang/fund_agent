@@ -46,8 +46,9 @@ export default function WatchlistScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="管理分组"
-            hitSlop={8}
+            hitSlop={10}
             onPress={() => router.push('/watchlist-groups')}
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
           >
             <SymbolView name={{ ios: 'gear', android: 'settings', web: 'settings' }} tintColor={theme.textMuted} size={18} />
           </Pressable>
@@ -58,7 +59,7 @@ export default function WatchlistScreen() {
         <Async
           query={list}
           empty={(data) =>
-            data.items.length === 0 ? <EmptyState title="还没有自选基金" hint="点右上角搜索图标按代码或名称添加" /> : null
+            data.items.length === 0 ? <EmptyState title="还没有自选基金" hint="点右上角搜索图标，按代码或名称添加" /> : null
           }
         >
           {(data) => (

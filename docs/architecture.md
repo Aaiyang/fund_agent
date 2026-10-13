@@ -107,7 +107,7 @@ graph LR
 
 **System prompt cached at module load.** `system.md` is read once at startup. Per-request cost is only `.format()` with the user's name, current datetime, and retrieved memories — no file I/O.
 
-**LLM fallback is time-bounded.** The entire fallback loop (retries × models) is wrapped in `asyncio.wait_for(timeout=LLM_TOTAL_TIMEOUT)` to prevent indefinite hangs.
+**LLM fallback is time-bounded.** Each call has a 300-second total budget covering retries and fallback, a 120-second initial-progress deadline, and a 60-second idle deadline after meaningful streaming progress. Partial output is never automatically replayed through retry or fallback. See [LLM Service](llm-service.md) for configuration.
 
 **Username flows through session, not per-request DB lookup.** The user's display name is copied to `Session.username` at session creation time. Chat requests read it from the already-loaded session object — zero extra queries.
 

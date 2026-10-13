@@ -42,10 +42,11 @@ async def get_fund_snapshot(
             "nav_date": detail.nav_date.isoformat() if detail.nav_date else None,
             "daily_return": detail.daily_return,
             "performance": detail.performance.model_dump(exclude_none=True) if detail.performance else None,
+            "performance_basis": "unadjusted_unit_nav",
         }
     )
 
-    warnings: list[str] = []
+    warnings: list[str] = ["当前业绩与风险指标基于单位净值计算，未做分红复权；不能等同于含分红/费用的投资者总回报。"]
     stale = False
     if detail.nav_date is not None:
         days_old = (business_today() - detail.nav_date).days

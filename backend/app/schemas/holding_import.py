@@ -52,7 +52,7 @@ class ImportDetail(BaseModel):
     """一个导入批次，可带上明细条目."""
 
     id: str
-    account_id: int
+    account_id: int | None
     import_type: str
     status: str
     image_count: int = 0

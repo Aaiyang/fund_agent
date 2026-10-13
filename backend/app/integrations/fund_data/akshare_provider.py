@@ -44,6 +44,8 @@ from app.integrations.fund_data.normalizer import (
     sina_symbol,
 )
 from app.integrations.fund_data.sina_client import fetch_quotes
+from app.integrations.fund_data.disclosure_client import fetch_announcements, fetch_manager_history
+from app.schemas.fund_disclosure import FundAnnouncementPage, FundManagerHistoryData
 from app.utils.clock import business_today
 from app.utils.sanitization import sanitize_string
 
@@ -167,6 +169,16 @@ class AKShareFundProvider:
         if profile is None:
             return None
         return FundExternalManager(fund_code=fund_code, manager_name=profile.manager_name)
+
+    async def get_manager_history(self, fund_code: str) -> FundManagerHistoryData:
+        """历任信息直接用异步固定公开来源，不执行第三方网页脚本."""
+        return await fetch_manager_history(fund_code)
+
+    async def get_announcements(
+        self, fund_code: str, category: int, page: int, page_size: int
+    ) -> FundAnnouncementPage:
+        """与AKShare公告接口同源，使用异步请求并保留实际分页元数据."""
+        return await fetch_announcements(fund_code, category, page, page_size)
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:
         """取最近两个报告期披露的股票持仓.

@@ -1,50 +1,74 @@
-# Agent image holdings import: backend contract
+# Agent screenshot holdings sync: backend and mobile
 
-This phase implements the backend only. Both the web and mobile clients will use this contract when their image picker, progress display, and human review UI are added. Existing chat screens do not yet provide these controls.
+Images accompany the user's question. Mobile keeps selected images locally, stages them on Send, and submits the question with server-issued import IDs. Staging creates UPLOADED drafts without OCR or holdings writes. The parent's ordinary chat-model call first interprets the current user request. Explicit image-import intent selects the parameterless start_holding_import tool; the router then checks current-turn attachments before entering the subgraph. Uploading an image alone, analysis, diagnosis and explicit refusal do not authorize import. Ambiguous intent requires clarification. The web frontend is outside this phase.
 
-The flow reuses the screenshot pipeline: choose an owned account, upload images, run local OCR in the existing queue, let the Agent read the draft, pause through a LangGraph interrupt, obtain a human decision, then resume the Agent. Neither upload nor an LLM tool applies holdings. Only an authenticated human decision endpoint writes the approved draft.
+## Workflow
 
-## Client sequence
+```mermaid
+flowchart TD
+  question[Current question and optional attachments] --> intent[Parent chat interprets intent]
+  intent -->|Analysis or unclear intent| ordinary[Answer or clarify]
+  intent -->|start_holding_import| route[route_attachments checks current attachments]
+  route -->|Missing| upload[Ask user to upload holdings screenshot]
+  route -->|Present| load[Subgraph load_draft]
+  load -->|UPLOADED| queue[Existing OCR queue]
+  queue --> wait[wait_processing interrupt]
+  wait -->|Client polls completion and resumes| load
+  load -->|PARSE_FAILED| retry[Explain wrong image, unreadable image or service failure]
+  load -->|No destination| choose[choose_account interrupt]
+  choose --> bind[Bind draft only]
+  bind --> load
+  load -->|Ready with destination| review[human_review interrupt]
+  review -->|Human HTTP decision| result[Read committed status]
+  result -->|All batches handled| chat[Parent answers original question]
+```
 
-All paths below are relative to `/api/v1` and require the current chat session access token, rather than a user or refresh token.
+Recognition reuses Taskiq and local OCR. Redis requires the screenshot worker; development can use the existing in-process broker. The subgraph adds no chat-model calls. Checkpoints and interrupts avoid keeping an HTTP connection open. Mobile resumes after polling completion; the backend does not push to offline clients.
+
+Intent detection uses the existing parent chat call, without a separate classifier request. Recognition and account/review pauses do not poll the chat model. The parent resumes its answer after completion. Missing images and failed recognition produce deterministic guidance without another model call. OCR content checks distinguish clearly unrelated images, unreadable text and incomplete holdings lists; they are heuristic checks, not a universal image classifier. Valid images in a partially failed batch remain available, with a visible warning on the review card. Only human confirmation updates holdings.
+
+An explicit holding_account_id or unambiguous owned account name in the original instruction skips the destination question. Missing, ambiguous or negated destinations require selection, even when only one account exists. Image text, old history and the first account are not defaults.
+
+## Contract
+
+Paths are relative to /api/v1 and require the current chat session access token.
 
 | Action | Endpoint | Contract |
 | --- | --- | --- |
-| Upload | `POST /chatbot/holding-imports/screenshots?account_id=7` | multipart `files`; 202 with `import_id`, `image_count`, `status=PARSING` |
-| Progress / full draft | `GET /chatbot/holding-imports/{import_id}` | `import_batch.status` and `items` |
-| Agent request | `POST /chatbot/chat` or `/chatbot/chat/stream` | user messages plus `holding_import_ids` |
-| Recover pending review | `GET /chatbot/pending-action` | `pending_action`, or null |
-| Human decision | `POST /chatbot/holding-imports/{import_id}/decision` | `decision`, `interrupt_id`, `review_digest` |
+| Stage | POST /chatbot/holding-imports/screenshots | multipart files; optional query account_id; 202 with import_id and UPLOADED |
+| Submit | POST /chatbot/chat or /chatbot/chat/stream | messages, holding_import_ids, optional holding_account_id |
+| Progress | GET /chatbot/holding-imports/{id} | status and full draft |
+| Recovery | GET /chatbot/pending-action | pending action or null |
+| Continue | POST /chatbot/holding-imports/{id}/continue | interrupt_id |
+| Destination | POST /chatbot/holding-imports/{id}/account | interrupt_id, account_id; draft only |
+| Decision | POST /chatbot/holding-imports/{id}/decision | interrupt_id, decision; confirmation requires review_digest |
 
-Default upload limits are 1–5 PNG/JPEG/WEBP images, each at most 8 MiB, using the existing holding import settings. Original images stay in temporary local storage and are not sent to the chat model as URLs or base64. A Redis broker requires the existing screenshot worker; otherwise the existing in-process broker runs the task.
+IDs must come from actual uploads. Ownership and session binding are checked. Images are not sent to the parent model as URLs/base64. Existing format, count and size validation applies.
 
-Poll until `REVIEW_REQUIRED`, then send user messages with `holding_import_ids` containing IDs from upload responses. If sent earlier, the Agent reports ongoing recognition; the client must query again later. Recognition completion does not automatically wake the chat in this version. Ownership and session binding are checked before IDs enter the dynamic context.
+Pending actions are discriminated by kind:
 
-## Tools and review UI
+- holding_import_processing: mobile polls every three seconds and automatically continues when recognition ends. Continuing unfinished OCR returns 409.
+- holding_import_account: lists owned accounts; buttons or an ordinary account-name reply select a destination without writing holdings. Create an account first if none exist.
+- holding_import_review: contains destination ID/name, all items, actual interrupt ID and digest. Only the authenticated human decision endpoint applies holdings; chat confirmation cannot approve.
 
-- `get_holding_import(import_id)` reads progress and up to 20 draft rows. The HTTP endpoint supplies the full draft.
-- `request_holding_import_confirmation(import_id)` constructs a review card from actual draft data and pauses with `interrupt()`. It never calls the holdings confirmation service.
+Cards appear in chat/history responses and the final stream frame. Checkpoints preserve them across reconnection. Mobile state and query keys are session-scoped. Ordinary chat is blocked during processing/review, while destination selection accepts an account reply.
 
-Tools accept only an import ID, never file paths, user IDs, or model-supplied position values. The review card is carried by `ChatResponse.pending_action`, `GET /messages`, and the final SSE event with `done=true`. It contains `kind=holding_import_review`, `import_id`, `account_id`, `image_count`, `interrupt_id`, `review_digest`, full `items`, and a snapshot-overwrite notice. Render the amounts, shares, fund matching, validation issues, confidence, user decisions, and existing-position comparison before enabling confirmation.
+## Consistency and recovery
 
-Checkpointed interrupts survive reconnects and restarts. Fetch `/pending-action` to recover them. Ordinary chat text such as “confirm” cannot approve a holding update; while a review is pending, chat returns 409 `holding_import_review_pending`.
+Mobile review scrolls through all rows, displaying amounts, shares, confidence, issues and existing position amounts. The chat card provides viewing, confirmation and cancellation. Existing item PATCH supports corrections; refresh to obtain a new digest after editing. An old digest returns 409 without writes.
 
-For a human button click, POST `decision` (`confirm` or `cancel`) with the exact `interrupt_id` and `review_digest` copied from the card. The backend verifies the real pending interrupt and import ID. Success returns deterministic `import_id`, `status` (`APPLIED` / `CANCELLED`), `applied`, `skipped`, resumed `messages`, and any next `pending_action`. Use these fields rather than model-generated prose to show success.
+Confirmation overwrites adopted fields for matched funds, preserving holdings absent from the screenshot. Positions, IMPORT_ADJUSTMENT audit entries and APPLIED status commit together. Repeated confirmation is idempotent. Only APPLIED indicates success.
 
-## Corrections and recovery
+Cancellation is available during processing, selection and review. OCR locks and rechecks status before saving; late success or failure cannot resurrect a cancelled draft. Multiple batches are reviewed sequentially before the parent resumes, with paired ToolCall/ToolMessage records.
 
-Use the existing `PATCH /holding-imports/{import_id}/items/{item_id}` to edit draft rows or choose UPDATE / EDIT / SKIP. Afterwards fetch `/chatbot/pending-action` again and display the updated draft and digest. Confirmation with the old digest returns 409 `import_review_changed` without applying holdings. The digest includes all rows, decisions, and current-position comparisons, but excludes dynamic fund candidates.
+Batch locks prevent duplicate OCR enqueueing. Continue, account replies and decisions share a session lock; concurrent resumes return 409. Multi-worker deployments require available Valkey/Redis; memory locking is for a single process. After a failure or timeout, check batch status and pending action before retrying; committed imports are not applied twice.
 
-Confirmation preserves snapshot semantics: update accepted funds and supplied fields within the chosen account, leave unlisted holdings intact, preserve existing purchase dates, and write IMPORT_ADJUSTMENT audit entries rather than buy/sell transactions. Positions, audit entries, account import time, and APPLIED status commit in one database transaction. Confirmation, draft editing, and cancellation lock the batch row. Repeated confirmation is idempotent. Failed transactions leave all positions/audit rows unchanged and retain images; confirmed, cancelled, and failed-recognition imports use the existing image cleanup.
+Attachments whose question was never submitted remain UPLOADED and do not run OCR. Existing cancellation can clean them up; this phase adds no periodic abandoned-file cleanup job.
 
-Decisions and graph resumption are serialized per session. Valkey locks refuse unprotected decisions when the backend is unavailable. Single-process development uses an in-memory lock; multiple API workers require working Valkey/Redis caching. Concurrent decisions return 409 `holding_import_decision_in_progress`.
+## Migration and verification
 
-After 503 `holding_import_decision_failed_check_status` or 504 `holding_import_decision_timeout_check_status`, query the import status before retrying the same decision. Application may have committed before model resumption failed; APPLIED imports are not applied again. Cancellation of an applied import conflicts. Cross-user, cross-session, or non-chat imports return 404.
+Migration f1a6c8b4d209 allows unassigned session screenshot drafts. A database check still requires destinations for ordinary imports and APPLIED batches. Run APP_ENV=<environment> alembic upgrade head in other environments, then restart the backend.
 
-## Migration and validation
+Entry: backend/app/agent/graph/agent.py (route_attachments). Subgraph: backend/app/agent/graph/holding_import.py. Mobile: mobile/app/(tabs)/agent.tsx. Client types are generated from backend OpenAPI.
 
-Migration `a62d8b409e15` adds nullable `holding_import.chat_session_id` and its index; existing ordinary imports remain NULL. The development database has been upgraded. Migrate other environments with Alembic and restart the backend before use. Current tool and prompt versions are defined by their respective module constants.
-
-Tests exercise actual LangGraph interruptions/resumption, streaming cards, checkpoint recovery, ownership/session isolation, stale-review rejection, plain-chat refusal, repeat/concurrent decisions, retry after resume failure, and upload validation. Separate PostgreSQL tests run inside an outer rollback transaction and verify full rollback on mid-batch failure and idempotent audit writes. No real chat model is called by these tests.
-
-Verification on 2026-10-08: the full backend suite passed with 465 passed and 4 optional database tests skipped. The two PostgreSQL tests for this feature were enabled separately and both passed. Ruff, Pyright, and an import smoke check in the current backend environment passed. OpenAPI exposes all four new endpoints, both tools are registered, and the local OCR runtime is available. Web/mobile interaction and real-user-image chat-model behavior were not tested in this backend-only phase.
+Tests cover real graph interruption/recovery, explicit/missing accounts, chat replies, ownership/session isolation, stale interrupts, concurrent/repeated requests, OCR failure, cancellation during recognition and sequential batches. PostgreSQL rollback tests verify unassigned persistence, destination binding and confirmation. Automated checks do not use real user screenshots or call real chat models.

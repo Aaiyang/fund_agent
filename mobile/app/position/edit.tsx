@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { FundReference } from '@/components/FundReference';
@@ -130,7 +130,7 @@ function PositionForm({
     }
     confirmAction(
       '删除持仓',
-      `${code} 在本账户的持仓、全部流水和定投计划都会被删除，不可恢复。`,
+      `${code} 在本账户的持仓、全部流水与定投计划都会被删除，删除后无法恢复。`,
       () =>
         remove.mutate(
           { accountId, fundCode: code },
@@ -161,7 +161,7 @@ function PositionForm({
     };
     for (const column of shownColumns(mode, traded)) {
       if (values[column].trim() !== '' && Number.isNaN(Number(values[column]))) {
-        setProblem(`${LABELS[column]} 不是有效数字`);
+        setProblem(`${LABELS[column]}需为数字`);
         return;
       }
     }
@@ -198,113 +198,113 @@ function PositionForm({
     );
   }
 
+  // 快照表单的输入框最密，键盘必须顶开：Screen 自带的 ScrollView 在避让容器里
+  // 整体缩小，滚动区结构不动。
   return (
-    <Screen>
-      <Card>
-        <SectionTitle title="持仓账户" />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {accounts.map((account) => (
-            <Chip
-              key={account.id}
-              label={account.name}
-              active={accountId === account.id}
-              onPress={() => onSelectAccount(account.id)}
-            />
-          ))}
-          <Chip label="+ 新增账户" onPress={() => router.push('/account/add')} />
-        </View>
-      </Card>
-
-      <Card>
-        <SectionTitle title="同步持仓" />
-        <FundReference
-          code={code}
-          name={detail.data?.fund_name ?? existing?.fund_name}
-          nav={detail.data?.latest_nav ?? existing?.unit_nav}
-          navDate={detail.data?.nav_date ?? existing?.nav_date}
-          dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
-          note={
-            existing
-              ? `已持有：市值 ${formatMoney(existing.market_value)}`
-              : '该账户下还没有这只基金的持仓'
-          }
-        />
-        <PurchaseDateField
-          label="首次购买日期"
-          value={purchaseDate}
-          onChangeText={setPurchaseDate}
-        />
-        {traded ? (
-          <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
-            这只基金记过 {existing?.trade_count} 笔买卖，份额与持仓成本以流水为准，这里只改持有金额和日期。
-          </Text>
-        ) : (
-          <>
-            <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-              <Chip label="按金额填" active={mode === 'amount'} onPress={() => setMode('amount')} />
-              <Chip label="按份额填" active={mode === 'shares'} onPress={() => setMode('shares')} />
-            </View>
-            {shownColumns(mode, traded).map((column) => (
-              <Field
-                key={column}
-                label={LABELS[column]}
-                value={{ market_value: marketValue, shares, average_cost_nav: costNav, profit_loss: profitLoss }[column]}
-                onChangeText={{
-                  market_value: setMarketValue,
-                  shares: setShares,
-                  average_cost_nav: setCostNav,
-                  profit_loss: setProfitLoss,
-                }[column]}
-                keyboardType="numeric"
-                placeholder={`请输入${LABELS[column]}`}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Card>
+          <SectionTitle title="持仓账户" />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {accounts.map((account) => (
+              <Chip
+                key={account.id}
+                label={account.name}
+                active={accountId === account.id}
+                onPress={() => onSelectAccount(account.id)}
               />
             ))}
-            <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
-              {mode === 'shares'
-                ? `金额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 成本净值 × 份额。`
-                : `份额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 金额 − 收益。`}
-            </Text>
-          </>
-        )}
-        {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
-      </Card>
-
-      {hasMoney ? (
-        <Card>
-          <SectionTitle title="持仓结果" action={existing ? '删除持仓' : undefined} onAction={drop} />
-          <Row>
-            <Stat label="持有金额" value={formatMoney(figures.market_value)} />
-            <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />
-            <Stat label="持仓成本" value={formatMoney(figures.cost_amount)} tone="muted" />
-            <Stat label="平均成本净值" value={formatNumber(figures.average_cost_nav, 4)} tone="muted" />
-            <Stat label="持有收益" value={formatSignedMoney(figures.profit_loss)} tone={signTone(figures.profit_loss)} />
-            <Stat label="收益率" value={formatSignedRate(figures.profit_loss_rate)} tone={signTone(figures.profit_loss)} />
-            <Stat label="持有天数" value={figures.holding_days === null ? '--' : `${figures.holding_days}`} tone="muted" />
-          </Row>
+            <Chip label="+ 新增账户" onPress={() => router.push('/account/add')} />
+          </View>
         </Card>
-      ) : null}
 
-      <Card>
-        <Button label="保存持仓" onPress={submit} loading={upsert.isPending} />
-      </Card>
+        <Card>
+          <SectionTitle title="同步持仓" />
+          <FundReference
+            code={code}
+            name={detail.data?.fund_name ?? existing?.fund_name}
+            nav={detail.data?.latest_nav ?? existing?.unit_nav}
+            navDate={detail.data?.nav_date ?? existing?.nav_date}
+            dailyReturn={detail.data?.daily_return ?? existing?.daily_return}
+            note={
+              existing
+                ? `已持有：市值 ${formatMoney(existing.market_value)}`
+                : '该账户下还没有这只基金的持仓'
+            }
+          />
+          <PurchaseDateField label="首次购买日期" value={purchaseDate} onChangeText={setPurchaseDate} />
+          {traded ? (
+            <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
+              这只基金记过 {existing?.trade_count} 笔买卖，份额与持仓成本以流水为准，这里只改持有金额和日期。
+            </Text>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+                <Chip label="按金额填" active={mode === 'amount'} onPress={() => setMode('amount')} />
+                <Chip label="按份额填" active={mode === 'shares'} onPress={() => setMode('shares')} />
+              </View>
+              {shownColumns(mode, traded).map((column) => (
+                <Field
+                  key={column}
+                  label={LABELS[column]}
+                  value={{ market_value: marketValue, shares, average_cost_nav: costNav, profit_loss: profitLoss }[column]}
+                  onChangeText={{
+                    market_value: setMarketValue,
+                    shares: setShares,
+                    average_cost_nav: setCostNav,
+                    profit_loss: setProfitLoss,
+                  }[column]}
+                  keyboardType="numeric"
+                  placeholder={`请输入${LABELS[column]}`}
+                />
+              ))}
+              <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
+                {mode === 'shares'
+                  ? `金额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 成本净值 × 份额。`
+                  : `份额按最新净值 ${formatNumber(nav, 4)} 折算，成本 = 金额 − 收益。`}
+              </Text>
+            </>
+          )}
+          {problem ? <Text style={{ color: theme.danger, fontSize: 13 }}>{problem}</Text> : null}
+        </Card>
 
-      <Card>
-        <SectionTitle title="加减仓" action="定投计划" onAction={() => router.push('/auto-invest')} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {TRADE_ACTIONS.map((action) => (
-            <View key={action.label} style={{ flexBasis: '50%', paddingHorizontal: 5, marginBottom: 10 }}>
-              <Button
-                label={action.label}
-                variant="secondary"
-                onPress={() =>
-                  router.push({ pathname: '/position/trade', params: { code, operation: action.operation } })
-                }
-              />
-            </View>
-          ))}
-        </View>
-      </Card>
-    </Screen>
+        {hasMoney ? (
+          <Card>
+            <SectionTitle title="持仓结果" action={existing ? '删除持仓' : undefined} onAction={drop} />
+            <Row>
+              <Stat label="持有金额" value={formatMoney(figures.market_value)} />
+              <Stat label="持有份额" value={formatNumber(figures.shares, 2)} tone="muted" />
+              <Stat label="持仓成本" value={formatMoney(figures.cost_amount)} tone="muted" />
+              <Stat label="平均成本净值" value={formatNumber(figures.average_cost_nav, 4)} tone="muted" />
+              <Stat label="持有收益" value={formatSignedMoney(figures.profit_loss)} tone={signTone(figures.profit_loss)} />
+              <Stat label="收益率" value={formatSignedRate(figures.profit_loss_rate)} tone={signTone(figures.profit_loss)} />
+              <Stat label="持有天数" value={figures.holding_days === null ? '--' : `${figures.holding_days}`} tone="muted" />
+            </Row>
+          </Card>
+        ) : null}
+
+        <Card>
+          <Button label="保存持仓" onPress={submit} loading={upsert.isPending} />
+        </Card>
+
+        <Card>
+          <SectionTitle title="加减仓" action="定投计划" onAction={() => router.push('/auto-invest')} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {TRADE_ACTIONS.map((action) => (
+              <View key={action.label} style={{ flexBasis: '50%', paddingHorizontal: 5, marginBottom: 10 }}>
+                <Button
+                  label={action.label}
+                  variant="secondary"
+                  onPress={() =>
+                    router.push({ pathname: '/position/trade', params: { code, operation: action.operation } })
+                  }
+                />
+              </View>
+            ))}
+          </View>
+        </Card>
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
 

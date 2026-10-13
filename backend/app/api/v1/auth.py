@@ -484,7 +484,7 @@ async def create_session(request: Request, user: User = Depends(get_current_user
             expires_at=token.expires_at.isoformat(),
         )
 
-        return SessionResponse(session_id=session_id, name=session.name, token=token)
+        return SessionResponse(session_id=session_id, name=session.name, token=token, created_at=session.created_at)
     except ValueError as ve:
         logger.exception("session_creation_validation_failed", error=str(ve), user_id=user.id)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -525,7 +525,9 @@ async def update_session_name(
         # 重新签发一个 token（并非必需，只是保持返回结构一致）
         token = create_access_token(sanitized_session_id)
 
-        return SessionResponse(session_id=sanitized_session_id, name=session.name, token=token)
+        return SessionResponse(
+            session_id=sanitized_session_id, name=session.name, token=token, created_at=session.created_at
+        )
     except ValueError as ve:
         logger.exception("session_update_validation_failed", error=str(ve), session_id=session_id)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -591,6 +593,7 @@ async def get_user_sessions(request: Request, user: User = Depends(get_current_u
                 session_id=sanitize_string(session.id),
                 name=sanitize_string(session.name),
                 token=create_access_token(session.id),
+                created_at=session.created_at,
             )
             for session in sessions
         ]

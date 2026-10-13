@@ -16,6 +16,7 @@ from app.api.v1.imports import router as holding_imports_router
 from app.api.v1.indexes import router as indexes_router
 from app.api.v1.markets import router as markets_router
 from app.api.v1.portfolio import router as portfolio_router
+from app.api.v1.sectors import router as sectors_router
 from app.api.v1.semantic_memory import router as semantic_memory_router
 from app.api.v1.transactions import router as transactions_router
 from app.api.v1.valuation import router as valuation_router
@@ -31,6 +32,7 @@ api_router.include_router(chatbot_router, prefix="/chatbot", tags=["Chatbot"])
 api_router.include_router(funds_router, prefix="/funds", tags=["Funds"])
 api_router.include_router(indexes_router, prefix="/indexes", tags=["Indexes"])
 api_router.include_router(markets_router, prefix="/markets", tags=["Markets"])
+api_router.include_router(sectors_router, prefix="/sectors", tags=["Sectors"])
 api_router.include_router(watchlist_router, prefix="/watchlist", tags=["Watchlist"])
 api_router.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio"])
 api_router.include_router(accounts_router, prefix="/accounts", tags=["Accounts"])

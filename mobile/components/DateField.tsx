@@ -46,15 +46,19 @@ export function DateField({
       <FieldLabel label={label} extra={labelExtra} />
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={`${label}，${value || '未选择，点按选择日期'}`}
         onPress={present}
-        style={{
-          borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 10,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          backgroundColor: theme.surface,
-        }}
+        style={({ pressed }) => [
+          {
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            backgroundColor: theme.surface,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
       >
         <Text style={{ fontSize: 15, color: value ? theme.text : theme.textFaint }}>{value || placeholder}</Text>
       </Pressable>

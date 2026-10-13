@@ -1,11 +1,11 @@
-/** 单行基金条目，自选、搜索结果与持仓列表共用一种排版。 */
+/** 单行基金条目，自选、搜索结果、持仓列表与导入记录共用一种排版。 */
 
 import { Link } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
 import { Badge } from '@/components/ui';
 import { theme } from '@/constants/theme';
-import { formatDate, formatNumber, formatReturnPoints, trendColor } from '@/utils/format';
+import { formatDate, formatDateTime, formatNumber, formatReturnPoints, trendColor } from '@/utils/format';
 
 export type FundRowAction = { label: string; tone?: 'primary' | 'danger' | 'muted'; onPress: () => void };
 
@@ -19,6 +19,7 @@ export function FundRow({
   badges = [],
   action,
   pending,
+  fullDate = false,
 }: {
   fundCode: string;
   fundName: string;
@@ -35,17 +36,30 @@ export function FundRow({
   action?: FundRowAction;
   /** 该按钮的请求在途时把它调暗。 */
   pending?: boolean;
+  /** 审计/变更记录这类要看时刻的列表用完整日期时间，普通列表只给日期。 */
+  fullDate?: boolean;
 }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: theme.border,
+      }}
+    >
       <Link href={{ pathname: '/fund/[code]', params: { code: fundCode } }} asChild>
-        <Pressable accessibilityRole="link" style={{ flex: 1, paddingVertical: 12, paddingRight: 8 }}>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`查看 ${fundName} 详情`}
+          style={{ flex: 1, paddingVertical: 12, paddingRight: 8 }}
+        >
           <Text style={{ fontSize: 15, color: theme.text, fontWeight: '500' }} numberOfLines={1}>
             {fundName}
           </Text>
           <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
             {fundCode}
-            {navDate ? ` · ${formatDate(navDate)}` : ''}
+            {navDate ? ` · ${fullDate ? formatDateTime(navDate) : formatDate(navDate)}` : ''}
             {extra ? ` · ${extra}` : ''}
           </Text>
           {badges.length > 0 ? (
@@ -70,7 +84,7 @@ export function FundRow({
             accessibilityLabel={`${action.label} ${fundName}`}
             hitSlop={10}
             onPress={action.onPress}
-            style={{ marginTop: 6, opacity: pending ? 0.5 : 1 }}
+            style={({ pressed }) => [{ marginTop: 6, opacity: pending ? 0.5 : pressed ? 0.7 : 1 }]}
           >
             <Text
               style={{

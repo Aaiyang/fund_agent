@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "type": "holdings",
+  "fund_code": "000001",
+  "source": "fund_service",
+  "report_date": "2026年2季度（测试）",
+  "items": [
+    {"stock_code": "000001", "stock_name": "测试股票A", "weight": 9.45},
+    {"stock_code": "000002", "stock_name": "测试股票B", "weight": 9.42},
+    {"stock_code": "000003", "stock_name": "测试股票C", "weight": 9.25},
+    {"stock_code": "000004", "stock_name": "测试股票D", "weight": 9.11},
+    {"stock_code": "000005", "stock_name": "测试股票E", "weight": 7.85},
+    {"stock_code": "000006", "stock_name": "测试股票F", "weight": 7.48},
+    {"stock_code": "000007", "stock_name": "测试股票G", "weight": 5.12}
+  ],
+  "warnings": []
+}

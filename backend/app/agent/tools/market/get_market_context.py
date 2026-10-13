@@ -14,7 +14,7 @@ _STALE_DAYS = 3
 @tool
 @tool_result
 async def get_market_context() -> str:
-    """查询市场整体行情概览：上证指数、深证成指、沪深300、创业板指、国债指数的最新收盘点位与当日涨跌幅。用于“最近市场怎么样”“今天大盘如何”这类问题."""
+    """查询基准指数最新日线收盘概览：上证、深证、沪深300、创业板、国债指数。来自历史收盘序列；盘中或今日实时涨跌请用 get_realtime_market，不能用本工具替代实时行情."""
     quotes = await market_service.get_quotes()
     if not quotes:
         return ToolResult.fail("DATA_NOT_AVAILABLE", "暂时无法获取指数行情数据").to_text()

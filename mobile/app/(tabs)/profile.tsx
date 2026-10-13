@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
-import { Async } from '@/components/states';
+import { Async, EmptyState } from '@/components/states';
 import { Button, Card, Screen, SectionTitle } from '@/components/ui';
 import { FundRow } from '@/components/FundRow';
 import { theme } from '@/constants/theme';
@@ -65,6 +65,7 @@ export default function ProfileScreen() {
 
       <Card>
         <SectionTitle title="AI 与模型" />
+        <MenuLink label="用户画像" hint="投资偏好、回答习惯与 AI 更新建议" onPress={() => router.push('/profile/persona')} />
         <MenuLink label="模型设置" hint="供应商档案、API Key 与当前模型" onPress={() => router.push('/llm-settings')} />
       </Card>
 
@@ -72,7 +73,11 @@ export default function ProfileScreen() {
         <SectionTitle title="导入记录" action="发起新导入" onAction={() => router.push('/holding-import')} />
         <Async
           query={history}
-          empty={(data) => (data.items.length === 0 ? <Text style={{ color: theme.textFaint, fontSize: 13 }}>暂无导入记录</Text> : null)}
+          empty={(data) =>
+            data.items.length === 0 ? (
+              <EmptyState title="还没有导入记录" hint="点上方「发起新导入」，上传截图或手动录入" />
+            ) : null
+          }
         >
           {(data) => (
             <View>
@@ -84,6 +89,7 @@ export default function ProfileScreen() {
                   latestNav={item.items_detected}
                   dailyReturn={null}
                   navDate={item.created_at}
+                  fullDate
                   extra={`确认 ${item.items_confirmed} 条${item.error_message ? ` · ${item.error_message}` : ''}`}
                   action={{ label: '查看', onPress: () => router.push(`/holding-import/${item.id}`) }}
                 />
@@ -100,15 +106,21 @@ export default function ProfileScreen() {
   );
 }
 
+/** 卡片里的一条菜单。 */
 function MenuLink({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
   return (
-    <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-      <Text style={{ fontSize: 15, color: theme.text, fontWeight: '500' }} onPress={onPress}>
-        {label}
-      </Text>
-      <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }} onPress={onPress}>
-        {hint}
-      </Text>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}，${hint}`}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [
+        { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border },
+        pressed ? { opacity: 0.7 } : null,
+      ]}
+    >
+      <Text style={{ fontSize: 15, color: theme.text, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>{hint}</Text>
+    </Pressable>
   );
 }

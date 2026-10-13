@@ -6,7 +6,16 @@
  */
 
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { Button, Chip } from '@/components/ui';
 import { theme } from '@/constants/theme';
@@ -47,7 +56,7 @@ export function GroupPicker({
 
   async function createGroup() {
     const name = newName.trim();
-    if (!name) return;
+    if (!name || creating) return;
     setCreating(true);
     const id = await onCreateGroup(name);
     setCreating(false);
@@ -57,78 +66,106 @@ export function GroupPicker({
     }
   }
 
+  // 面板贴底部弹出，输入框就在按钮上方：不避让的话键盘会把“确认加入”整个盖住。
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.45)', justifyContent: 'flex-end' }}>
-        <View style={{ backgroundColor: theme.background, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }} numberOfLines={1}>
-            加入自选：{fundName}
-          </Text>
-          <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>请选择分组，或明确选择不分组。</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.45)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              backgroundColor: theme.background,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              padding: 16,
+            }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }} numberOfLines={1}>
+              加入自选：{fundName}
+            </Text>
+            <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>请选择分组，或明确选择不分组。</Text>
 
-          <ScrollView style={{ maxHeight: 260, marginTop: 12 }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {groups.length === 0 ? (
-                <Text style={{ fontSize: 13, color: theme.textFaint, marginBottom: 8 }}>还没有分组，可先新建一个或选择不分组</Text>
-              ) : null}
-              {groups.map((group) => (
-                <Chip
-                  key={group.id}
-                  label={`${group.name}(${group.fund_count})`}
-                  active={selected.includes(group.id)}
-                  onPress={() =>
-                    setSelected((current) =>
-                      current.includes(group.id) ? current.filter((id) => id !== group.id) : [...current, group.id],
-                    )
-                  }
+            <ScrollView style={{ maxHeight: 260, marginTop: 12 }} keyboardShouldPersistTaps="handled">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {groups.length === 0 ? (
+                  <Text style={{ fontSize: 13, color: theme.textFaint, marginBottom: 8 }}>还没有分组，可先新建一个或选择不分组</Text>
+                ) : null}
+                {groups.map((group) => (
+                  <Chip
+                    key={group.id}
+                    label={`${group.name}(${group.fund_count})`}
+                    active={selected.includes(group.id)}
+                    onPress={() =>
+                      setSelected((current) =>
+                        current.includes(group.id) ? current.filter((id) => id !== group.id) : [...current, group.id],
+                      )
+                    }
+                  />
+                ))}
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="请输入新分组名称"
+                  placeholderTextColor={theme.textFaint}
+                  returnKeyType="done"
+                  onSubmitEditing={createGroup}
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    fontSize: 14,
+                    color: theme.text,
+                    backgroundColor: theme.surface,
+                    marginRight: 8,
+                  }}
                 />
-              ))}
-            </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="新建分组并选中"
+                  hitSlop={10}
+                  disabled={creating || !newName.trim()}
+                  onPress={createGroup}
+                  style={({ pressed }) => [
+                    {
+                      paddingHorizontal: 14,
+                      paddingVertical: 11,
+                      borderRadius: 10,
+                      backgroundColor: creating ? theme.border : theme.surface,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      opacity: !newName.trim() || creating ? 0.55 : pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: theme.primary, fontSize: 14 }}>{creating ? '…' : '新建'}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-              <TextInput
-                value={newName}
-                onChangeText={setNewName}
-                placeholder="请输入新分组名称"
-                placeholderTextColor={theme.textFaint}
-                style={{
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                  borderRadius: 10,
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  fontSize: 14,
-                  color: theme.text,
-                  backgroundColor: theme.surface,
-                  marginRight: 8,
+            <View style={{ marginTop: 14 }}>
+              <Button
+                label={selected.length > 0 ? `确认加入（${selected.length} 个分组）` : '确认加入（不分组）'}
+                loading={busy}
+                onPress={() => {
+                  onConfirm(selected);
+                  reset();
                 }}
               />
-              <Pressable
-                accessibilityRole="button"
-                onPress={createGroup}
-                style={{ paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, backgroundColor: creating ? theme.border : theme.surface, borderWidth: 1, borderColor: theme.border }}
-              >
-                <Text style={{ color: theme.primary, fontSize: 14 }}>{creating ? '…' : '新建'}</Text>
-              </Pressable>
             </View>
-          </ScrollView>
-
-          <View style={{ marginTop: 14 }}>
-            <Button
-              label={selected.length > 0 ? `确认加入（${selected.length} 个分组）` : '确认加入（不分组）'}
-              loading={busy}
-              onPress={() => {
-                onConfirm(selected);
-                reset();
-              }}
-            />
-          </View>
-          <View style={{ marginTop: 8 }}>
-            <Button label="取消" variant="secondary" onPress={close} />
+            <View style={{ marginTop: 8 }}>
+              <Button label="取消" variant="secondary" onPress={close} />
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

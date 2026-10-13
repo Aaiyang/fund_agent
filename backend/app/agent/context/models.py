@@ -26,7 +26,7 @@ class ContextRequest(BaseModel):
 
     conversation_id: str | None = None
     run_id: str | None = None
-    max_context_tokens: int = 16384
+    max_context_tokens: int = 131072
 
 
 class CurrentUserTurn(BaseModel):

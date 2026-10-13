@@ -12,11 +12,15 @@
 
 import { ScrollView, Text, View } from 'react-native';
 
+import { splitFundAnalysisBlocks } from '../../shared/fund-chart';
+import { FundAnalysisChart } from '@/components/FundAnalysisChart';
+import { FundHoldingsCard } from '@/components/FundHoldingsCard';
+import { ResearchDataCard } from '@/components/ResearchDataCard';
 import { theme } from '@/constants/theme';
 
 const BASE = { fontSize: 15, lineHeight: 23 } as const;
-/** 表格里的字比正文小一档：列宽是按字数算的，字号越大越容易撑出屏幕。 */
-const CELL = { fontSize: 13, lineHeight: 19 } as const;
+/** 表格里的字压到次要信息档（12）：列宽是按字数算的，字号越大越容易撑出屏幕。 */
+const CELL = { fontSize: 12, lineHeight: 18 } as const;
 
 type Inline = { text: string; bold?: boolean; code?: boolean };
 
@@ -215,7 +219,7 @@ function TableBlock({ header, rows }: { header: string[]; rows: string[][] }) {
             key={rowIndex}
             style={{
               flexDirection: 'row',
-              backgroundColor: rowIndex === 0 ? theme.background : theme.surface,
+              backgroundColor: rowIndex === 0 ? '#EEF2FC' : rowIndex % 2 === 0 ? '#F8F9FD' : theme.surface,
             }}
           >
             {header.map((_, columnIndex) => (
@@ -241,7 +245,7 @@ function TableBlock({ header, rows }: { header: string[]; rows: string[][] }) {
   );
 }
 
-export function MarkdownText({ content, color = theme.text }: { content: string; color?: string }) {
+function MarkdownBody({ content, color = theme.text }: { content: string; color?: string }) {
   return (
     <View style={{ gap: 6 }}>
       {parseBlocks(content).map((block, index) => {
@@ -252,8 +256,8 @@ export function MarkdownText({ content, color = theme.text }: { content: string;
               selectable
               style={{
                 fontFamily: 'monospace',
-                fontSize: 13,
-                lineHeight: 20,
+                fontSize: 12,
+                lineHeight: 18,
                 color: theme.text,
                 backgroundColor: '#F3F4F6',
                 borderRadius: 8,
@@ -265,8 +269,12 @@ export function MarkdownText({ content, color = theme.text }: { content: string;
           );
         }
         if (block.kind === 'heading') {
+          // 一级标题落在页面大标题档（17~21），二三级按卡片/区块标题档 15。
           return (
-            <Text key={index} style={{ ...BASE, color, fontWeight: '700', fontSize: block.level === 1 ? 18 : 16 }}>
+            <Text
+              key={index}
+              style={{ ...BASE, color, fontWeight: '700', fontSize: block.level === 1 ? 18 : 15, lineHeight: block.level === 1 ? 26 : 22 }}
+            >
               {block.text}
             </Text>
           );
@@ -283,10 +291,11 @@ export function MarkdownText({ content, color = theme.text }: { content: string;
         }
         if (block.kind === 'list') {
           return (
-            <View key={index} style={{ gap: 2 }}>
+            <View key={index} style={{ gap: 4 }}>
               {block.items.map((item, itemIndex) => (
                 <View key={itemIndex} style={{ flexDirection: 'row' }}>
-                  <Text style={{ ...BASE, color }}>
+                  {/* 记号占固定宽度，换行的正文才能对齐第一行的文字起点。 */}
+                  <Text style={{ ...BASE, color, width: block.ordered ? 24 : 14 }}>
                     {block.ordered ? `${itemIndex + 1}. ` : '· '}
                   </Text>
                   <View style={{ flex: 1 }}>
@@ -309,6 +318,22 @@ export function MarkdownText({ content, color = theme.text }: { content: string;
           </View>
         );
       })}
+    </View>
+  );
+}
+
+export function MarkdownText({ content, color = theme.text }: { content: string; color?: string }) {
+  return (
+    <View style={{ gap: 10 }}>
+      {splitFundAnalysisBlocks(content).map((block) => block.kind === 'chart' ? (
+        <FundAnalysisChart key={block.offset} chart={block.chart} />
+      ) : block.kind === 'holdings' ? (
+        <FundHoldingsCard key={block.offset} holdings={block.holdings} />
+      ) : block.kind === 'research' ? (
+        <ResearchDataCard key={block.offset} card={block.card} />
+      ) : (
+        <MarkdownBody key={block.offset} content={block.content} color={color} />
+      ))}
     </View>
   );
 }

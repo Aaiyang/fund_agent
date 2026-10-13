@@ -6,6 +6,7 @@
 import { useDeferredValue } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { describeError } from '@/components/states';
 import { theme } from '@/constants/theme';
 import { useFundSearch } from '@/hooks/useFunds';
 
@@ -63,16 +64,25 @@ export function FundQueryField({
               {search.isFetching
                 ? '搜索中…'
                 : search.isError
-                  ? '搜索请求失败，可直接提交'
-                  : '没有匹配项，也可直接提交'}
+                  ? `${describeError(search.error)}，也可以直接提交`
+                  : '还没有匹配项，也可以直接提交'}
             </Text>
           ) : null}
           {suggestions.map((item) => (
             <Pressable
               key={item.fund_code}
               accessibilityRole="button"
+              accessibilityLabel={`选择${item.fund_name}，代码${item.fund_code}`}
+              hitSlop={8}
               onPress={() => onPick({ code: item.fund_code, name: item.fund_name })}
-              style={{ paddingVertical: 8, borderTopWidth: 1, borderColor: theme.border }}
+              style={({ pressed }) => [
+                {
+                  paddingVertical: 8,
+                  borderTopWidth: 1,
+                  borderColor: theme.border,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
             >
               <Text style={{ fontSize: 14, color: theme.text }} numberOfLines={1}>
                 {item.fund_name}

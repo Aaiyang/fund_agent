@@ -19,7 +19,7 @@ class ImportRepository:
     async def create_import(
         self,
         user_id: int,
-        account_id: int,
+        account_id: int | None,
         import_type: str,
         status: str,
         image_count: int = 0,
@@ -65,6 +65,7 @@ class ImportRepository:
         image_hashes: list[str] | None = None,
         confirmed_at: datetime | None = None,
         applied_at: datetime | None = None,
+        started_at: datetime | None = None,
     ) -> None:
         """修改导入批次的可变字段（状态流转、计数）."""
         async with get_async_session() as session:
@@ -87,6 +88,8 @@ class ImportRepository:
                 record.confirmed_at = confirmed_at
             if applied_at is not None:
                 record.applied_at = applied_at
+            if started_at is not None:
+                record.started_at = started_at
             session.add(record)
 
     async def list_history(self, user_id: int, limit: int = 50) -> list[HoldingImport]:

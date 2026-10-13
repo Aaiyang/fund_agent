@@ -140,6 +140,27 @@ export function formatDateTime(value: string | null | undefined): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/**
+ * 会话列表用的紧凑时间：今天只给时:分，昨天标「昨天」，今年给月日，跨年才补年份。
+ *
+ * 整串日期放在一列里看不出先后，按"离今天多远"缩写才分得开。
+ */
+export function formatSessionTime(value: string | null | undefined): string {
+  if (!value) return '--';
+  // 库里存的是 naive UTC，补 Z 再按本地时区读回来（与 formatDateTime 同一口径）。
+  const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
+  if (Number.isNaN(date.getTime())) return '--';
+  const pad = (input: number) => String(input).padStart(2, '0');
+  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const now = new Date();
+  const startOfDay = (input: Date) => new Date(input.getFullYear(), input.getMonth(), input.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (days <= 0) return `今天 ${clock}`;
+  if (days === 1) return `昨天 ${clock}`;
+  if (date.getFullYear() === now.getFullYear()) return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${clock}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 /** 按中国市场的红绿惯例上色：涨是红，跌是绿。 */
 export function trendColor(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return '#6B7280';

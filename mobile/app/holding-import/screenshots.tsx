@@ -64,11 +64,11 @@ export default function ScreenshotImportScreen() {
   function submit() {
     setProblem(null);
     if (chosen === null) {
-      setProblem('请选择持仓账户');
+      setProblem('请先选择持仓账户');
       return;
     }
     if (images.length === 0) {
-      setProblem('请先选择至少一张持仓截图');
+      setProblem('请至少选择一张持仓截图');
       return;
     }
     upload.mutate(
@@ -95,12 +95,43 @@ export default function ScreenshotImportScreen() {
       <Card>
         <SectionTitle title={`截图（${images.length}/${MAX_IMAGES}）`} />
         <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
-          支持多张：按基金代码去重合并，单张失败不影响其余结果。
+          支持多张：按基金代码去重合并，单张失败不影响其余结果。点图片右上角可移除这一张。
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {images.map((image) => (
-            <Pressable key={image.uri} onPress={() => setImages((current) => current.filter((item) => item.uri !== image.uri))}>
-              <Image source={{ uri: image.uri }} style={{ width: 96, height: 128, marginRight: 8, marginBottom: 8, borderRadius: 8 }} />
+          {images.map((image, index) => (
+            <Pressable
+              key={image.uri}
+              accessibilityRole="button"
+              accessibilityLabel={`移除第 ${index + 1} 张截图`}
+              hitSlop={10}
+              onPress={() => setImages((current) => current.filter((item) => item.uri !== image.uri))}
+              style={({ pressed }) => [
+                {
+                  width: 96,
+                  height: 128,
+                  marginRight: 8,
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <Image source={{ uri: image.uri }} style={{ width: '100%', height: '100%', borderRadius: 8 }} />
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 4,
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(17,24,39,0.55)',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11, lineHeight: 13 }}>✕</Text>
+              </View>
             </Pressable>
           ))}
         </View>

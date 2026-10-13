@@ -1,6 +1,6 @@
 # Governed mem0 semantic memory
 
-Backend migration e72a6d8f9103, prompt fund-agent-v7. Keep locked mem0 1.0 + pgvector. Confirmed profiles remain in the separate human-review workflow. Frontend/mobile memory management panels are not included.
+Backend migration e72a6d8f9103, prompt fund-agent-v13. Keep locked mem0 1.0 + pgvector. Confirmed profiles remain in the separate human-review workflow. Frontend/mobile memory management panels are not included.
 
 ## Ownership and scope
 

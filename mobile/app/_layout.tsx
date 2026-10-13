@@ -38,7 +38,7 @@ export default function RootLayout() {
       {status === 'anonymous' ? <Redirect href="/login" /> : null}
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ title: '登录' }} />
+        <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="search" options={{ title: '搜索基金' }} />
         <Stack.Screen name="watchlist-groups" options={{ title: '自选分组' }} />
         <Stack.Screen name="transactions" options={{ title: '交易记录' }} />
@@ -51,6 +51,7 @@ export default function RootLayout() {
         <Stack.Screen name="auto-invest" options={{ title: '定投计划' }} />
         <Stack.Screen name="llm-settings" options={{ title: '模型设置' }} />
         <Stack.Screen name="profile/edit" options={{ title: '编辑资料' }} />
+        <Stack.Screen name="profile/persona" options={{ title: '用户画像' }} />
         <Stack.Screen name="account/index" options={{ title: '账户管理' }} />
         <Stack.Screen name="account/add" options={{ title: '添加账户' }} />
         <Stack.Screen name="account/[id]" options={{ title: '账户详情' }} />

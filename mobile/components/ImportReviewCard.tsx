@@ -7,7 +7,7 @@
  * "按基金覆盖快照、截图里没有的不会删"，写错了会误导人删持仓。
  */
 
-import { Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { Badge, Button, Card } from '@/components/ui';
@@ -17,12 +17,11 @@ import { formatMoney, formatSignedMoney } from '@/utils/format';
 type Review = components['schemas']['HoldingImportReview'];
 type Item = components['schemas']['ImportItemOut'];
 
-const SHOWN_ITEMS = 6;
-
 function ItemRow({ item }: { item: Item }) {
   const name = item.matched_fund_name ?? item.raw_fund_name ?? '（没认出来的行）';
   const issues = item.validation_issues ?? [];
-  const blocked = item.validation_status === 'BLOCKING' || Boolean(item.matched_fund_code) === false;
+  const blocked = item.validation_status === 'error' || Boolean(item.matched_fund_code) === false;
+  const skipped = item.user_action === 'SKIP' || (blocked && !item.user_action);
   return (
     <View style={{ paddingVertical: 8, borderTopWidth: 1, borderColor: theme.border }}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -35,6 +34,13 @@ function ItemRow({ item }: { item: Item }) {
         {item.matched_fund_code ? `${item.matched_fund_code} · ` : '没匹配到代码 · '}
         金额 {formatMoney(item.market_value)} · 收益 {formatSignedMoney(item.profit_loss)}
       </Text>
+      <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+        份额 {item.shares ?? '未识别'} · 置信度 {item.confidence == null ? '未知' : `${Math.round(item.confidence * 100)}%`}
+        {skipped ? ' · 该行将跳过' : ''}
+      </Text>
+      {item.current_market_value != null ? (
+        <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>当前持仓金额 {formatMoney(item.current_market_value)}</Text>
+      ) : null}
       {issues.length ? (
         <Text style={{ fontSize: 12, color: blocked ? theme.danger : theme.warning, marginTop: 2 }} numberOfLines={2}>
           {issues.join('；')}
@@ -54,32 +60,33 @@ export function ImportReviewCard({
   onDecide: (decision: 'confirm' | 'cancel') => void;
 }) {
   const items = review.items ?? [];
-  const hidden = Math.max(items.length - SHOWN_ITEMS, 0);
   const problemCount = items.filter((item) => (item.validation_issues ?? []).length > 0).length;
 
   return (
     <Card>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
         <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.text }}>持仓截图识别结果 · 等你确认</Text>
-        <Badge label={`批次 ${review.import_id}`} tone="muted" />
+        <Badge label="人工复核" tone="muted" />
       </View>
       <Text style={{ fontSize: 12, color: theme.textMuted, lineHeight: 18 }}>{review.notice}</Text>
+      <Text style={{ fontSize: 13, color: theme.text, marginTop: 6 }}>目标账户：{review.account_name || `账户 ${review.account_id}`}</Text>
       <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 6 }}>
         {review.image_count} 张图 · 识别出 {items.length} 行
         {problemCount ? ` · ${problemCount} 行有校验问题` : ''}
       </Text>
 
-      {items.slice(0, SHOWN_ITEMS).map((item) => (
-        <ItemRow key={item.id} item={item} />
-      ))}
-      {hidden ? <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 8 }}>还有 {hidden} 行没展开</Text> : null}
+      <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled>
+        {items.map((item) => (
+          <ItemRow key={item.id} item={item} />
+        ))}
+      </ScrollView>
 
       <View style={{ flexDirection: 'row', marginTop: 12 }}>
         <View style={{ flex: 1, marginRight: 8 }}>
-          <Button label="取消这次导入" variant="secondary" loading={pending === 'cancel'} onPress={() => onDecide('cancel')} />
+          <Button label="取消这次导入" variant="secondary" disabled={pending !== null} loading={pending === 'cancel'} onPress={() => onDecide('cancel')} />
         </View>
         <View style={{ flex: 1 }}>
-          <Button label="确认应用" loading={pending === 'confirm'} onPress={() => onDecide('confirm')} />
+          <Button label="确认应用" disabled={pending !== null} loading={pending === 'confirm'} onPress={() => onDecide('confirm')} />
         </View>
       </View>
       <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 8, lineHeight: 16 }}>

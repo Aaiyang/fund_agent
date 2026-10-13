@@ -5,7 +5,9 @@
 设置页保存后会调用 :meth:`LLMRegistry.rebuild` 原地替换全部条目。
 """
 
+import hashlib
 import json
+from collections import OrderedDict
 from typing import (
     Any,
     Dict,
@@ -20,12 +22,13 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.llm import profile_store
+from app.services.llm.chat_model import ProgressChatOpenAI
 
 # 一个 profile 必须带齐这四个字段才算可用
 _PROFILE_FIELDS = ("name", "model", "base_url", "api_key")
 
 
-def _build_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOpenAI:
+def _new_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOpenAI:
     """用应用级的公共默认参数构造一个 ChatOpenAI.
 
     调用方显式传入的 kwargs 优先于默认值；``max_tokens`` 一律放进
@@ -34,17 +37,45 @@ def _build_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> Chat
     params: dict[str, Any] = {
         "temperature": settings.DEFAULT_LLM_TEMPERATURE,
         "timeout": settings.LLM_REQUEST_TIMEOUT,
+        # 重试由 service.py 的 tenacity 统一管理，避免 SDK 隐式重试叠加。
+        "max_retries": 0,
     }
     kwargs = dict(kwargs)
     max_tokens = kwargs.pop("max_tokens", None)
     params.update(kwargs)
-    return ChatOpenAI(
+    return ProgressChatOpenAI(
         model=model,
         api_key=SecretStr(api_key),
         base_url=base_url,
         extra_body={"max_tokens": max_tokens or settings.MAX_TOKENS},
         **params,
     )
+
+
+# ChatOpenAI 首次调用会懒建一个 AsyncOpenAI + httpx 连接池，而且没有任何关闭入口。
+# 逐请求新建就等于每轮对话重付一次 TCP/TLS 握手，并留下一批只能等 GC 回收的空闲
+# 套接字。这里按 (模型, 接口, 密钥, 参数) 复用，容量有界，淘汰的实例交给 GC。
+_MODEL_CACHE_MAX = 32
+_MODEL_CACHE: OrderedDict[tuple, ChatOpenAI] = OrderedDict()
+
+
+def _build_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOpenAI:
+    """返回可复用的 ChatOpenAI 实例；参数不同的调用不会共享同一个连接池."""
+    cache_key = (
+        model,
+        base_url,
+        hashlib.sha256(api_key.encode()).hexdigest(),
+        json.dumps(kwargs, sort_keys=True, default=str),
+    )
+    cached = _MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        _MODEL_CACHE.move_to_end(cache_key)
+        return cached
+    built = _new_chat_model(model, api_key, base_url, **kwargs)
+    _MODEL_CACHE[cache_key] = built
+    while len(_MODEL_CACHE) > _MODEL_CACHE_MAX:
+        _MODEL_CACHE.popitem(last=False)
+    return built
 
 
 def _parse_profiles() -> list[dict]:

@@ -88,10 +88,11 @@ class HoldingImportService:
     async def create_screenshot_import(
         self,
         user_id: int,
-        account_id: int,
+        account_id: int | None,
         files: list[UploadFile],
         *,
         chat_session_id: str | None = None,
+        defer_processing: bool = False,
     ) -> HoldingImport:
         """校验并保存截图，把解析任务入队交给后台执行.
 
@@ -102,7 +103,11 @@ class HoldingImportService:
             raise UploadValidationError("no_images_provided")
         if len(files) > settings.HOLDING_IMPORT_MAX_IMAGES:
             raise UploadValidationError(f"too_many_images_max_{settings.HOLDING_IMPORT_MAX_IMAGES}")
-        await portfolio_service.ensure_account(user_id, account_id)
+        if account_id is None:
+            if chat_session_id is None:
+                raise UploadValidationError("account_required")
+        else:
+            await portfolio_service.ensure_account(user_id, account_id)
 
         record = await import_repository.create_import(
             user_id,
@@ -119,12 +124,27 @@ class HoldingImportService:
             await self._cleanup_images(record.id)
             await import_repository.update_import(record.id, status="PARSE_FAILED", error_message="upload_rejected")
             raise
-        await import_repository.update_import(record.id, status="PARSING")
-        job = await job_repository.create("SCREENSHOT_IMPORT", subject=record.id)
-
-        await enqueue(SCREENSHOT_IMPORT_TASK, import_id=record.id, user_id=user_id, job_id=job.id)
-        logger.info("screenshot_import_enqueued", import_id=record.id, job_id=job.id, images=len(paths))
+        if not defer_processing:
+            await self.start_screenshot_import(user_id, record.id)
+        logger.info("screenshot_attachment_saved", import_id=record.id, deferred=defer_processing, images=len(paths))
         return record
+
+    async def start_screenshot_import(self, user_id: int, import_id: str) -> None:
+        """由子图启动 OCR；批次锁保证重复提交或恢复不重复入队."""
+        async with transaction_scope():
+            record = await import_repository.get_import(user_id, import_id, for_update=True)
+            if record is None or record.import_type != "SCREENSHOT":
+                raise ImportStateError("import_not_found")
+            if record.status != "UPLOADED":
+                return
+            job = await job_repository.create("SCREENSHOT_IMPORT", subject=record.id)
+            await import_repository.update_import(record.id, status="PARSING", started_at=utc_now())
+        try:
+            await enqueue(SCREENSHOT_IMPORT_TASK, import_id=record.id, user_id=user_id, job_id=job.id)
+        except Exception:
+            await self.mark_failed(import_id, "screenshot_enqueue_failed")
+            raise
+        logger.info("screenshot_import_enqueued", import_id=record.id, job_id=job.id)
 
     # ------------------------------------------------------------------
     # worker 入口
@@ -153,14 +173,19 @@ class HoldingImportService:
             await self.mark_failed(import_id, draft.error_message or "no_positions_detected")
             return
 
-        await import_repository.replace_items(import_id, draft.items)
-        await import_repository.update_import(
-            import_id,
-            status="REVIEW_REQUIRED",
-            items_detected=len(draft.items),
-            image_hashes=draft.image_hashes,
-            error_message=draft.error_message,
-        )
+        async with transaction_scope():
+            latest = await import_repository.get_import(user_id, import_id, for_update=True)
+            if latest is None or latest.status not in {"UPLOADED", "PARSING"}:
+                logger.info("screenshot_result_discarded", import_id=import_id)
+                return
+            await import_repository.replace_items(import_id, draft.items)
+            await import_repository.update_import(
+                import_id,
+                status="REVIEW_REQUIRED",
+                items_detected=len(draft.items),
+                image_hashes=draft.image_hashes,
+                error_message=draft.error_message,
+            )
         for item in draft.items:
             band = "low" if (item.confidence or 0.0) < LOW_CONFIDENCE_THRESHOLD else "ok"
             holding_import_items_total.labels(band=band).inc()
@@ -168,9 +193,12 @@ class HoldingImportService:
 
     async def mark_failed(self, import_id: str, message: str) -> None:
         """置为失败终态，并清理图片."""
-        record = await import_repository.get_import(None, import_id)  # 内部调用路径
-        import_type = record.import_type if record else "SCREENSHOT"
-        await import_repository.update_import(import_id, status="PARSE_FAILED", error_message=message)
+        async with transaction_scope():
+            record = await import_repository.get_import(None, import_id, for_update=True)
+            if record is not None and record.status in {"APPLIED", "CANCELLED"}:
+                return
+            import_type = record.import_type if record else "SCREENSHOT"
+            await import_repository.update_import(import_id, status="PARSE_FAILED", error_message=message)
         holding_imports_total.labels(import_type=import_type, status="PARSE_FAILED").inc()
         await self._cleanup_images(import_id)
         logger.warning("import_marked_failed", import_id=import_id, message=message[:200])
@@ -196,7 +224,7 @@ class HoldingImportService:
         item_outs: list[ImportItemOut] = []
         for item in items:
             current = None
-            if item.matched_fund_code:
+            if item.matched_fund_code and record.account_id is not None:
                 current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
             item_outs.append(
                 self._item_out(
@@ -283,7 +311,7 @@ class HoldingImportService:
         # 带上详情视图里那组同样的对比字段；少了它们，复核页每改一次就会
         # 丢掉"当前持仓 / 版本"。
         current = None
-        if item.matched_fund_code:
+        if item.matched_fund_code and record.account_id is not None:
             current = await portfolio_repository.get_position(user_id, record.account_id, item.matched_fund_code)
         return self._item_out(
             item,
@@ -327,6 +355,9 @@ class HoldingImportService:
 
     async def _apply_confirmed_import(self, user_id: int, import_id: str, record: HoldingImport) -> dict[str, int]:
         """由持有批次行锁的事务调用，所有持仓、流水与状态要么一起提交，要么一起回滚."""
+        if record.account_id is None:
+            raise ImportStateError("import_account_required")
+        await portfolio_service.ensure_account(user_id, record.account_id)
         items = await import_repository.list_items(import_id)
         applied = skipped = 0
         for item in items:
@@ -415,7 +446,12 @@ class HoldingImportService:
         saved: list[str] = []
 
         for index, upload in enumerate(files):
-            content = await upload.read()
+            # 超限文件不能整份进内存：先按 Starlette 解析出的分片大小早拒，
+            # 再只读 max_bytes+1 字节做兜底判定
+            declared = getattr(upload, "size", None)
+            if declared is not None and declared > max_bytes:
+                raise UploadValidationError(f"image_{index}_exceeds_{settings.HOLDING_IMPORT_MAX_IMAGE_MB}mb")
+            content = await upload.read(max_bytes + 1)
             if len(content) > max_bytes:
                 raise UploadValidationError(f"image_{index}_exceeds_{settings.HOLDING_IMPORT_MAX_IMAGE_MB}mb")
             try:

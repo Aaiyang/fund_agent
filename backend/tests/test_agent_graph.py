@@ -217,3 +217,62 @@ async def test_tool_loop_refreshes_memory_and_stages_user_only_once(monkeypatch)
     second = "\n".join(str(item.get("content", "")) for item in llm.calls[1])
     assert "过期记忆" in first and "纠正后的记忆" in second and "过期记忆" not in second
     assert "过期记忆" not in str(llm.calls[0][0])  # 稳定系统前缀不携带动态记忆。
+
+
+async def test_interrupted_tool_step_does_not_poison_the_session(monkeypatch):
+    """工具节点被打断留下的悬空 ToolCall 必须自愈, 不能把该会话永久打挂."""
+
+    class _CancelledTool:
+        name = "echo_tool"
+
+        async def ainvoke(self, args):
+            raise asyncio.CancelledError
+
+    agent, llm, _ = _build_agent(monkeypatch, [_tool_call_message("echo_tool", {"query": "x"}, "call_1")])
+    monkeypatch.setattr(agent, "tools_by_name", {"echo_tool": _CancelledTool()})
+    with pytest.raises(asyncio.CancelledError):
+        await agent.get_response([Message(role="user", content="第一轮提问")], "t-crash", user_id="7")
+
+    state = await agent._graph.aget_state({"configurable": {"thread_id": "t-crash"}})
+    assert state.next  # 检查点确实停在没跑完的节点上，AI 的 tool_calls 没有配对结果
+
+    llm.scripted = [AIMessage(content="第二轮回答")]
+    result = await agent.get_response([Message(role="user", content="第二轮提问")], "t-crash", user_id="7")
+    assert result[-1] == Message(role="assistant", content="第二轮回答")
+
+    # 补齐的配对进了提示词，模型因此知道这项结果并没有真的取到
+    tool_messages = [m for m in llm.calls[-1] if m.get("type") == "tool"]
+    assert len(tool_messages) == 1
+    assert "RUN_INTERRUPTED" in tool_messages[0]["content"]
+
+
+async def test_interrupt_tool_mixed_batch_does_not_replay_siblings(monkeypatch):
+    """会中断的工具与兄弟调用同批时一个都不执行, resume 也就无副作用可重放."""
+    executed: list[str] = []
+
+    async def _record(query: str) -> str:
+        executed.append(query)
+        return "[TOOL_OK]\n{}"
+
+    recorder = StructuredTool.from_function(coroutine=_record, name="record_tool", description="records")
+    mixed = [
+        {"name": "ask_human", "args": {"question": "确认吗？"}, "id": "call_a", "type": "tool_call"},
+        {"name": "record_tool", "args": {"query": "写入"}, "id": "call_b", "type": "tool_call"},
+    ]
+    agent, llm, _ = _build_agent(
+        monkeypatch,
+        [
+            AIMessage(content="", tool_calls=mixed),
+            _tool_call_message("ask_human", {"question": "确认吗？"}, "call_c"),
+            AIMessage(content="已完成"),
+        ],
+    )
+    agent.tools_by_name["record_tool"] = recorder
+
+    first = await agent.get_response([Message(role="user", content="做个敏感操作")], "t-mixed", user_id="7")
+    assert first == [Message(role="assistant", content="确认吗？")]
+    assert executed == []
+
+    second = await agent.get_response([Message(role="user", content="确认")], "t-mixed", user_id="7")
+    assert second[-1] == Message(role="assistant", content="已完成")
+    assert executed == []

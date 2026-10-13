@@ -12,6 +12,7 @@ from app.integrations.fund_data.models import (
     FundExternalRecord,
     StockExternalQuote,
 )
+from app.schemas.fund_disclosure import FundAnnouncementPage, FundManagerHistoryData
 
 
 @runtime_checkable
@@ -53,6 +54,16 @@ class FundDataProvider(Protocol):
 
     async def get_fund_manager(self, fund_code: str) -> FundExternalManager | None:
         """取现任基金经理."""
+        ...
+
+    async def get_manager_history(self, fund_code: str) -> FundManagerHistoryData:
+        """取历任经理团队区间，不将现任姓名假装成完整历史."""
+        ...
+
+    async def get_announcements(
+        self, fund_code: str, category: int, page: int, page_size: int
+    ) -> FundAnnouncementPage:
+        """取公开公告的一页索引，保留上游总量及真实来源链接."""
         ...
 
     async def get_holdings(self, fund_code: str) -> list[FundExternalHolding]:

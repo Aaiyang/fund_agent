@@ -284,7 +284,7 @@ export interface paths {
         put?: never;
         /**
          * Upload Holding Screenshots
-         * @description 聊天图片上传：目标账户属于当前用户，创建识别草稿并绑定当前会话.
+         * @description 随问题发送的附件：先保存并绑定会话，目标可稍后补充，子图启动识别.
          */
         post: operations["upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post"];
         delete?: never;
@@ -313,6 +313,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chatbot/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue Agent Run
+         * @description 在人工选择后的执行错误或断线后继续原任务；会话、轮次和中断由服务端核验.
+         */
+        post: operations["continue_agent_run_api_v1_chatbot_continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/fund-selection/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Analysis Fund
+         * @description 仅接受当前会话真实候选和中断 ID，选择后恢复原问题的分析.
+         */
+        post: operations["choose_analysis_fund_api_v1_chatbot_fund_selection_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chatbot/holding-imports/{import_id}": {
         parameters: {
             query?: never;
@@ -327,6 +367,46 @@ export interface paths {
         get: operations["get_chat_holding_import_api_v1_chatbot_holding_imports__import_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/holding-imports/{import_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue Holding Import
+         * @description 识别任务已结束时恢复子图；不会确认或应用持仓.
+         */
+        post: operations["continue_holding_import_api_v1_chatbot_holding_imports__import_id__continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/holding-imports/{import_id}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Holding Import Account
+         * @description 人工补充目标账户，只推进到复核阶段，不写正式持仓.
+         */
+        post: operations["choose_holding_import_account_api_v1_chatbot_holding_imports__import_id__account_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -761,6 +841,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sectors/market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sector Market
+         * @description 客户端卡片按真实BK代码取数，不接受模型行情序列.
+         */
+        get: operations["sector_market_api_v1_sectors_market_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sectors/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sector Board
+         * @description 板块榜；涨跌幅单位是百分点，取不到数时返回 503 而不是空榜.
+         */
+        get: operations["sector_board_api_v1_sectors_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watchlist/groups": {
         parameters: {
             query?: never;
@@ -855,6 +975,26 @@ export interface paths {
          * @description 更新自选基金的排序和（或）所属分组.
          */
         patch: operations["update_watchlist_entry_api_v1_watchlist__fund_code__patch"];
+        trace?: never;
+    };
+    "/api/v1/portfolio/allocation-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Allocation Preview
+         * @description 只读操作情景；身份取自JWT，账户归属必须校验，不写交易.
+         */
+        get: operations["allocation_preview_api_v1_portfolio_allocation_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/portfolio/summary": {
@@ -1343,6 +1483,186 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/user-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Persona
+         * @description 只返回当前用户的已确认画像与待复核候选.
+         */
+        get: operations["get_persona_api_v1_agent_user_profile_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear Persona
+         * @description 清除全部画像字段、候选、证据和历史；版本继续递增.
+         */
+        delete: operations["clear_persona_api_v1_agent_user_profile_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Persona
+         * @description 用户直接编辑，客户端不能提交其他用户 ID 或非白名单字段.
+         */
+        patch: operations["update_persona_api_v1_agent_user_profile_patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/user-profile/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Persona History
+         * @description 读取本用户的已确认变更，最多100条.
+         */
+        get: operations["persona_history_api_v1_agent_user_profile_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/user-profile/proposals/{proposal_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Persona
+         * @description 人工确认或拒绝候选；过期版本409，其他用户候选404.
+         */
+        post: operations["decide_persona_api_v1_agent_user_profile_proposals__proposal_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description 只列出当前用户未删除、未过期的事实及来源.
+         */
+        get: operations["list_memories_api_v1_agent_memories_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear Memories
+         * @description 立即抹除应用记忆正文，取消旧写入，向量删除交由可恢复任务完成.
+         */
+        delete: operations["clear_memories_api_v1_agent_memories_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/memories/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memory Settings
+         * @description 读取用户开关与并发控制版本.
+         */
+        get: operations["get_memory_settings_api_v1_agent_memories_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Memory Settings
+         * @description 关闭停止召回与新写入；已有事实仍可通过管理接口查看/删除.
+         */
+        patch: operations["update_memory_settings_api_v1_agent_memories_settings_patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/memories/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Jobs
+         * @description 任务账本不暴露聊天原文或底层错误文本.
+         */
+        get: operations["memory_jobs_api_v1_agent_memories_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/memories/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Memory Job
+         * @description 仅当前用户可重新排队当前代际失败任务.
+         */
+        post: operations["retry_memory_job_api_v1_agent_memories_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description 带版本保护地忘记一条记忆，立即阻止旧向量召回.
+         */
+        delete: operations["delete_memory_api_v1_agent_memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit Memory
+         * @description 直接按用户提交内容纠错，不让模型再次解释或猜测.
+         */
+        patch: operations["edit_memory_api_v1_agent_memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -1479,6 +1799,78 @@ export interface components {
             items: components["schemas"]["AccountItem"][];
             /** Total */
             total: number;
+        };
+        /**
+         * AgentContinueRequest
+         * @description 旧界面不得推进另一轮任务，身份始终由会话令牌决定.
+         */
+        AgentContinueRequest: {
+            /** Turn Id */
+            turn_id: string;
+        };
+        /**
+         * AgentRunContinuation
+         * @description checkpoint中尚未完成且不等待人工决定的原任务.
+         */
+        AgentRunContinuation: {
+            /** Turn Id */
+            turn_id: string;
+            /**
+             * Notice
+             * @default 原任务尚未完成，可继续执行；已经确认的对象和操作会保留。
+             */
+            notice?: string;
+            /** Selected Fund Code */
+            selected_fund_code?: string | null;
+            /** Selected Fund Name */
+            selected_fund_name?: string | null;
+        };
+        /**
+         * AllocationChartReference
+         * @description 本人基金账本的只读条件试算引用.
+         */
+        AllocationChartReference: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version?: 1;
+            /**
+             * Type
+             * @default fund_allocation
+             * @constant
+             */
+            type?: "fund_allocation";
+            /** Fund Code */
+            fund_code: string;
+            /** Account Id */
+            account_id?: number | null;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "build" | "increase" | "reduce" | "exit";
+            /** Amount */
+            amount: number;
+        };
+        /**
+         * AllocationPreviewResponse
+         * @description 当前账本的只读条件试算，没有交易写入.
+         */
+        AllocationPreviewResponse: {
+            reference: components["schemas"]["AllocationChartReference"];
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Scenario */
+            scenario: {
+                [key: string]: unknown;
+            };
+            /** Warnings */
+            warnings?: string[];
         };
         /**
          * AutoInvestPlanCreateRequest
@@ -1641,7 +2033,7 @@ export interface components {
         };
         /**
          * ChatInputMessage
-         * @description 客户端只允许提交用户消息，系统指令与模型历史由服务端构建.
+         * @description 客户端输入独立校验：仅用户角色，正文最多 3000 字符.
          */
         ChatInputMessage: {
             /**
@@ -1667,6 +2059,8 @@ export interface components {
             messages: components["schemas"]["ChatInputMessage"][];
             /** Holding Import Ids */
             holding_import_ids?: string[];
+            /** Holding Account Id */
+            holding_account_id?: number | null;
         };
         /**
          * ChatResponse
@@ -1687,7 +2081,9 @@ export interface components {
              * @description List of messages in the conversation
              */
             messages: components["schemas"]["Message"][];
-            pending_action?: components["schemas"]["HoldingImportReview"] | null;
+            /** Pending Action */
+            pending_action?: (components["schemas"]["HoldingImportReview"] | components["schemas"]["HoldingImportProcessing"] | components["schemas"]["HoldingImportAccountSelection"] | components["schemas"]["FundSelectionAction"] | components["schemas"]["HumanQuestionAction"]) | null;
+            continuation?: components["schemas"]["AgentRunContinuation"] | null;
         };
         /**
          * CompanyExternalProfile
@@ -2070,6 +2466,58 @@ export interface components {
             total: number;
         };
         /**
+         * FundSelectionAction
+         * @description 由 checkpoint 保存的前三个候选.
+         */
+        FundSelectionAction: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "fund_selection";
+            /**
+             * Interrupt Id
+             * @default
+             */
+            interrupt_id?: string;
+            /** Keyword */
+            keyword: string;
+            /** Candidates */
+            candidates: components["schemas"]["FundSelectionOption"][];
+            /**
+             * Notice
+             * @default 以下是名称最接近的基金候选，请确认要分析的基金，注意 A/C 等份额区别。
+             */
+            notice?: string;
+        };
+        /**
+         * FundSelectionDecision
+         * @description 人工决策只能选择候选代码或取消，不能上传新的候选.
+         */
+        FundSelectionDecision: {
+            /** Interrupt Id */
+            interrupt_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "select" | "cancel";
+            /** Fund Code */
+            fund_code?: string | null;
+        };
+        /**
+         * FundSelectionOption
+         * @description 保留基金全名和代码，避免混淆不同份额.
+         */
+        FundSelectionOption: {
+            /** Fund Code */
+            fund_code: string;
+            /** Fund Name */
+            fund_name: string;
+            /** Fund Type */
+            fund_type?: string | null;
+        };
+        /**
          * FundSyncStatusResponse
          * @description POST /funds/{fund_code}/refresh 响应体.
          */
@@ -2093,6 +2541,59 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HoldingAccountOption
+         * @description 仅列出认证用户自己的目标账户.
+         */
+        HoldingAccountOption: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+        };
+        /**
+         * HoldingImportAccountDecision
+         * @description 人工目标选择只更新导入草稿，不写入正式持仓.
+         */
+        HoldingImportAccountDecision: {
+            /** Interrupt Id */
+            interrupt_id: string;
+            /** Account Id */
+            account_id: number;
+        };
+        /**
+         * HoldingImportAccountSelection
+         * @description 识别完成但未指定目标账户，等待用户选择，不猜测第一个账户.
+         */
+        HoldingImportAccountSelection: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "holding_import_account";
+            /**
+             * Interrupt Id
+             * @default
+             */
+            interrupt_id?: string;
+            /** Import Id */
+            import_id: string;
+            /** Accounts */
+            accounts: components["schemas"]["HoldingAccountOption"][];
+            /**
+             * Notice
+             * @default 截图已识别，请选择要同步到的持仓账户，再核对识别结果。
+             */
+            notice?: string;
+        };
+        /**
+         * HoldingImportContinueRequest
+         * @description 只恢复真实中断，不能直接确认持仓.
+         */
+        HoldingImportContinueRequest: {
+            /** Interrupt Id */
+            interrupt_id: string;
+        };
+        /**
          * HoldingImportDecision
          * @description 仅由人工界面提交，不是 LLM 工具参数或普通聊天消息.
          */
@@ -2105,7 +2606,7 @@ export interface components {
             /** Interrupt Id */
             interrupt_id: string;
             /** Review Digest */
-            review_digest: string;
+            review_digest?: string | null;
         };
         /**
          * HoldingImportDecisionResponse
@@ -2123,7 +2624,9 @@ export interface components {
              * @description List of messages in the conversation
              */
             messages: components["schemas"]["Message"][];
-            pending_action?: components["schemas"]["HoldingImportReview"] | null;
+            /** Pending Action */
+            pending_action?: (components["schemas"]["HoldingImportReview"] | components["schemas"]["HoldingImportProcessing"] | components["schemas"]["HoldingImportAccountSelection"] | components["schemas"]["FundSelectionAction"] | components["schemas"]["HumanQuestionAction"]) | null;
+            continuation?: components["schemas"]["AgentRunContinuation"] | null;
             /** Import Id */
             import_id: string;
             /**
@@ -2137,16 +2640,38 @@ export interface components {
             skipped: number;
         };
         /**
+         * HoldingImportProcessing
+         * @description 子图等待后台识别；客户端可刷新或断线后恢复，不调用主图 LLM.
+         */
+        HoldingImportProcessing: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "holding_import_processing";
+            /**
+             * Interrupt Id
+             * @default
+             */
+            interrupt_id?: string;
+            /** Import Id */
+            import_id: string;
+            /**
+             * Notice
+             * @default 正在识别持仓截图，完成后继续选择账户和人工复核。
+             */
+            notice?: string;
+        };
+        /**
          * HoldingImportReview
          * @description 结构化 HITL 卡片，图 checkpoint 保存它，客户端刷新可恢复.
          */
         HoldingImportReview: {
             /**
-             * Kind
-             * @default holding_import_review
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            kind?: "holding_import_review";
+            kind: "holding_import_review";
             /**
              * Interrupt Id
              * @default
@@ -2156,6 +2681,11 @@ export interface components {
             import_id: string;
             /** Account Id */
             account_id: number;
+            /**
+             * Account Name
+             * @default
+             */
+            account_name?: string;
             /** Image Count */
             image_count: number;
             /** Review Digest */
@@ -2165,6 +2695,29 @@ export interface components {
             /**
              * Notice
              * @default 确认后按基金覆盖此账户的持仓快照并记录调整流水；未出现在截图中的其他持仓不会删除。
+             */
+            notice?: string;
+        };
+        /**
+         * HumanQuestionAction
+         * @description 刷新后仍能看到真实问题；回答通过原会话聊天入口恢复.
+         */
+        HumanQuestionAction: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "human_question";
+            /**
+             * Interrupt Id
+             * @default
+             */
+            interrupt_id?: string;
+            /** Question */
+            question: string;
+            /**
+             * Notice
+             * @default 请在输入框回答，发送后会继续原任务。
              */
             notice?: string;
         };
@@ -2206,7 +2759,7 @@ export interface components {
             /** Id */
             id: string;
             /** Account Id */
-            account_id: number;
+            account_id: number | null;
             /** Import Type */
             import_type: string;
             /** Status */
@@ -2590,8 +3143,134 @@ export interface components {
             profit_loss_rate?: number | null;
         };
         /**
+         * MemoryClear
+         * @description 版本保护的全量语义记忆清除.
+         */
+        MemoryClear: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /**
+         * MemoryDelete
+         * @description 版本保护的单条删除.
+         */
+        MemoryDelete: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /**
+         * MemoryEdit
+         * @description 人工纠错不会重新让模型猜测用户的意思.
+         */
+        MemoryEdit: {
+            /** Expected Version */
+            expected_version: number;
+            /** Content */
+            content: string;
+        };
+        /**
+         * MemoryItemOut
+         * @description 只返回数据库当前版本，不返回向量里的旧文本.
+         */
+        MemoryItemOut: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "research_preference" | "analysis_event";
+            /** Content */
+            content: string;
+            /** Source Quote */
+            source_quote: string;
+            /** Source Session Id */
+            source_session_id: string;
+            /** Source Message Id */
+            source_message_id: string;
+            /** Version */
+            version: number;
+            /** Index State */
+            index_state: string;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * MemoryJobOut
+         * @description 任务观察不暴露完整聊天载荷或底层异常详情.
+         */
+        MemoryJobOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Status */
+            status: string;
+            /** Attempts */
+            attempts: number;
+            /** Error Code */
+            error_code: string | null;
+            /** Source Session Id */
+            source_session_id: string;
+            /** Source Message Id */
+            source_message_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * MemorySettingsOut
+         * @description 用户控制开关与检索缓存使用的版本.
+         */
+        MemorySettingsOut: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision?: number;
+            /**
+             * Generation
+             * @default 0
+             */
+            generation?: number;
+            /** Globally Enabled */
+            globally_enabled: boolean;
+        };
+        /**
+         * MemorySettingsUpdate
+         * @description 关闭停止新写入与召回，保留已有内容供用户管理.
+         */
+        MemorySettingsUpdate: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
          * Message
-         * @description chat 端点的消息模型.
+         * @description 服务端内部、回答与历史消息，不套用客户端输入的长度或正文校验.
          *
          *     Attributes:
          *         role: 消息发送方角色（user 或 assistant）。
@@ -2606,7 +3285,7 @@ export interface components {
             role: "user" | "assistant" | "system";
             /**
              * Content
-             * @description The content of the message
+             * @description The complete content of the message
              */
             content: string;
         };
@@ -2643,7 +3322,150 @@ export interface components {
              * @description Unique identifier for this request
              */
             request_id?: string;
-            pending_action?: components["schemas"]["HoldingImportReview"] | null;
+            /** Pending Action */
+            pending_action?: (components["schemas"]["HoldingImportReview"] | components["schemas"]["HoldingImportProcessing"] | components["schemas"]["HoldingImportAccountSelection"] | components["schemas"]["FundSelectionAction"] | components["schemas"]["HumanQuestionAction"]) | null;
+            continuation?: components["schemas"]["AgentRunContinuation"] | null;
+        };
+        /**
+         * PersonaClear
+         * @description 画像清除协议，版本保护并发更新.
+         */
+        PersonaClear: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /**
+         * PersonaDecision
+         * @description 只允许人工 HTTP 接口确认或拒绝候选.
+         */
+        PersonaDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accept" | "reject";
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /**
+         * PersonaFields
+         * @description 只表示用户声明的偏好；不包含持仓、金额、凭证或交易授权.
+         */
+        PersonaFields: {
+            /** Response Language */
+            response_language?: ("zh-CN" | "en") | null;
+            /** Response Detail */
+            response_detail?: ("concise" | "balanced" | "detailed") | null;
+            /** Investment Experience */
+            investment_experience?: ("beginner" | "intermediate" | "experienced") | null;
+            /** Risk Preference */
+            risk_preference?: ("conservative" | "balanced" | "aggressive") | null;
+            /** Investment Horizon Months */
+            investment_horizon_months?: number | null;
+            /** Investment Goals */
+            investment_goals?: string[] | null;
+            /** Excluded Fund Types */
+            excluded_fund_types?: ("equity" | "bond" | "money_market" | "mixed" | "index" | "qdii" | "fof" | "reit" | "commodity")[] | null;
+        };
+        /**
+         * PersonaHistoryOut
+         * @description 一次已提交变更的版本与来源；清除画像时一并删除.
+         */
+        PersonaHistoryOut: {
+            /** Revision */
+            revision: number;
+            /** Changes */
+            changes: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PersonaOut
+         * @description 已确认画像、来源与当前待确认候选.
+         */
+        PersonaOut: {
+            /**
+             * Revision
+             * @default 0
+             */
+            revision?: number;
+            fields?: components["schemas"]["PersonaFields"];
+            /** Provenance */
+            provenance?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Pending Proposals */
+            pending_proposals?: components["schemas"]["PersonaProposalOut"][];
+        };
+        /**
+         * PersonaPatch
+         * @description 部分更新；显式 null 删除字段，省略字段保持原值.
+         */
+        PersonaPatch: {
+            /** Response Language */
+            response_language?: ("zh-CN" | "en") | null;
+            /** Response Detail */
+            response_detail?: ("concise" | "balanced" | "detailed") | null;
+            /** Investment Experience */
+            investment_experience?: ("beginner" | "intermediate" | "experienced") | null;
+            /** Risk Preference */
+            risk_preference?: ("conservative" | "balanced" | "aggressive") | null;
+            /** Investment Horizon Months */
+            investment_horizon_months?: number | null;
+            /** Investment Goals */
+            investment_goals?: string[] | null;
+            /** Excluded Fund Types */
+            excluded_fund_types?: ("equity" | "bond" | "money_market" | "mixed" | "index" | "qdii" | "fof" | "reit" | "commodity")[] | null;
+        };
+        /**
+         * PersonaProposalOut
+         * @description 候选只作为复核数据返回，不参与回答上下文.
+         */
+        PersonaProposalOut: {
+            /** Id */
+            id: string;
+            /** Base Revision */
+            base_revision: number;
+            /** Changes */
+            changes: {
+                [key: string]: unknown;
+            };
+            /** Evidence */
+            evidence: string;
+            /** Source Session Id */
+            source_session_id: string;
+            /** Source Message Id */
+            source_message_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "PENDING" | "ACCEPTED" | "REJECTED" | "SUPERSEDED";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PersonaUpdate
+         * @description 用户直接编辑已确认画像，必须携带读到的版本.
+         */
+        PersonaUpdate: {
+            /** Expected Revision */
+            expected_revision: number;
+            changes: components["schemas"]["PersonaPatch"];
         };
         /**
          * PortfolioSummary
@@ -2888,6 +3710,192 @@ export interface components {
             image_count: number;
         };
         /**
+         * SectorBoardItem
+         * @description 一个板块的当日快照；缺数就是 None，不补成 0 也不猜涨跌方向.
+         */
+        SectorBoardItem: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /**
+             * Sector Type
+             * @enum {string}
+             */
+            sector_type: "industry" | "concept";
+            /** Stock Count */
+            stock_count?: number | null;
+            /** Price */
+            price?: number | null;
+            /** Change */
+            change?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Volume */
+            volume?: number | null;
+            /** Amount */
+            amount?: number | null;
+            leading_stock?: components["schemas"]["SectorBoardStock"] | null;
+        };
+        /**
+         * SectorBoardResponse
+         * @description 板块涨跌榜.
+         *
+         *     上游不带报价时间戳，所以 `fetched_at` 只是我们抓取的时刻，不能当开市证明；
+         *     `quote_time_verified` 恒为 False，并由 warnings 说明这一层限制。
+         */
+        SectorBoardResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             * @description Unique identifier for this request
+             */
+            request_id?: string;
+            /** Source */
+            source: string;
+            /**
+             * Sector Type
+             * @enum {string}
+             */
+            sector_type: "industry" | "concept";
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "desc" | "asc";
+            /**
+             * Sort
+             * @enum {string}
+             */
+            sort: "change_pct" | "amount";
+            /**
+             * Change Pct Unit
+             * @default percentage_points
+             */
+            change_pct_unit?: string;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            /**
+             * Quote Time Verified
+             * @default false
+             */
+            quote_time_verified?: boolean;
+            /** Items */
+            items?: components["schemas"]["SectorBoardItem"][];
+            /**
+             * Total Available
+             * @default 0
+             */
+            total_available?: number;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * SectorBoardStock
+         * @description 板块内领涨（跌幅榜时为该板块内相对最强的一只）个股.
+         */
+        SectorBoardStock: {
+            /** Code */
+            code: string;
+            /** Name */
+            name?: string | null;
+            /** Change Pct */
+            change_pct?: number | null;
+        };
+        /**
+         * SectorMarketResult
+         * @description 查询范围、报价日期与缺失项均公开，变化率单位为百分点.
+         */
+        SectorMarketResult: {
+            /** Keyword */
+            keyword: string;
+            /**
+             * Requested Date
+             * Format: date
+             */
+            requested_date: string;
+            /**
+             * Timezone
+             * @default Asia/Shanghai
+             */
+            timezone?: string;
+            /**
+             * Source
+             * @default eastmoney_sector_quotes
+             */
+            source?: string;
+            /**
+             * Change Pct Unit
+             * @default percentage_points
+             */
+            change_pct_unit?: string;
+            /**
+             * Fetched At Timezone
+             * @default UTC
+             */
+            fetched_at_timezone?: string;
+            /** Sectors */
+            sectors?: components["schemas"]["SectorQuote"][];
+            /**
+             * Total Matches
+             * @default 0
+             */
+            total_matches?: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
+            /** Unavailable Catalogs */
+            unavailable_catalogs?: ("industry" | "concept")[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * SectorQuote
+         * @description 单个板块的当前可用行情，单项失败不伪造数值.
+         */
+        SectorQuote: {
+            /** Sector Code */
+            sector_code: string;
+            /** Name */
+            name: string;
+            /**
+             * Sector Type
+             * @enum {string}
+             */
+            sector_type: "industry" | "concept";
+            /** Price */
+            price?: number | null;
+            /** Change */
+            change?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /** Quote Time */
+            quote_time?: string | null;
+            /** Trade Date */
+            trade_date?: string | null;
+            /** Freshness */
+            freshness?: ("same_day" | "delayed" | "previous_session" | "unknown_time" | "future_time") | null;
+            /**
+             * Stale
+             * @default true
+             */
+            stale?: boolean;
+            /** Fetched At */
+            fetched_at?: string | null;
+            /**
+             * From Cache
+             * @default false
+             */
+            from_cache?: boolean;
+            /** Error Code */
+            error_code?: string | null;
+        };
+        /**
          * SessionResponse
          * @description 创建会话的响应模型.
          *
@@ -2895,6 +3903,7 @@ export interface components {
          *         session_id: 聊天会话的唯一标识
          *         name: 会话名称（默认为空字符串）
          *         token: 该会话的鉴权 token
+         *         created_at: 会话创建时间（naive UTC）；列表按它倒序排，客户端拿它标时间
          */
         SessionResponse: {
             /**
@@ -2916,6 +3925,12 @@ export interface components {
             name?: string;
             /** @description The authentication token for the session */
             token: components["schemas"]["Token"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When this session was created
+             */
+            created_at: string;
         };
         /**
          * SymbolCompanyResponse
@@ -3853,8 +4868,8 @@ export interface operations {
     };
     upload_holding_screenshots_api_v1_chatbot_holding_imports_screenshots_post: {
         parameters: {
-            query: {
-                account_id: number;
+            query?: {
+                account_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -3906,6 +4921,72 @@ export interface operations {
             };
         };
     };
+    continue_agent_run_api_v1_chatbot_continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentContinueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_analysis_fund_api_v1_chatbot_fund_selection_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundSelectionDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_chat_holding_import_api_v1_chatbot_holding_imports__import_id__get: {
         parameters: {
             query?: never;
@@ -3924,6 +5005,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    continue_holding_import_api_v1_chatbot_holding_imports__import_id__continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoldingImportContinueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_holding_import_account_api_v1_chatbot_holding_imports__import_id__account_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoldingImportAccountDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4531,6 +5682,77 @@ export interface operations {
             };
         };
     };
+    sector_market_api_v1_sectors_market_get: {
+        parameters: {
+            query: {
+                keyword: string;
+                sector_type?: "industry" | "concept" | "all";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectorMarketResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sector_board_api_v1_sectors_board_get: {
+        parameters: {
+            query?: {
+                /** @description industry 行业板块、concept 概念板块 */
+                kind?: "industry" | "concept";
+                /** @description desc 从大到小、asc 从小到大 */
+                order?: "desc" | "asc";
+                /** @description 排名指标：change_pct 涨幅、amount 成交额 */
+                sort?: "change_pct" | "amount";
+                /** @description 返回条数，最多 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectorBoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_groups_api_v1_watchlist_groups_get: {
         parameters: {
             query?: never;
@@ -4773,6 +5995,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    allocation_preview_api_v1_portfolio_allocation_preview_get: {
+        parameters: {
+            query: {
+                fund_code: string;
+                action: "build" | "increase" | "reduce" | "exit" | "compare";
+                amount: number;
+                account_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationPreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5733,6 +6989,403 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_persona_api_v1_agent_user_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
+                };
+            };
+        };
+    };
+    clear_persona_api_v1_agent_user_profile_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaClear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_persona_api_v1_agent_user_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    persona_history_api_v1_agent_user_profile_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaHistoryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_persona_api_v1_agent_user_profile_proposals__proposal_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_v1_agent_memories_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_memories_api_v1_agent_memories_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryClear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memory_settings_api_v1_agent_memories_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySettingsOut"];
+                };
+            };
+        };
+    };
+    update_memory_settings_api_v1_agent_memories_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_jobs_api_v1_agent_memories_jobs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryJobOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_memory_job_api_v1_agent_memories_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_v1_agent_memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_memory_api_v1_agent_memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

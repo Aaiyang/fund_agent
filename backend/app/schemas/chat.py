@@ -13,11 +13,12 @@ from pydantic import (
 )
 
 from app.schemas.base import BaseResponse
-from app.schemas.agent_import import HoldingImportReview, ImportId
+from app.schemas.agent_import import AgentPendingAction, ImportId
+from app.schemas.agent_resume import AgentRunContinuation
 
 
 class Message(BaseModel):
-    """chat 端点的消息模型.
+    """服务端内部、回答与历史消息，不套用客户端输入的长度或正文校验.
 
     Attributes:
         role: 消息发送方角色（user 或 assistant）。
@@ -27,12 +28,20 @@ class Message(BaseModel):
     model_config = {"extra": "ignore"}
 
     role: Literal["user", "assistant", "system"] = Field(..., description="The role of the message sender")
-    content: str = Field(..., description="The content of the message", min_length=1, max_length=3000)
+    # 模型输出长度由生成 token 预算控制；历史必须能原样返回已保存的正文。
+    content: str = Field(..., description="The complete content of the message", min_length=1)
+
+
+class ChatInputMessage(BaseModel):
+    """客户端输入独立校验：仅用户角色，正文最多 3000 字符."""
+
+    role: Literal["user"]
+    content: str = Field(..., min_length=1, max_length=3000)
 
     @field_validator("content")
     @classmethod
     def validate_content(cls, v: str) -> str:
-        """校验消息正文.
+        """校验客户端输入正文，不影响回答及已保存的历史内容.
 
         Args:
             v: 待校验的正文
@@ -54,19 +63,6 @@ class Message(BaseModel):
         return v
 
 
-class ChatInputMessage(BaseModel):
-    """客户端只允许提交用户消息，系统指令与模型历史由服务端构建."""
-
-    role: Literal["user"]
-    content: str = Field(..., min_length=1, max_length=3000)
-
-    @field_validator("content")
-    @classmethod
-    def validate_content(cls, value: str) -> str:
-        """沿用输入正文校验，不允许客户端伪造角色."""
-        return Message.validate_content(value)
-
-
 class ChatRequest(BaseModel):
     """chat 端点的请求模型.
 
@@ -80,6 +76,7 @@ class ChatRequest(BaseModel):
         min_length=1,
     )
     holding_import_ids: list[ImportId] = Field(default_factory=list, max_length=5)
+    holding_account_id: int | None = Field(default=None, gt=0)
 
 
 class ChatResponse(BaseResponse):
@@ -90,7 +87,8 @@ class ChatResponse(BaseResponse):
     """
 
     messages: List[Message] = Field(..., description="List of messages in the conversation")
-    pending_action: HoldingImportReview | None = None
+    pending_action: AgentPendingAction | None = None
+    continuation: AgentRunContinuation | None = None
 
 
 class StreamResponse(BaseResponse):
@@ -103,7 +101,8 @@ class StreamResponse(BaseResponse):
 
     content: str = Field(default="", description="The content of the current chunk")
     done: bool = Field(default=False, description="Whether the stream is complete")
-    pending_action: HoldingImportReview | None = None
+    pending_action: AgentPendingAction | None = None
+    continuation: AgentRunContinuation | None = None
 
 
 class HoldingImportDecisionResponse(ChatResponse):

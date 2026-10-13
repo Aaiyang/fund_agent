@@ -133,7 +133,10 @@ class Settings:
         self.ENVIRONMENT = get_environment()
 
         # Application Settings
-        self.PROJECT_NAME = os.getenv("PROJECT_NAME", "Fund Agent")
+        self.PROJECT_NAME = os.getenv("PROJECT_NAME", "持见")
+        # 聊天助手的名字：只用于系统提示词里的自称，与产品名（PROJECT_NAME）分开，
+        # 否则改了产品名会连带让助手自称"持见"。
+        self.AGENT_NAME = os.getenv("AGENT_NAME", "小镜")
         self.VERSION = os.getenv("VERSION", "1.0.0")
         self.DESCRIPTION = os.getenv(
             "DESCRIPTION", "A production-ready FastAPI template with LangGraph and Langfuse integration"
@@ -176,6 +179,12 @@ class Settings:
         self.BASIC_LLM_MODEL = os.getenv("FUND_BASIC_LLM_MODEL", "glm-5.3-flash")
         self.BASIC_LLM_BASE_URL = os.getenv("FUND_BASIC_LLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
         self.BASIC_LLM_API_KEY = os.getenv("FUND_BASIC_LLM_API_KEY", "")
+        # 是否允许模型接口地址指向回环/私网。自带 Ollama、vLLM 只在开发环境合理，
+        # 生产/预发默认关闭，否则认证用户可以把服务端当访问内网与云元数据的跳板。
+        self.LLM_PROVIDER_ALLOW_PRIVATE_NETWORK = os.getenv(
+            "FUND_LLM_PROVIDER_ALLOW_PRIVATE_NETWORK",
+            "false" if self.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING) else "true",
+        ).lower() in ("true", "1", "t", "yes")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
         self.DEFAULT_LLM_TEMPERATURE = float(
             os.getenv("FUND_LLM_TEMPERATURE", os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
@@ -184,7 +193,7 @@ class Settings:
         # 上下文组装（历史 + 工具结果）的修剪预算，独立于回复输出上限：
         # 调大窗口不会同时放大回复长度。
         self.CONTEXT_TOKEN_BUDGET = int(
-            os.getenv("FUND_CONTEXT_TOKEN_BUDGET", os.getenv("CONTEXT_TOKEN_BUDGET", "16384"))
+            os.getenv("FUND_CONTEXT_TOKEN_BUDGET", os.getenv("CONTEXT_TOKEN_BUDGET", "131072"))
         )
         # 上下文组装策略：legacy（trim_messages 旧路径）/ structured（ContextManager v1）
         self.CONTEXT_STRATEGY = os.getenv("CONTEXT_STRATEGY", "structured")
@@ -214,10 +223,20 @@ class Settings:
         # 每轮合并取最旧的多少比例（size-tiered：约一半，段数对数增长）
         self.SUMMARY_MERGE_FRACTION = float(os.getenv("SUMMARY_MERGE_FRACTION", "0.5"))
         self.MAX_LLM_CALL_RETRIES = int(os.getenv("MAX_LLM_CALL_RETRIES", "3"))
-        self.LLM_TOTAL_TIMEOUT = int(os.getenv("FUND_LLM_TIMEOUT_SECONDS", os.getenv("LLM_TOTAL_TIMEOUT", "60")))
-        self.LLM_REQUEST_TIMEOUT = float(
-            os.getenv("FUND_LLM_TIMEOUT_SECONDS", os.getenv("LLM_REQUEST_TIMEOUT", str(self.LLM_TOTAL_TIMEOUT)))
+        # 首段等待/单次 HTTP 读取、流中无进展、整个重试和降级过程分别限时。
+        self.LLM_TOTAL_TIMEOUT = max(
+            1, int(os.getenv("FUND_LLM_TOTAL_TIMEOUT_SECONDS", os.getenv("LLM_TOTAL_TIMEOUT", "300")))
         )
+        self.LLM_REQUEST_TIMEOUT = max(
+            1.0,
+            float(
+                os.getenv(
+                    "FUND_LLM_REQUEST_TIMEOUT_SECONDS",
+                    os.getenv("FUND_LLM_TIMEOUT_SECONDS", os.getenv("LLM_REQUEST_TIMEOUT", "120")),
+                )
+            ),
+        )
+        self.LLM_STREAM_IDLE_TIMEOUT = max(1.0, float(os.getenv("FUND_LLM_STREAM_IDLE_TIMEOUT_SECONDS", "60")))
 
         # Long term memory Configuration
         self.LONG_TERM_MEMORY_ENABLED = os.getenv("LONG_TERM_MEMORY_ENABLED", "true").lower() in (
@@ -320,6 +339,10 @@ class Settings:
 
         # Rate Limiting Configuration
         self.RATE_LIMIT_DEFAULT = parse_list_from_env("RATE_LIMIT_DEFAULT", ["200 per day", "50 per hour"])
+        # 只有直连来源在这些地址里时，才采信它写来的 X-Forwarded-For。
+        # 默认空 = 永远按直连 IP 计数；nginx/SLB 部署需显式填入代理地址，否则全站
+        # 共享同一个代理 IP 的额度。
+        self.RATE_LIMIT_TRUSTED_PROXIES = parse_list_from_env("RATE_LIMIT_TRUSTED_PROXIES", [])
 
         # Rate limit endpoints defaults
         default_endpoints = {

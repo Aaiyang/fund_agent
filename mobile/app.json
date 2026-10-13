@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Fund Agent",
+    "name": "持见",
     "slug": "fund-agent",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "fundagent",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },

@@ -36,6 +36,8 @@ async def get_positions(
                 "account_id": item.account_id,
                 "shares": item.shares,
                 "cost_amount": item.cost_amount,
+                "average_cost_nav": getattr(item, "average_cost_nav", None),
+                "average_cost_nav_derived": getattr(item, "average_cost_nav_derived", False),
                 "market_value": item.market_value,
                 "profit_loss": item.profit_loss,
                 "profit_loss_rate": item.profit_loss_rate,

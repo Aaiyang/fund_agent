@@ -1,6 +1,6 @@
 import { Stack, router } from 'expo-router';
 import { useState } from 'react';
-import { Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text } from 'react-native';
 
 import { Button, Card, Field, Screen, SectionTitle } from '@/components/ui';
 import { describeError } from '@/components/states';
@@ -45,18 +45,24 @@ export default function ProfileEditScreen() {
   }
 
   return (
-    <Screen>
-      <Stack.Screen options={{ title: '编辑资料' }} />
-      <Card>
-        <SectionTitle title="用户信息" />
-        <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
-          用户 #{user?.id} · 注册于 {formatDateTime(user?.created_at)}
-        </Text>
-        <Field label="昵称" value={username} onChangeText={setUsername} placeholder="请输入昵称" />
-        <Field label="邮箱" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="请输入邮箱" />
-        {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
-        <Button label="保存" onPress={submit} loading={busy} />
-      </Card>
-    </Screen>
+    // 有输入框且保存按钮在表单底部：键盘弹起时要把整屏顶起来，否则点不到保存。
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <Screen>
+        <Stack.Screen options={{ title: '编辑资料' }} />
+        <Card>
+          <SectionTitle title="用户信息" />
+          <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 12 }}>
+            用户 #{user?.id} · 注册于 {formatDateTime(user?.created_at)}
+          </Text>
+          <Field label="昵称" value={username} onChangeText={setUsername} placeholder="请输入昵称" />
+          <Field label="邮箱" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="请输入邮箱" />
+          {problem ? <Text style={{ color: theme.danger, fontSize: 13, marginBottom: 12 }}>{problem}</Text> : null}
+          <Button label="保存" onPress={submit} loading={busy} />
+        </Card>
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }

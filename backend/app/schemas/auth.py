@@ -143,11 +143,13 @@ class SessionResponse(BaseResponse):
         session_id: 聊天会话的唯一标识
         name: 会话名称（默认为空字符串）
         token: 该会话的鉴权 token
+        created_at: 会话创建时间（naive UTC）；列表按它倒序排，客户端拿它标时间
     """
 
     session_id: str = Field(..., description="The unique identifier for the chat session")
     name: str = Field(default="", description="Name of the session", max_length=100)
     token: Token = Field(..., description="The authentication token for the session")
+    created_at: datetime = Field(..., description="When this session was created")
 
     @field_validator("name")
     @classmethod

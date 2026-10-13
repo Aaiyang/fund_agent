@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useAgentSessions, useDeleteAgentSession } from '@/hooks/useAgent';
 import { confirmAction } from '@/utils/confirm';
+import { formatSessionTime } from '@/utils/format';
 
 const PANEL_WIDTH = Math.min(320, Dimensions.get('window').width * 0.78);
 
@@ -97,7 +98,7 @@ export function AgentSessionsPanel({
         <ScrollView contentContainerStyle={{ padding: theme.gap }}>
           {sessions.isPending ? <Text style={{ fontSize: 13, color: theme.textMuted }}>加载中…</Text> : null}
           {!sessions.isPending && !items.length ? (
-            <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有会话，点右上角的图标新建一条。</Text>
+            <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有会话，问过一句就会出现在这里。</Text>
           ) : null}
           {items.map((session) => {
             const active = activeSessionId === session.session_id;
@@ -117,6 +118,12 @@ export function AgentSessionsPanel({
                       </View>
                     ) : null}
                   </View>
+                  {/* 列表按创建时间倒序，标出时间才看得出哪条是刚聊过的。 */}
+                  {session.created_at ? (
+                    <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
+                      {formatSessionTime(session.created_at)}
+                    </Text>
+                  ) : null}
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"

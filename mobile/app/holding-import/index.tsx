@@ -38,7 +38,11 @@ export default function HoldingImportScreen() {
         <SectionTitle title="导入记录" />
         <Async
           query={history}
-          empty={(data) => (data.items.length === 0 ? <EmptyState title="暂无导入记录" /> : null)}
+          empty={(data) =>
+            data.items.length === 0 ? (
+              <EmptyState title="还没有导入记录" hint="从上方手动录入，或上传一张持仓截图" />
+            ) : null
+          }
         >
           {(data) => (
             <>

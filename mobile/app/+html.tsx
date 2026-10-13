@@ -7,11 +7,13 @@ import type { ReactNode } from 'react';
 // 访问不到 DOM 或浏览器 API。
 export default function Root({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        {/* App 名是「持见」；「小镜」只是其中的聊天助手，不要拿助手名当站名。 */}
+        <title>持见</title>
 
         {/*
           在 web 上禁用 body 滚动，这样 ScrollView 的表现才更接近原生端。

@@ -40,7 +40,9 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "generate:api": "node scripts/fetch-openapi.mjs && npx --yes openapi-typescript@7 openapi.json -o api/schema.ts --default-non-nullable false",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "node --test tests/*.test.mjs",
+    "test:chat-stream": "node --test tests/chatStream.test.mjs"
   },
   "private": true
 }

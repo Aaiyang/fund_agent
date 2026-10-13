@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "type": "line",
+  "metric": "unit_nav",
+  "range_key": "1y",
+  "sampling": "weekly",
+  "fund_code": "000001",
+  "title": "测试数据 · 近一年单位净值（仅用于验证）",
+  "source": "fund_service",
+  "requested_from": "2025-10-10",
+  "requested_to": "2026-10-10",
+  "observed_from": "2025-10-13",
+  "observed_to": "2026-10-09",
+  "as_of": "2026-10-09",
+  "points": [
+    { "date": "2025-10-13", "unit_nav": 1.25 },
+    { "date": "2025-10-17", "unit_nav": 1.2 },
+    { "date": "2026-04-17", "unit_nav": 1.37 },
+    { "date": "2026-10-09", "unit_nav": 1.4 }
+  ],
+  "warnings": ["测试数据：历史存在缺口，未推定缺口期间走势。"]
+}

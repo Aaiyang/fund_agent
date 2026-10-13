@@ -1,9 +1,9 @@
 """行情数据 API 的 schema：基准指数序列与上市标的分析."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.integrations.fund_data.models import (
     CandleExternalBar,
@@ -28,6 +28,72 @@ class IndexCatalogItem(BaseModel):
 
     index_code: str
     name: str
+
+
+RealtimeIndexCode = Literal[
+    "sh000001",
+    "sz399001",
+    "sh000300",
+    "sz399006",
+    "sh000016",
+    "sh000905",
+    "sh000852",
+    "sh000688",
+    "sz399673",
+    "sz399005",
+    "sh000015",
+    "sh000903",
+    "sh000985",
+    "bj899050",
+]
+RealtimeQuoteFreshness = Literal["same_day", "delayed", "previous_session", "unknown_time", "future_time"]
+
+
+class RealtimeMarketRequest(BaseModel):
+    """只允许固定目录中的主要 A 股指数，不接受 URL 或任意证券代码."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    index_codes: list[RealtimeIndexCode] | None = Field(default=None, min_length=1, max_length=14)
+    refresh: bool = True
+
+
+class RealtimeIndexQuote(BaseModel):
+    """最新指数报价；涨跌幅为百分点，报价时间固定为上海时区."""
+
+    index_code: str
+    name: str
+    price: float = Field(gt=0, allow_inf_nan=False)
+    change: float | None = None
+    change_pct: float | None = None
+    prev_close: float | None = None
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    amount: float | None = None
+    quote_time: datetime | None = None
+    trade_date: date | None = None
+    freshness: RealtimeQuoteFreshness
+    stale: bool
+
+
+class RealtimeMarketSnapshot(BaseModel):
+    """主要指数快照，获取时间与各指数报价时间分别保留."""
+
+    requested_date: date
+    timezone: str = "Asia/Shanghai"
+    fetched_at: datetime  # naive UTC，来自 utc_now()；不能当作报价时间
+    fetched_at_timezone: str = "UTC"
+    source: str = "tencent_quotes"
+    from_cache: bool = False
+    cache_ttl_seconds: int = 15
+    scope: str = "主要A股指数快照，不包含全市场个股涨跌家数或资金流向"
+    change_pct_unit: str = "percentage_points"
+    amount_unit: str = "CNY"
+    indexes: list[RealtimeIndexQuote]
+    missing_indexes: list[IndexCatalogItem]
+    stale: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class IndexCatalogResponse(BaseResponse):

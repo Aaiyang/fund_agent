@@ -8,6 +8,7 @@
 
 import asyncio
 import json
+import re
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -21,7 +22,7 @@ from app.core.database import get_async_session
 from app.core.logging import logger
 from app.integrations.fund_data.akshare_client import AKSHARE_AVAILABLE
 from app.integrations.fund_data.akshare_provider import akshare_fund_provider
-from app.integrations.fund_data.models import FundExternalHolding
+from app.integrations.fund_data.models import FundExternalHolding, FundExternalRecord
 from app.integrations.fund_data.normalizer import parse_quarter, sina_symbol, tencent_symbol
 from app.integrations.holdings.name_match import NameMatch, decide, rank_names
 from app.models.fund import Fund, FundNav
@@ -39,6 +40,16 @@ from app.schemas.fund import (
     FundSearchItem,
     NavRange,
 )
+from app.schemas.sector import FundSectorEvidence
+from app.schemas.fund_selection import FundSelectionOption
+from app.schemas.fund_disclosure import (
+    FundAnnouncementPage,
+    FundAnnouncementsRequest,
+    FundAnnouncementsResult,
+    FundManagerHistoryData,
+    FundManagersResult,
+)
+from app.services.fund_disclosure_utils import cached_disclosure, merge_manager_tenures
 from app.services.fund_sync_service import fund_sync_service
 from app.utils.clock import business_today, range_start
 
@@ -120,8 +131,52 @@ class FundService:
     # 搜索
     # ------------------------------------------------------------------
 
+    async def search_analysis_candidates(self, keyword: str) -> list[FundSelectionOption]:
+        """在完整名称目录中模糊匹配，按相似度去重后返回前三只基金.
+
+        名称目录同时保留登记名与展示简称，不依赖连续子串、个人持仓或排行覆盖。
+        此步骤只解析标识，不抓取候选净值或提前同步所有候选的历史。
+        """
+        cleaned = keyword.strip()
+        if not cleaned:
+            return []
+        if re.fullmatch(r"[0-9]{6}", cleaned):
+            funds = await self._search_fund_rows(cleaned)
+            return [
+                FundSelectionOption(
+                    fund_code=fund.fund_code,
+                    fund_name=fund.fund_name,
+                    fund_type=fund.fund_type,
+                )
+                for fund in funds
+                if fund.fund_code == cleaned
+            ][:1]
+        return await self._match_fund_names(cleaned)
+
+    async def _match_fund_names(self, keyword: str) -> list[FundSelectionOption]:
+        """普通搜索和分析选择共用的名称匹配规则，先去重再取相似度 Top3."""
+        directory = await self.name_directory()
+        valid = [(code, name) for code, name in directory if re.fullmatch(r"[0-9]{6}", code) and name.strip()]
+        # 同一代码的长短别名可能占掉三个名额，必须先完整打分，再按代码取前三。
+        ranked = rank_names(keyword, valid, limit=len(valid), min_score=0.5)
+
+        def exact(name: str) -> bool:
+            return "".join(name.split()).casefold() == "".join(keyword.split()).casefold()
+
+        ranked.sort(
+            key=lambda match: (not exact(match.fund_name), -match.score, len(match.fund_name), match.fund_code)
+        )
+        candidates: dict[str, FundSelectionOption] = {}
+        for match in ranked:
+            candidates.setdefault(
+                match.fund_code, FundSelectionOption(fund_code=match.fund_code, fund_name=match.fund_name)
+            )
+            if len(candidates) == 3:
+                break
+        return list(candidates.values())
+
     async def search(self, keyword: str, user_id: int) -> list[FundSearchItem]:
-        """搜索基金：先查本地库，查不到再找外部数据源.
+        """搜索基金：先按代码/名称子串搜索，无名称结果时复用分析候选的模糊匹配.
 
         Args:
             keyword: 代码、全称、简称或模糊片段。
@@ -204,6 +259,9 @@ class FundService:
                 await fund_sync_service.sync_fund(keyword_clean)
                 local_funds = await fund_repository.search_funds(keyword_clean)
 
+        if not local_funds and not keyword_clean.isdigit():
+            local_funds = await self._fuzzy_search_fund_rows(keyword_clean)
+
         funds = local_funds[:50]
         if funds:
             await cache_service.set(
@@ -212,6 +270,33 @@ class FundService:
                 ttl=_SEARCH_CACHE_TTL_SECONDS,
             )
         return funds
+
+    async def _fuzzy_search_fund_rows(self, keyword: str) -> list[Fund]:
+        """复用完整名册的 Top3 匹配，再按候选代码读取主数据，保留相似度顺序."""
+        try:
+            candidates = await self._match_fund_names(keyword)
+        except Exception:
+            logger.exception("fund_fuzzy_search_failed", keyword=keyword)
+            return []
+        if not candidates:
+            return []
+
+        codes = [candidate.fund_code for candidate in candidates]
+        known = await fund_repository.get_funds(codes)
+        missing = [candidate for candidate in candidates if candidate.fund_code not in known]
+        # 简称只用于新基金的首次登记，不能覆盖数据库中已有的正式名称和资料。
+        for candidate in missing:
+            await fund_write_repository.upsert_fund_from_record(
+                FundExternalRecord(
+                    fund_code=candidate.fund_code,
+                    fund_name=candidate.fund_name,
+                    fund_type=candidate.fund_type,
+                )
+            )
+        if missing:
+            known = await fund_repository.get_funds(codes)
+        # 模糊候选不能再按原始子串过滤，否则名称中缺少的词会让结果再次变空。
+        return [known[code] for code in codes if code in known]
 
     # ------------------------------------------------------------------
     # 详情 / 净值 / 业绩
@@ -302,6 +387,131 @@ class FundService:
                 )
                 for row in page
             ],
+        )
+
+    async def get_sector_evidence(self, fund_code: str) -> FundSectorEvidence | None:
+        """只取得名称与披露行业，不为板块识别抓历史净值或重仓股实时行情."""
+        fund = await fund_repository.get_fund(fund_code)
+        if fund is None:
+            profile = await akshare_fund_provider.get_fund_profile(fund_code)
+            if profile is None:
+                return None
+            name, kind = profile.fund_name, profile.fund_type
+        else:
+            name, kind = fund.fund_name, fund.fund_type
+        try:
+            industries, report_date = await self._industry_allocation(fund_code)
+        except Exception:
+            logger.exception("fund_sector_industry_evidence_unavailable", fund_code=fund_code)
+            industries, report_date = [], None
+        return FundSectorEvidence(
+            fund_code=fund_code,
+            fund_name=name,
+            fund_type=kind,
+            industries=industries,
+            report_date=report_date,
+        )
+
+    async def get_managers(self, fund_code: str, limit: int = 50, refresh: bool = False) -> FundManagersResult:
+        """基金经理历史及个人连续任职区间，缺数不回退现任姓名."""
+        if not 1 <= limit <= 100:
+            raise ValueError("经理历史limit必须在1至100之间")
+        history, stamp, from_cache = await cached_disclosure(
+            cache_key("fund_manager_history:v1", fund_code),
+            FundManagerHistoryData,
+            lambda: akshare_fund_provider.get_manager_history(fund_code),
+            ttl=3600,
+            refresh=refresh,
+            valid=lambda data: data.fund_code == fund_code and bool(data.periods),
+        )
+        tenures = merge_manager_tenures(history.periods)
+        warnings = [
+            "来源页面提供团队管理区间；个人任职段仅合并同一经理连续区间，离任再任分别保留。",
+            "至今表示来源页面标记的现任状态，获取时间不是任职起始时间或页面业务更新时间。",
+        ]
+        truncated = len(history.periods) > limit or len(tenures) > limit
+        if truncated:
+            warnings.append("任职区间或个人任职段已截断，不能称为全部历任列表；可增大limit至100。")
+        return FundManagersResult(
+            **history.model_dump(exclude={"periods"}),
+            periods=history.periods[:limit],
+            tenures=tenures[:limit],
+            total_periods=len(history.periods),
+            total_tenures=len(tenures),
+            truncated=truncated,
+            fetched_at=stamp,
+            from_cache=from_cache,
+            warnings=warnings,
+        )
+
+    async def get_announcements(self, request: FundAnnouncementsRequest) -> FundAnnouncementsResult:
+        """按类型取50条一页并筛选日期/标题，公开扫描窗口和继续翻页方式."""
+        categories = {
+            "all": 0,
+            "major_changes": 0,
+            "operation": 1,
+            "dividend": 2,
+            "reports": 3,
+            "personnel": 4,
+            "sales": 5,
+            "other": 6,
+        }
+        category = categories[request.category]
+        page_size = 50
+        page, stamp, from_cache = await cached_disclosure(
+            cache_key("fund_announcements:v1", request.fund_code, str(category), str(request.page), str(page_size)),
+            FundAnnouncementPage,
+            lambda: akshare_fund_provider.get_announcements(request.fund_code, category, request.page, page_size),
+            ttl=300,
+            refresh=request.refresh,
+            valid=lambda data: data.fund_code == request.fund_code
+            and data.page == request.page
+            and data.page_size == page_size
+            and data.invalid_items == 0
+            and data.missing_items == 0,
+        )
+        items = [
+            row
+            for row in page.items
+            if (request.category != "major_changes" or row.major_change_hints)
+            and (
+                request.start_date is None
+                or row.published_date is not None
+                and row.published_date >= request.start_date
+            )
+            and (request.end_date is None or row.published_date is not None and row.published_date <= request.end_date)
+            and (not request.keyword or request.keyword.strip().casefold() in row.title.casefold())
+        ]
+        items.sort(key=lambda row: (row.published_date or date.min, row.announcement_id), reverse=True)
+        has_more = request.page * page_size < page.total
+        warnings = [
+            "返回公告索引与原文链接，未读取报告正文；发布日期不等于变更生效日。",
+            "日期、关键词及重大变更筛选仅覆盖本次50条扫描页；无匹配不证明其他页不存在相关公告。",
+        ]
+        if request.category == "major_changes" or any(row.major_change_hints for row in items):
+            warnings.append("重大变更标签是标题规则识别的待核验线索，不是官方完整分类，也不证明事件已经生效。")
+        if page.invalid_items:
+            warnings.append("部分公告字段无效已跳过，本页不完整且未缓存。")
+        if page.missing_items:
+            warnings.append("来源返回条数少于该页应有数量，本页有缺失且未缓存；不能按该页断言无匹配。")
+        if any(row.published_date is None for row in page.items):
+            warnings.append("部分公告发布日期未知；指定日期区间时这些条目不会纳入匹配。")
+        if len(items) > request.limit:
+            warnings.append("当前页匹配结果超过limit，请增大limit至50读取本页其余结果；next_page只指下一扫描页。")
+        return FundAnnouncementsResult(
+            **request.model_dump(exclude={"limit", "refresh"}),
+            page_size=page_size,
+            upstream_total=page.total,
+            scanned_count=len(page.items) + page.invalid_items,
+            matched_count=len(items),
+            invalid_items=page.invalid_items,
+            missing_items=page.missing_items,
+            items=items[: request.limit],
+            has_more=has_more,
+            next_page=request.page + 1 if has_more and request.page < 1000 else None,
+            fetched_at=stamp,
+            from_cache=from_cache,
+            warnings=warnings,
         )
 
     async def get_holdings(self, fund_code: str) -> FundHoldingsResponse:

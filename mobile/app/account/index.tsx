@@ -26,7 +26,14 @@ export default function AccountListScreen() {
           {(data) => (
             <View>
               {data.items.map((account) => (
-                <View key={account.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                <View
+                  key={account.id}
+                  style={{
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
                   <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>{account.name}</Text>
                   <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
                     来源标签 {account.source_app ?? '未标注'} · 导入方式 {account.import_mode} · 最近导入{' '}
@@ -50,10 +57,12 @@ export default function AccountListScreen() {
                       <Button
                         label="删除"
                         variant="danger"
+                        // 一次只删一个账户：整列共用 isPending 会让每个删除按钮都变灰。
+                        loading={remove.isPending && remove.variables === account.id}
                         onPress={() =>
                           confirmAction(
                             '删除账户',
-                            `“${account.name}”的持仓、调整记录与导入批次都会一并删除，且无法恢复。`,
+                            `“${account.name}”的持仓、调整记录与导入批次都会被删除，删除后无法恢复。`,
                             () => remove.mutate(account.id),
                           )
                         }

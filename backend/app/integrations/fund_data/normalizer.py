@@ -308,7 +308,7 @@ def parse_sina_quotes(payload: str) -> list[StockExternalQuote]:
 
 _TENCENT_LINE = re.compile(r'v_(?P<symbol>[0-9A-Za-z.]+)="(?P<body>[^"]*)"')
 
-_INDEX_SYMBOL_PREFIXES = ("sh000", "sz399")
+_INDEX_SYMBOL_PREFIXES = ("sh000", "sz399", "bj899")
 
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 
@@ -327,7 +327,7 @@ def _tencent_node(payload: Any, symbol: str) -> dict[str, Any]:
 def market_kind(symbol: str) -> str:
     """从代码形状判断是指数还是个股；哪张上市表都没有市场列.
 
-    ``sh000*`` 和 ``sz399*`` 分别是上交所、深交所的指数号段。号段重叠是有意为之：
+    ``sh000*``、``sz399*``、``bj899*`` 是沪、深、北交所指数号段。号段重叠是有意为之：
     ``sh000001`` 是上证指数，``sz000001`` 却是平安银行.
     """
     return "index" if symbol.startswith(_INDEX_SYMBOL_PREFIXES) else "stock"

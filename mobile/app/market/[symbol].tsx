@@ -102,7 +102,7 @@ export default function MarketScreen() {
           {data?.listing_code ?? symbol} · {data?.kind === 'index' ? '指数' : '个股'}
           {data?.currency ? ` · ${data.currency}` : ''}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 8 }} accessibilityLabel={`最新价 ${formatPrice(data?.price)}，涨跌 ${signed(data?.change)}，涨跌幅 ${formatReturnPoints(data?.change_pct)}`}>
           <Text style={{ fontSize: 32, fontWeight: '700', color: trendColor(data?.change_pct) }}>
             {formatPrice(data?.price)}
           </Text>
@@ -113,7 +113,7 @@ export default function MarketScreen() {
             {formatReturnPoints(data?.change_pct)}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
           <Stat label="今开" value={formatPrice(data?.open)} tone="muted" />
           <Stat label="最高" value={formatPrice(data?.high)} tone="muted" />
           <Stat label="最低" value={formatPrice(data?.low)} tone="muted" />
@@ -125,8 +125,8 @@ export default function MarketScreen() {
       </Card>
 
       <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <View style={{ flexDirection: 'row' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row' }} accessibilityRole="tablist" accessibilityLabel="K 线周期切换">
             {modes.map((entry) => (
               <NavTab key={entry.key} label={entry.label} active={mode === entry.key} onPress={() => setMode(entry.key)} />
             ))}
@@ -187,7 +187,7 @@ export default function MarketScreen() {
             <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 8, lineHeight: 18 }}>{profile.description}</Text>
           ) : null}
           {profile.concepts?.length ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
               {profile.concepts.slice(0, 12).map((concept) => (
                 <View
                   key={concept}

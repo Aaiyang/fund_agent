@@ -51,6 +51,7 @@ class TestSymbolMapping:
     def test_index_shapes_beat_the_overlapping_stock_codes(self) -> None:
         assert market_kind("sh000001") == "index"
         assert market_kind("sz399001") == "index"
+        assert market_kind("bj899050") == "index"
         assert market_kind("sz000001") == "stock"
 
 

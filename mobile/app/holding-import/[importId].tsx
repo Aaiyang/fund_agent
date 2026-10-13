@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 
 import { Async, LoadingState, describeError } from '@/components/states';
 import { Badge, Button, Card, Chip, Field, Screen, SectionTitle } from '@/components/ui';
@@ -29,96 +29,100 @@ export default function ImportReviewScreen() {
   const remove = useDeleteImport();
   const [result, setResult] = useState<string | null>(null);
 
+  // 底部就是确认按钮，且每张卡片都带一个修正金额的输入框。
   return (
-    <Screen>
-      <Async query={detail}>
-        {(batch) => {
-          if (batch.status === 'UPLOADED' || batch.status === 'PARSING') {
-            return (
-              <Card>
-                <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>正在识别截图…</Text>
-                <LoadingState />
-              </Card>
-            );
-          }
-
-          return (
-            <>
-              <Card>
-                <SectionTitle
-                  title={`${batch.import_type === 'SCREENSHOT' ? '截图导入' : '手动录入'} · ${statusLabel(batch.status)}`}
-                />
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>
-                  账户 #{batch.account_id} · 识别 {batch.items_detected} 条 · 图片 {batch.image_count} 张
-                </Text>
-                {batch.error_message ? (
-                  <Text style={{ fontSize: 12, color: theme.danger, marginTop: 6 }}>{batch.error_message}</Text>
-                ) : null}
-              </Card>
-
-              {(batch.items ?? []).map((item) => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  importId={importId}
-                  updateItem={updateItem}
-                  editable={batch.status === 'REVIEW_REQUIRED'}
-                />
-              ))}
-
-              {batch.status === 'REVIEW_REQUIRED' ? (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Screen>
+        <Async query={detail}>
+          {(batch) => {
+            if (batch.status === 'UPLOADED' || batch.status === 'PARSING') {
+              return (
                 <Card>
-                  <Button
-                    label={`确认导入 ${
-                      // 与后端 confirm_import 的口径一致：校验出错的行默认按 SKIP，
-                      // 未匹配到基金的行永远不可能被写入。
-                      (batch.items ?? []).filter(
-                        (item) =>
-                          !!item.matched_fund_code &&
-                          (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'UPDATE',
-                      ).length
-                    } 条`}
-                    loading={confirm.isPending}
-                    onPress={() =>
-                      confirm.mutate(undefined, {
-                        onSuccess: (data) =>
-                          setResult(`已写入 ${data.applied} 条持仓，跳过 ${data.skipped} 条。原图已删除。`),
-                        onError: (error) => setResult(`确认失败：${describeError(error)}`),
-                      })
-                    }
+                  <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>正在识别截图…</Text>
+                  <LoadingState />
+                </Card>
+              );
+            }
+
+            return (
+              <>
+                <Card>
+                  <SectionTitle
+                    title={`${batch.import_type === 'SCREENSHOT' ? '截图导入' : '手动录入'} · ${statusLabel(batch.status)}`}
                   />
-                  <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                    账户 #{batch.account_id} · 识别 {batch.items_detected} 条 · 图片 {batch.image_count} 张
+                  </Text>
+                  {batch.error_message ? (
+                    <Text style={{ fontSize: 12, color: theme.danger, marginTop: 6 }}>{batch.error_message}</Text>
+                  ) : null}
+                </Card>
+
+                {(batch.items ?? []).map((item) => (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    importId={importId}
+                    updateItem={updateItem}
+                    editable={batch.status === 'REVIEW_REQUIRED'}
+                  />
+                ))}
+
+                {batch.status === 'REVIEW_REQUIRED' ? (
+                  <Card>
                     <Button
-                      label="取消并删除该批次"
-                      variant="danger"
+                      label={`确认导入 ${
+                        // 与后端 confirm_import 的口径一致：校验出错的行默认按 SKIP，
+                        // 未匹配到基金的行永远不可能被写入。
+                        (batch.items ?? []).filter(
+                          (item) =>
+                            !!item.matched_fund_code &&
+                            (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'UPDATE',
+                        ).length
+                      } 条`}
+                      loading={confirm.isPending}
                       onPress={() =>
-                        remove.mutate(importId, {
-                          onSuccess: () => router.back(),
-                          onError: (error) => setResult(`删除失败：${describeError(error)}`),
+                        confirm.mutate(undefined, {
+                          onSuccess: (data) =>
+                            setResult(`已写入 ${data.applied} 条持仓，跳过 ${data.skipped} 条。原图已删除。`),
+                          onError: (error) => setResult(`确认失败：${describeError(error)}`),
                         })
                       }
                     />
-                  </View>
-                  {result ? <Text style={{ fontSize: 13, color: theme.primary, marginTop: 10 }}>{result}</Text> : null}
-                  <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 10 }}>
-                    确认后按“覆盖当前快照”写入，并记一条 IMPORT_ADJUSTMENT 审计记录；系统不会据此推断买卖流水。
-                  </Text>
-                </Card>
-              ) : null}
+                    <View style={{ marginTop: 10 }}>
+                      <Button
+                        label="取消并删除该批次"
+                        variant="danger"
+                        loading={remove.isPending}
+                        onPress={() =>
+                          remove.mutate(importId, {
+                            onSuccess: () => router.back(),
+                            onError: (error) => setResult(`删除失败：${describeError(error)}`),
+                          })
+                        }
+                      />
+                    </View>
+                    {result ? <Text style={{ fontSize: 13, color: theme.primary, marginTop: 10 }}>{result}</Text> : null}
+                    <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 10 }}>
+                      确认后按“覆盖当前快照”写入，并记一条 IMPORT_ADJUSTMENT 审计记录；系统不会据此推断买卖流水。
+                    </Text>
+                  </Card>
+                ) : null}
 
-              {batch.status === 'APPLIED' ? (
-                <Card>
-                  <Text style={{ fontSize: 13, color: theme.text }}>
-                    该批次已于导入 {batch.items_confirmed} 条持仓后生效，可返回“持有”页查看。
-                  </Text>
-                  <Button label="返回持有" onPress={() => router.replace('/(tabs)')} />
-                </Card>
-              ) : null}
-            </>
-          );
-        }}
-      </Async>
-    </Screen>
+                {batch.status === 'APPLIED' ? (
+                  <Card>
+                    <Text style={{ fontSize: 13, color: theme.text }}>
+                      该批次已导入 {batch.items_confirmed} 条持仓并生效，可返回“持有”页查看。
+                    </Text>
+                    <Button label="返回持有" onPress={() => router.replace('/(tabs)')} />
+                  </Card>
+                ) : null}
+              </>
+            );
+          }}
+        </Async>
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -136,6 +140,10 @@ function ItemCard({
   const [marketValue, setMarketValue] = useState(toInputNumber(item.market_value));
   const [problem, setProblem] = useState<string | null>(null);
   const skipped = (item.user_action ?? (item.validation_status === 'error' ? 'SKIP' : 'UPDATE')) === 'SKIP';
+  // 一次只改一行：整份列表共用 isPending 会让每张卡片同时显示“处理中…”。
+  const pendingHere = updateItem.isPending && updateItem.variables?.itemId === item.id;
+  const savingValue = pendingHere && updateItem.variables?.user_action === undefined;
+  const savingAction = pendingHere && updateItem.variables?.user_action !== undefined;
 
   function pick(fundCode: string) {
     setProblem(null);
@@ -241,9 +249,13 @@ function ItemCard({
           <Button
             label="保存修正"
             variant="secondary"
-            loading={updateItem.isPending}
+            loading={savingValue}
             onPress={() => {
               setProblem(null);
+              if (marketValue.trim() !== '' && Number.isNaN(Number(marketValue))) {
+                setProblem('修正持有金额需为数字');
+                return;
+              }
               updateItem.mutate(
                 {
                   importId,
@@ -259,7 +271,7 @@ function ItemCard({
           <Button
             label={skipped ? '改为导入' : '跳过这条'}
             variant={skipped ? 'primary' : 'secondary'}
-            loading={updateItem.isPending}
+            loading={savingAction}
             onPress={() => {
               setProblem(null);
               updateItem.mutate(
