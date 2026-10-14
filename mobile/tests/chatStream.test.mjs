@@ -63,10 +63,11 @@ test('research follow-up uses a report reference and progress never becomes answ
   assert.equal(progress[0].stage, 'review');
 });
 
-test('fund-page multi-role research sends the structured authorization, not only prose', async () => {
+test('fund picker sends codes plus the cost tier, not only prose', async () => {
   const h = harness();
-  const pending = h.start({ multiRoleFundCodes: ['022287'] });
-  assert.deepEqual(h.requests[0].body.multi_role_fund_codes, ['022287']);
+  const pending = h.start({ researchFundCodes: ['022287', '000001'], researchStrategy: 'multi_role' });
+  assert.deepEqual(h.requests[0].body.research_fund_codes, ['022287', '000001']);
+  assert.equal(h.requests[0].body.research_strategy, 'multi_role');
   h.requests[0].append(frame({ content: '三个角色已合议', done: false }));
   h.requests[0].append(frame({ content: '', done: true }));
   h.requests[0].onload();
@@ -74,13 +75,24 @@ test('fund-page multi-role research sends the structured authorization, not only
   assert.deepEqual(h.deltas, ['三个角色已合议']);
 });
 
-test('ordinary chat leaves the multi-role field out of the body entirely', async () => {
+test('the cheap tier is the default when the picker only asks for analysis', async () => {
+  const h = harness();
+  const pending = h.start({ researchFundCodes: ['022287'] });
+  assert.deepEqual(h.requests[0].body.research_fund_codes, ['022287']);
+  assert.equal(h.requests[0].body.research_strategy, 'single');
+  h.requests[0].append(frame({ content: '', done: true }));
+  h.requests[0].onload();
+  await pending;
+});
+
+test('ordinary chat leaves the research fields out of the body entirely', async () => {
   const h = harness();
   const pending = h.start();
   h.requests[0].append(frame({ content: '', done: true }));
   h.requests[0].onload();
   await pending;
-  assert.equal('multi_role_fund_codes' in h.requests[0].body, false);
+  assert.equal('research_fund_codes' in h.requests[0].body, false);
+  assert.equal('research_strategy' in h.requests[0].body, false);
 });
 
 for (const action of [

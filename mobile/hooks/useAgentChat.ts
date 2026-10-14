@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { streamChatMessage, streamAgentResume, ChatStreamError } from '@/api/chatStream';
 import type { AgentResumeAction } from '@/api/chatStream';
+import type { ClientResearch } from '@/utils/fundPicker';
 import { queryKeys } from '@/api/queries';
 import { ensureSessionToken, fetchAgentMessages, useAgentMessages } from '@/hooks/useAgent';
 import type { ChatPendingAction } from '@/hooks/useChatImport';
@@ -38,7 +39,7 @@ type Overlay = {
   importIds: string[];
   researchFollowupId?: string;
   /** 重试要按同一种授权重发，否则按钮点第二次会变成普通提问。 */
-  multiRoleFundCodes?: string[];
+  research?: ClientResearch;
   resumeAction?: AgentResumeAction;
   progress: ChatResearchProgress[];
 };
@@ -58,7 +59,7 @@ export function useAgentChat(input: {
   useEffect(() => () => controller.current?.abort(), []);
 
   const run = useCallback(
-    async (text: string, importIds: string[] = [], researchFollowupId?: string, resumeAction?: AgentResumeAction, multiRoleFundCodes?: string[]) => {
+    async (text: string, importIds: string[] = [], researchFollowupId?: string, resumeAction?: AgentResumeAction, research?: ClientResearch) => {
       if (controller.current) throw new Error('上一条还在生成中');
       const content = text.trim();
       if (!content && !resumeAction) throw new Error('要说点什么');
@@ -77,7 +78,7 @@ export function useAgentChat(input: {
         throw error;
       }
       const baseCount = sessionId === active ? (history.data?.messages ?? []).filter((message) => message.role !== 'system').length : 0;
-      setOverlay({ runId, baseCount, sessionId: active, question: content, answer: '', state: 'streaming', importIds, researchFollowupId, multiRoleFundCodes, resumeAction, progress: [] });
+      setOverlay({ runId, baseCount, sessionId: active, question: content, answer: '', state: 'streaming', importIds, researchFollowupId, research, resumeAction, progress: [] });
 
       let failed: string | null = null;
       let stopped = false;
@@ -104,7 +105,7 @@ export function useAgentChat(input: {
           )),
         };
         if (resumeAction) await streamAgentResume({ ...handlers, action: resumeAction });
-        else await streamChatMessage({ ...handlers, text: content, holdingImportIds: importIds, researchFollowupId, multiRoleFundCodes });
+        else await streamChatMessage({ ...handlers, text: content, holdingImportIds: importIds, researchFollowupId, researchFundCodes: research?.codes, researchStrategy: research?.strategy });
       } catch (error) {
         if ((error as Error).name === 'AbortError') stopped = true;
         else if (error instanceof ChatStreamError) failed = error.message;
@@ -142,8 +143,8 @@ export function useAgentChat(input: {
     [client, ensureSession, history.data, sessionId],
   );
 
-  const send = useCallback((text: string, importIds: string[] = [], researchFollowupId?: string, multiRoleFundCodes?: string[]) =>
-    run(text, importIds, researchFollowupId, undefined, multiRoleFundCodes), [run]);
+  const send = useCallback((text: string, importIds: string[] = [], researchFollowupId?: string, research?: ClientResearch) =>
+    run(text, importIds, researchFollowupId, undefined, research), [run]);
   const resume = useCallback((action: AgentResumeAction) => run('', [], undefined, action), [run]);
 
   const stop = useCallback(() => controller.current?.abort(), []);
@@ -165,7 +166,7 @@ export function useAgentChat(input: {
     const question = current?.state === 'failed' && !current.resumeAction ? current.question : null;
     if (!question) return;
     setOverlay(null);
-    void send(question, current?.importIds ?? [], current?.researchFollowupId, current?.multiRoleFundCodes);
+    void send(question, current?.importIds ?? [], current?.researchFollowupId, current?.research);
   }, [current, send]);
 
   const turns: ChatTurn[] = [

@@ -20,8 +20,8 @@ from app.schemas.agent_import import AgentPendingAction, ImportId
 from app.schemas.agent_resume import AgentRunContinuation
 from app.schemas.multi_role_research import ResearchProgress
 
-# 多智能体入口的对象只能是从基金页带过来的六位代码，不接受名称（名称要经解析节点确认）
-MultiRoleFundCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
+# 客户端研究入口的对象只能是六位代码，不接受名称（名称要经解析节点确认）
+ResearchFundCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
 
 
 class Message(BaseModel):
@@ -86,10 +86,14 @@ class ChatRequest(BaseModel):
     holding_import_ids: list[ImportId] = Field(default_factory=list, max_length=5)
     holding_account_id: int | None = Field(default=None, gt=0)
     research_followup_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
-    multi_role_fund_codes: list[MultiRoleFundCode] = Field(
+    research_fund_codes: list[ResearchFundCode] = Field(
         default_factory=list,
         max_length=3,
-        description="客户端按钮直接授权的多智能体研究对象；只能是六位基金代码",
+        description="客户端选基金面板直接授权的研究对象；只能是六位基金代码",
+    )
+    research_strategy: Literal["single", "multi_role"] = Field(
+        default="single",
+        description="成本档位：single 一次模型出报告，multi_role 三角色合议（仅随 research_fund_codes 生效）",
     )
 
     @model_validator(mode="after")
@@ -102,19 +106,21 @@ class ChatRequest(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def valid_multi_role_request(self) -> "ChatRequest":
-        """多智能体入口只接受代码，且单独发起：附件、账户变更、追问都不能同行."""
-        if not self.multi_role_fund_codes:
+    def valid_client_research_request(self) -> "ChatRequest":
+        """客户端研究入口只接受代码，且单独发起：附件、账户变更、追问都不能同行."""
+        if self.research_strategy == "multi_role" and not self.research_fund_codes:
+            raise ValueError("多智能体档位需要同时给出研究对象代码")
+        if not self.research_fund_codes:
             return self
-        if len(set(self.multi_role_fund_codes)) != len(self.multi_role_fund_codes):
-            raise ValueError("多智能体研究的基金代码不能重复")
+        if len(set(self.research_fund_codes)) != len(self.research_fund_codes):
+            raise ValueError("研究的基金代码不能重复")
         if (
             self.holding_import_ids
             or self.holding_account_id is not None
             or self.research_followup_id
             or len(self.messages) != 1
         ):
-            raise ValueError("多智能体研究需要单独发起，不能与附件、账户变更或追问混合提交")
+            raise ValueError("发起研究需要单独提交，不能与附件、账户变更或追问混合")
         return self
 
 

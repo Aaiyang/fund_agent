@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import (
     Any,
     AsyncGenerator,
+    Literal,
     Optional,
     cast,
 )
@@ -79,7 +80,7 @@ from app.schemas.research import ResearchGraphState, ResearchTask
 from app.schemas.multi_role_research import ResearchProgress
 from app.services.agent_holding_import_service import agent_holding_import_service
 from app.utils.clock import business_now, trading_session_label
-from app.utils.task_routing import client_multi_role_request
+from app.utils.task_routing import client_research_request
 from app.agent.prompts import SYSTEM_PROMPT_VERSION
 from app.agent.tools.registry import TOOLS_VERSION
 from app.core.metrics import (
@@ -906,7 +907,12 @@ class LangGraphAgent:
         }
 
     @staticmethod
-    def _client_research_task(turn_id: str, instruction: str, codes: list[str]) -> ResearchTask:
+    def _client_research_task(
+        turn_id: str,
+        instruction: str,
+        codes: list[str],
+        strategy: Literal["single", "multi_role"],
+    ) -> ResearchTask:
         """基金页按钮的直接授权：不经过模型提出 start_research，对象仍是待解析代码.
 
         与追问按钮共用 ``route_task`` 的同一道服务端放行口；名称解析、歧义时的人工
@@ -914,7 +920,7 @@ class LangGraphAgent:
         """
         return ResearchTask(
             turn_id=turn_id,
-            request=client_multi_role_request(codes),
+            request=client_research_request(codes, strategy),
             instruction=instruction,
             requested_by="client",
         )
@@ -934,7 +940,8 @@ class LangGraphAgent:
         holding_import_ids: list[str] | None = None,
         holding_account_id: int | None = None,
         research_followup_id: str | None = None,
-        multi_role_fund_codes: list[str] | None = None,
+        research_fund_codes: list[str] | None = None,
+        research_strategy: Literal["single", "multi_role"] = "single",
     ) -> list[Message]:
         """从 LLM 获取响应.
 
@@ -946,7 +953,8 @@ class LangGraphAgent:
             holding_import_ids: 本轮已经验证归属的图片导入批次。
             holding_account_id: 用户显式指定的目标账户，不做默认选择。
             research_followup_id: 绑定本会话已有报告的进一步研究标识。
-            multi_role_fund_codes: 基金页按钮直接授权的多智能体研究对象（六位代码）。
+            research_fund_codes: 选基金面板直接授权的研究对象（六位代码）。
+            research_strategy: 成本档位，multi_role 才会拉起三角色合议。
 
         Returns:
             list[Message]: LLM 的响应消息。
@@ -1001,9 +1009,9 @@ class LangGraphAgent:
                 new_input = self._new_turn_state(messages, relevant_memory, holding_import_ids, holding_account_id)
                 if followup is not None:
                     new_input["research_task"] = followup.model_copy(update={"turn_id": new_input["turn_id"]})
-                elif multi_role_fund_codes:
+                elif research_fund_codes:
                     new_input["research_task"] = self._client_research_task(
-                        new_input["turn_id"], messages[-1].content, multi_role_fund_codes
+                        new_input["turn_id"], messages[-1].content, research_fund_codes, research_strategy
                     )
                 response = await graph.ainvoke(
                     input=new_input,
@@ -1049,7 +1057,8 @@ class LangGraphAgent:
         holding_import_ids: list[str] | None = None,
         holding_account_id: int | None = None,
         research_followup_id: str | None = None,
-        multi_role_fund_codes: list[str] | None = None,
+        research_fund_codes: list[str] | None = None,
+        research_strategy: Literal["single", "multi_role"] = "single",
         resume: FundSelectionDecision | AgentContinueRequest | None = None,
     ) -> AsyncGenerator[str | ResearchProgress, None]:
         """以流式方式从 LLM 获取响应.
@@ -1062,7 +1071,8 @@ class LangGraphAgent:
             holding_import_ids: 本轮已经验证归属的图片导入批次。
             holding_account_id: 用户显式指定的目标账户。
             research_followup_id: 绑定本会话已有报告的进一步研究标识。
-            multi_role_fund_codes: 基金页按钮直接授权的多智能体研究对象（六位代码）。
+            research_fund_codes: 选基金面板直接授权的研究对象（六位代码）。
+            research_strategy: 成本档位，multi_role 才会拉起三角色合议。
             resume: 已验证的人工决定或原任务轮次，不创建新的用户消息。
 
         Yields:
@@ -1122,9 +1132,9 @@ class LangGraphAgent:
                     )
                     if followup is not None:
                         graph_input["research_task"] = followup.model_copy(update={"turn_id": graph_input["turn_id"]})
-                    elif multi_role_fund_codes:
+                    elif research_fund_codes:
                         graph_input["research_task"] = self._client_research_task(
-                            graph_input["turn_id"], messages[-1].content, multi_role_fund_codes
+                            graph_input["turn_id"], messages[-1].content, research_fund_codes, research_strategy
                         )
 
             stream_started = time.perf_counter()

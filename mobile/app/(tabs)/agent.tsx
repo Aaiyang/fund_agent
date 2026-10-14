@@ -19,6 +19,7 @@ import {
 
 import { ErrorState, describeError } from '@/components/states';
 import { AgentSessionsPanel } from '@/components/AgentSessionsPanel';
+import { FundPickerSheet } from '@/components/FundPickerSheet';
 import { FundSelectionCard } from '@/components/FundSelectionCard';
 import { HoldingImportFlowCard } from '@/components/HoldingImportFlowCard';
 import { MarkdownText } from '@/components/MarkdownText';
@@ -31,6 +32,7 @@ import { useFundDetail } from '@/hooks/useFunds';
 import { useLlmProfiles } from '@/hooks/useLlmProfiles';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
+import { composeResearchQuestion, type PickerFund, type ResearchTier } from '@/utils/fundPicker';
 
 /** 选完只留在本地，随问题发送附件；识别由后端子图启动。 */
 type Attachment = { key: string; images: PickedImage[] };
@@ -193,6 +195,8 @@ export default function AgentScreen() {
 
   const context = useFundDetail(paramCode ?? null);
   const [contextDismissed, setContextDismissed] = useState(false);
+  /** 选基金面板：多选 1~3 只后直接发起分析/对比。 */
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
@@ -348,17 +352,29 @@ export default function AgentScreen() {
   /**
    * 基金页带过来的上下文里直接发起多智能体研究。
    *
-   * 代码走 `multi_role_fund_codes` 这个结构化字段，由后端当作"用户点按钮"的授权，
+   * 代码走 `research_fund_codes` 这个结构化字段，由后端当作"用户点按钮"的授权，
    * 不靠模型自己决定要不要多花几倍 token；消息正文仍然照常展示，也保证后端在结构化
    * 字段缺失时仍能按原文规则识别。
    */
   function startMultiRoleResearch() {
     if (!contextCode || chat.sending || uploading || review || pending.data?.continuation) return;
     const name = context.data?.fund_name;
+    void runResearch([{ code: contextCode, name: name ?? '' }], 'multi_role');
+  }
+
+  /**
+   * 把选中的基金发成一次研究请求：正文给人看，代码和成本档位走结构化字段。
+   *
+   * 不能只靠正文让后端的文本规则去猜：基金名里常带"股票/行业/主题"，那些词会让
+   * 规则直接放弃对比路由，结果就是点了「对比分析」却变成单基金研究。
+   */
+  function runResearch(funds: PickerFund[], tier: ResearchTier) {
+    if (!funds.length || chat.sending || uploading || review || pending.data?.continuation) return;
+    setPickerOpen(false);
     atBottom.current = true;
     setOffBottomDuringStream(false);
     void chat
-      .send(`请对 ${contextCode}${name ? ` ${name}` : ''} 做多智能体深度研究`, [], undefined, [contextCode])
+      .send(composeResearchQuestion(funds), [], undefined, { codes: funds.map((fund) => fund.code), strategy: tier })
       .catch((error: unknown) => setProblem(describeError(error)));
     requestAnimationFrame(stickToBottom);
   }
@@ -601,6 +617,16 @@ export default function AgentScreen() {
           >
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="选择基金发起研究"
+              hitSlop={10}
+              onPress={() => setPickerOpen(true)}
+              disabled={chat.sending || uploading || Boolean(review)}
+              style={{ minWidth: 34, height: 34, borderRadius: 17, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", opacity: chat.sending || uploading || review ? 0.4 : 1 }}
+            >
+              <Text style={{ fontSize: 12, color: theme.textMuted }}>选基金</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel="添加附件"
               hitSlop={10}
               onPress={() => void pickAttachments()}
@@ -662,6 +688,9 @@ export default function AgentScreen() {
       {sessionsOpen ? (
         <AgentSessionsPanel activeSessionId={sessionId} onPick={setSessionId} onClose={closeSessions} />
       ) : null}
+
+      {/* 只在打开时挂载：否则聊天页每次进来都会白拉一次持仓和自选列表。 */}
+      {pickerOpen ? <FundPickerSheet visible busy={chat.sending} onClose={() => setPickerOpen(false)} onConfirm={runResearch}/> : null}
     </Screen>
   );
 }

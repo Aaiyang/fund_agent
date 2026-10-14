@@ -5464,15 +5464,25 @@
             ],
             "title": "Holding Account Id"
           },
-          "multi_role_fund_codes": {
+          "research_fund_codes": {
             "items": {
               "type": "string",
               "pattern": "^\\d{6}$"
             },
             "type": "array",
             "maxItems": 3,
-            "title": "Multi Role Fund Codes",
-            "description": "客户端按钮直接授权的多智能体研究对象；只能是六位基金代码"
+            "title": "Research Fund Codes",
+            "description": "客户端选基金面板直接授权的研究对象；只能是六位基金代码"
+          },
+          "research_strategy": {
+            "type": "string",
+            "enum": [
+              "single",
+              "multi_role"
+            ],
+            "title": "Research Strategy",
+            "description": "成本档位：single 一次模型出报告，multi_role 三角色合议（仅随 research_fund_codes 生效）",
+            "default": "single"
           }
         },
         "type": "object",

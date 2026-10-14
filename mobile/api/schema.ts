@@ -2063,8 +2063,13 @@ export interface components {
             holding_account_id?: number | null;
             /** Server-issued report reference for multi-role research. */
             research_followup_id?: string | null;
-            /** 客户端按钮直接授权的多智能体研究对象；只能是六位基金代码 */
-            multi_role_fund_codes?: string[];
+            /** 选基金面板直接授权的研究对象；只能是六位基金代码 */
+            research_fund_codes?: string[];
+            /**
+             * 成本档位：single 一次模型出报告，multi_role 三角色合议（仅随 research_fund_codes 生效）
+             * @default single
+             */
+            research_strategy?: 'single' | 'multi_role';
         };
         /**
          * ChatResponse

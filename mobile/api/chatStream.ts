@@ -104,15 +104,16 @@ export function streamChatMessage(input: StreamInput & {
   /** 这一条消息带上的截图批次；后端会校验它们确实属于这个会话。 */
   holdingImportIds?: string[];
   researchFollowupId?: string;
-  /** 基金页按钮直接授权的多智能体研究对象（六位代码）。 */
-  multiRoleFundCodes?: string[];
+  /** 选基金面板直接授权的研究对象与成本档位。 */
+  researchFundCodes?: string[];
+  researchStrategy?: 'single' | 'multi_role';
 }): Promise<void> {
   const { text, holdingImportIds = [] } = input;
   return streamRequest(input, '/chatbot/chat/stream', {
     messages: [{ role: 'user', content: text }],
     ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
     ...(input.researchFollowupId ? { research_followup_id: input.researchFollowupId } : {}),
-    ...(input.multiRoleFundCodes?.length ? { multi_role_fund_codes: input.multiRoleFundCodes } : {}),
+    ...(input.researchFundCodes?.length ? { research_fund_codes: input.researchFundCodes, research_strategy: input.researchStrategy ?? 'single' } : {}),
   });
 }
 

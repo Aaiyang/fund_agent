@@ -26,21 +26,24 @@ def research_strategy(text: str) -> Literal["single", "multi_role"]:
     return "multi_role" if explicit_multi_role_research(text) else "single"
 
 
-def client_multi_role_request(codes: list[str]) -> ResearchRequest:
-    """客户端按钮直接授权的多智能体研究；对象是已确认的六位代码，不含名称猜测.
+def client_research_request(codes: list[str], strategy: Literal["single", "multi_role"]) -> ResearchRequest:
+    """客户端选基金面板直接授权的研究；对象是六位代码，不含名称猜测.
 
     与 ``explicit_multi_role_research`` 走同一套 ``ResearchRequest`` 校验，只是授权
-    来源从"用户原话里有那几个字"换成"用户点了那只基金的研究按钮"。名称解析、歧义
-    时的人工选卡、深度取证全部沿用原节点，不在这里另开一条链。
+    来源从"用户原话里有那几个字"换成"用户点了研究按钮"。名称解析、歧义时的人工选卡、
+    深度取证全部沿用原节点，不另开一条链。
+
+    ``strategy`` 只由客户端决定：普通对比/分析走 ``single``（一次模型出报告），
+    ``multi_role`` 才会拉起三角色合议，成本是前者的数倍，所以不让模型自己挑。
     """
     unique = list(dict.fromkeys(codes))
     if not 1 <= len(unique) <= 3:
-        raise ValueError("多智能体研究一次最多三只基金")
+        raise ValueError("一次最多研究三只基金")
     return ResearchRequest(
         intent="fund_comparison" if len(unique) > 1 else "fund_research",
         fund_queries=unique,
         mode="deep",
-        strategy="multi_role",
+        strategy=strategy,
     )
 
 

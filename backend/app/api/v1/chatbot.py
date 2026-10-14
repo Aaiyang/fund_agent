@@ -96,7 +96,7 @@ async def _validate_chat_imports(session: Session, chat_request: ChatRequest) ->
             if isinstance(pending, FundSelectionAction)
             else "holding_import_review_pending",
         )
-    if chat_request.multi_role_fund_codes and pending:
+    if chat_request.research_fund_codes and pending:
         # 挂着人工卡时这条文本会被当成卡的答复，研究请求会被静默吞掉
         raise HTTPException(status_code=409, detail="multi_role_research_requires_no_pending_action")
     if chat_request.holding_account_id is not None:
@@ -643,7 +643,8 @@ async def chat(
                     holding_import_ids=chat_request.holding_import_ids,
                     holding_account_id=chat_request.holding_account_id,
                     research_followup_id=chat_request.research_followup_id,
-                    multi_role_fund_codes=chat_request.multi_role_fund_codes,
+                    research_fund_codes=chat_request.research_fund_codes,
+                    research_strategy=chat_request.research_strategy,
                 )
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -731,7 +732,8 @@ async def chat_stream(
                                         holding_import_ids=chat_request.holding_import_ids,
                                         holding_account_id=chat_request.holding_account_id,
                                         research_followup_id=chat_request.research_followup_id,
-                                        multi_role_fund_codes=chat_request.multi_role_fund_codes,
+                                        research_fund_codes=chat_request.research_fund_codes,
+                                        research_strategy=chat_request.research_strategy,
                                     )
                                 )
                             ) as stream:
