@@ -15,6 +15,7 @@ from app.schemas.graph import GraphState
 from app.schemas.research import ResearchRequest, ResearchResult, ResearchTask
 from app.utils.task_routing import (
     explicitly_supplied_operation_amount,
+    explicit_multi_role_research,
     infer_research_request,
     request_after_fund_selection,
 )
@@ -24,6 +25,11 @@ from app.core.logging import logger
 
 def route_task(state: GraphState) -> Command:
     """规则明确的请求直接执行；其他自然语言复用chat首次调用提出start_research."""
+    trusted = getattr(state, "research_task", None)
+    # 服务端授权的两种入口：报告按钮（followup）与基金页的多智能体按钮（client）。
+    # 模型自己提出的 start_research 仍要逐字段过本轮原文取证。
+    if trusted is not None and trusted.requested_by != "model" and trusted.turn_id == state.turn_id:
+        return Command(goto="continue_research")
     last = state.messages[-1] if state.messages else None
     request = None
     updates: dict = {}
@@ -37,6 +43,8 @@ def route_task(state: GraphState) -> Command:
             if len(calls) != 1:
                 raise ValueError("一次只启动一个研究任务，请将复合任务按顺序处理")
             request = ResearchRequest.model_validate(calls[0]["args"])
+            if request.strategy == "multi_role" and not explicit_multi_role_research(instruction):
+                raise ValueError("多角色研究需要用户明确请求或通过报告按钮启动")
             normalized = "".join(instruction.split()).casefold()
             confirmed = state.fund_selection_result
             if request.sector_query and "".join(request.sector_query.split()).casefold() not in normalized:
@@ -111,6 +119,8 @@ def route_task(state: GraphState) -> Command:
         request = infer_research_request(instruction)
     if request is None:
         return Command(goto="chat")
+    if request.strategy == "multi_role":
+        request = request.model_copy(update={"mode": "deep"})
     resolved = []
     confirmed = state.fund_selection_result
     if confirmed is not None and confirmed.turn_id == state.turn_id and confirmed.fund is not None:

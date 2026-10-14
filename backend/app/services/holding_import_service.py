@@ -357,7 +357,7 @@ class HoldingImportService:
         """由持有批次行锁的事务调用，所有持仓、流水与状态要么一起提交，要么一起回滚."""
         if record.account_id is None:
             raise ImportStateError("import_account_required")
-        await portfolio_service.ensure_account(user_id, record.account_id)
+        await portfolio_service.ensure_account(user_id, record.account_id, for_update=True)
         items = await import_repository.list_items(import_id)
         applied = skipped = 0
         for item in items:
@@ -385,6 +385,7 @@ class HoldingImportService:
                 record.account_id,
                 item.matched_fund_code,
                 expected_version=None,
+                allow_unversioned_update=True,
                 purchase_date=held_since or latest_session(business_today()),
                 **fields,
             )

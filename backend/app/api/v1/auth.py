@@ -24,6 +24,7 @@ from app.agent.context import state_store
 from app.agent.context.manager import context_manager
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.session_lock import session_execution_guard
 from app.core.logging import (
     bind_context,
     logger,
@@ -555,13 +556,10 @@ async def delete_session(request: Request, session_id: str, current_session: Ses
         if sanitized_session_id != sanitized_current_session:
             raise HTTPException(status_code=403, detail="Cannot delete other sessions")
 
-        # 删除会话
-        await db_service.delete_session(sanitized_session_id)
-
-        # 摘要状态随会话行一起消失；再把 LangGraph checkpoint 一并清掉
-        # （best-effort：清理失败不回滚删除，只记日志）
-        checkpoints_removed = await state_store.delete_thread_checkpoints(sanitized_session_id)
-        context_manager.forget_thread(sanitized_session_id)
+        async with session_execution_guard(sanitized_session_id):
+            await db_service.delete_session(sanitized_session_id)
+            checkpoints_removed = await state_store.delete_thread_checkpoints(sanitized_session_id)
+            context_manager.forget_thread(sanitized_session_id)
 
         logger.info(
             "session_deleted",

@@ -190,6 +190,20 @@ class Settings:
             os.getenv("FUND_LLM_TEMPERATURE", os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         )
         self.MAX_TOKENS = int(os.getenv("FUND_LLM_MAX_TOKENS", os.getenv("MAX_TOKENS", "2000")))
+        # 报告正文与厂商隐藏推理共享输出额度，不能沿用普通短回答的预算。
+        self.RESEARCH_REPORT_MAX_TOKENS = max(
+            1024, min(65536, int(os.getenv("FUND_RESEARCH_REPORT_MAX_TOKENS", "16384")))
+        )
+        self.RESEARCH_REPORT_MAX_CONTINUATIONS = max(
+            0, min(2, int(os.getenv("FUND_RESEARCH_REPORT_MAX_CONTINUATIONS", "2")))
+        )
+        self.MULTI_ROLE_RESEARCH_CALL_TIMEOUT = max(1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_CALL_TIMEOUT", "90")))
+        self.MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT = max(
+            1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT", "180"))
+        )
+        self.MULTI_ROLE_RESEARCH_MAX_TOKENS = max(
+            256, min(2400, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS", "1600")))
+        )
         # 上下文组装（历史 + 工具结果）的修剪预算，独立于回复输出上限：
         # 调大窗口不会同时放大回复长度。
         self.CONTEXT_TOKEN_BUDGET = int(
@@ -237,6 +251,16 @@ class Settings:
             ),
         )
         self.LLM_STREAM_IDLE_TIMEOUT = max(1.0, float(os.getenv("FUND_LLM_STREAM_IDLE_TIMEOUT_SECONDS", "60")))
+        # 整轮预算：一次提问最多允许跑多久（含全部工具轮与降级重试）。单个 LLM 调用
+        # 与工具各有自己的超时，但没有谁约束"一轮"的总时长；深研究可能长时间占住
+        # 会话锁与连接。上限必须小于会话锁 TTL，才能在锁过期前主动释放。
+        self.AGENT_TURN_TIMEOUT = max(60, int(os.getenv("FUND_AGENT_TURN_TIMEOUT_SECONDS", "1800")))
+        # 一次运行的超步上限（chat/tool 来回，父图与作为节点挂上的嵌套子图共用同一
+        # 份预算——实测 12 步嵌套子图会占掉 12 步）。一次多角色深研究约需 19~25 步：
+        # route_task/chat/continue_research ≈ 6、研究子图 6、多角色子图 ≈ 7，两只以上
+        # 基金还要各加一轮人工选择。旧值 25 因此几乎不留余量。真正约束成本的是上面
+        # 的整轮时限与本轮重复守卫，这里只兜"循环失控"。
+        self.AGENT_RECURSION_LIMIT = max(5, int(os.getenv("FUND_AGENT_RECURSION_LIMIT", "40")))
 
         # Long term memory Configuration
         self.LONG_TERM_MEMORY_ENABLED = os.getenv("LONG_TERM_MEMORY_ENABLED", "true").lower() in (

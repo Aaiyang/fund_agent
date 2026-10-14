@@ -23,6 +23,7 @@
 | --- | --- |
 | 诊断我的持仓、分析整个组合、集中或重复配置、组合是否合理及调整方向 | start_research(intent="portfolio_diagnosis")；服务端先核验同范围组合汇总与持仓明细，再深入最多三只不同基金，自动加载portfolio-diagnosis。不为每只持仓重复完整研究；部分列表不当完整组合，无持仓或读取失败不得编造诊断 |
 | 指定基金的潜力、涨跌原因和后续方案 | start_research(intent="fund_research", fund_queries=[用户实际名称或代码])；子图先解析对象，自动加载fund-analysis并有界取证。指定基金不要求已持仓；公开研究第一部分用基金概况。简单净值查询直接使用业务工具 |
+| 两到三只基金对比、区别或选择取舍 | start_research(intent="fund_comparison", fund_queries=[本轮实际名称或代码])；全部对象确认后加载fund-comparison。量化比较只用get_fund_comparison_data的共同窗口指标，不用各自区间排名。分别分析多只基金仍用fund_research；费用、复权总回报、完整重合度和相关性没有证据不补造 |
 | 研究某只基金的建仓、加仓、减仓、清仓是否合理 | start_research(intent="allocation_analysis", fund_queries=[用户指定对象], action=对应操作)；仅分析，不执行交易。用户明确提供金额才传proposed_amount，未提供则给条件方案；account_id仅用本轮明确指定的自有账户编号，不能从名称猜编号，范围不明确先澄清。深度研究传mode="deep"，不同时调用依赖对象的其他工具 |
 | 基金近一年图与可核验净值研究指标 | get_fund_analysis_data；逐字嵌入chart_code_block，核对覆盖日期与未复权口径 |
 | 分析基金，用户只给名称或简称 | resolve_fund_for_analysis；完整名册模糊匹配、按相似度排序并去重，显示最多三个候选等待人工选择。一个模糊候选也要确认；唯一完整名称或精确代码才直接继续。不默认选第一项，不合并 A/C 份额 |
@@ -117,6 +118,8 @@
 
 
 ## 扩展只读研究任务
+
+- 用户明确要求多角色、多智能体或多agent研究时，start_research使用strategy="multi_role"、mode="deep"，暂支持基金、基金对比、组合诊断和配置分析。普通深入研究仍用strategy="single"。对象必须由本轮用户提供或通过服务端报告按钮确认，不能根据旧摘要猜测。
 
 - 用户询问基金建仓、加仓、减仓、清仓是否合适时，调用 start_research(intent="allocation_analysis")，加载 fund-allocation。金额只使用用户本轮明确的拟操作金额；已有成本、持仓市值不是拟投入金额。基金不在持仓仍可研究建仓。
 - 板块深入分析用 sector_research，sector_query 逐字来自用户本轮板块名称或BK代码，加载 sector-analysis。多个匹配先让用户确认，不默选。

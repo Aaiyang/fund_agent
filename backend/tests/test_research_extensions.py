@@ -50,7 +50,10 @@ def test_model_cannot_invent_listing_or_sector_identifiers():
         call = AIMessage(content="", tool_calls=[{"name": "start_research", "args": args, "id": "r"}])
         command = route_task(
             SimpleNamespace(
-                messages=[HumanMessage(content="分析茅台和科技"), call], fund_selection_result=None, turn_id="t"
+                messages=[HumanMessage(content="分析茅台和科技"), call],
+                fund_selection_result=None,
+                research_task=None,
+                turn_id="t",
             )
         )
         assert command.goto == "chat"
@@ -76,6 +79,7 @@ def test_existing_position_value_cannot_be_converted_to_proposed_operation_amoun
     state = SimpleNamespace(
         messages=[HumanMessage(content="000001市值200元，我想加仓是否合理"), call],
         fund_selection_result=None,
+        research_task=None,
         turn_id="t",
     )
     assert route_task(state).goto == "chat"
@@ -122,7 +126,10 @@ def test_research_request_reuses_this_turn_confirmed_fund_without_search():
         ],
     )
     state = SimpleNamespace(
-        messages=[HumanMessage(content="分析平安科技"), proposal], fund_selection_result=outcome, turn_id="t"
+        messages=[HumanMessage(content="分析平安科技"), proposal],
+        fund_selection_result=outcome,
+        research_task=None,
+        turn_id="t",
     )
     command = route_task(state)
     assert command.goto == "continue_research"
@@ -216,7 +223,7 @@ async def test_stock_research_keeps_partial_sources_and_does_not_send_series(mon
     assert quote.await_count == 1
 
 
-async def test_snapshot_precedes_skill_plan_and_public_stock_report_is_one_call():
+async def test_public_stock_skips_private_reads_and_uses_loaded_skill_plan_in_one_report():
     calls = []
     reports = []
 
@@ -245,7 +252,7 @@ async def test_snapshot_precedes_skill_plan_and_public_stock_report_is_one_call(
     output = await graph.ainvoke(
         ResearchGraphState(turn_id="t", research_task=task, messages=[HumanMessage(content=task.instruction)])
     )
-    assert calls == ["get_portfolio_snapshot", "get_stock_analysis_data"] and len(reports) == 1
+    assert calls == ["get_stock_analysis_data"] and len(reports) == 1
     assert "stock_price" in output["messages"][-1].content
     assert "get_positions" not in reports[0]
 

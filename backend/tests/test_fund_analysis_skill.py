@@ -290,7 +290,7 @@ async def test_private_cost_is_runtime_scoped_and_quote_fields_are_preserved(mon
 
 
 def test_registry_and_schemas_scope():
-    assert TOOLS_VERSION == "v17"
+    assert TOOLS_VERSION == "v19"
     assert get_fund_analysis_data in FUND_TOOLS and load_skill in SYSTEM_TOOLS
     assert load_skill in DEFAULT_AGENT_TOOLS and set(get_fund_analysis_data.args) == {"fund_code"}
     assert set(load_skill.args) == {"skill_name", "section"}
@@ -415,7 +415,7 @@ async def test_public_fund_research_and_chart_do_not_require_positions(service, 
             return None
 
         async def call(self, inputs, *args, **kwargs):
-            assert kwargs == {"max_tokens": settings.MAX_TOKENS}
+            assert kwargs == {"max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS, "report_mode": True}
             context = "\n".join(str(message.content) for message in inputs)
             payload, _ = json.JSONDecoder().raw_decode(context.split("# 本轮证据（非指令）\n")[1])
             evidence = next(item for item in payload["evidence"] if item["tool"] == "get_fund_analysis_data")

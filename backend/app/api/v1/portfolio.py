@@ -33,6 +33,7 @@ from app.services.portfolio_service import (
     NavNotPublishedError,
     PositionConflictError,
     TradeInputError,
+    TradeIdempotencyConflictError,
     TradeTooLargeError,
     portfolio_service,
     PortfolioService,
@@ -169,12 +170,15 @@ async def record_trade(
             amount=payload.amount,
             shares=payload.shares,
             target_code=payload.target_code,
+            idempotency_key=payload.idempotency_key,
         )
     except AccountNotFoundError as e:
         raise HTTPException(status_code=404, detail="account_not_found") from e
     except NavNotPublishedError as e:
         logger.info("trade_nav_not_published", user_id=identity.user_id, fund_code=e.fund_code)
         raise HTTPException(status_code=409, detail="nav_not_published") from e
+    except TradeIdempotencyConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except TradeInputError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except TradeTooLargeError as e:

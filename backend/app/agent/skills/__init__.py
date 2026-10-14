@@ -4,10 +4,11 @@ from pathlib import Path
 
 from app.schemas.agent_skill import LoadedSkill, SkillName, SkillSection
 
-SKILLS_VERSION = "v7"
+SKILLS_VERSION = "v8"
 _ROOT = Path(__file__).parent
 _VERSIONS: dict[SkillName, str] = {
     "fund-analysis": "1.4.0",
+    "fund-comparison": "1.0.0",
     "portfolio-diagnosis": "1.0.0",
     "fund-allocation": "1.0.0",
     "sector-analysis": "1.0.0",

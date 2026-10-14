@@ -13,6 +13,9 @@ from openai import OpenAIError
 from app.api.v1 import chatbot
 from app.api.v1.auth import get_current_session
 from app.agent.graph import agent as agent_module
+from unittest.mock import AsyncMock
+
+from app.core import session_lock
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.schemas.chat import Message
@@ -71,6 +74,7 @@ async def test_concurrent_scopes_and_fallback_do_not_change_global_model(monkeyp
 @pytest.mark.parametrize("endpoint", ["/chat", "/chat/stream"])
 def test_chat_routes_use_authenticated_owners_scope_and_reject_forged_roles(monkeypatch, endpoint):
     monkeypatch.setattr(service_module, "_build_chat_model", FakeModel)
+    monkeypatch.setattr(session_lock.database_service, "get_session", AsyncMock(return_value=object()))
     monkeypatch.setattr(settings, "SESSION_NAMING_ENABLED", False)
 
     async def execution_profiles(user_id):

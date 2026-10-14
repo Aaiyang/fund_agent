@@ -293,7 +293,7 @@ async def test_tools_use_safe_errors_and_correct_dates(disclosures):
 
 
 def test_registry_and_request_scope():
-    assert TOOLS_VERSION == "v17"
+    assert TOOLS_VERSION == "v19"
     assert get_fund_managers in FUND_TOOLS and get_fund_announcements in DEFAULT_AGENT_TOOLS
     assert set(get_fund_managers.args) == {"fund_code", "limit", "refresh"}
     assert "user_id" not in get_fund_announcements.args and "url" not in get_fund_announcements.args

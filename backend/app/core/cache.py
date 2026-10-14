@@ -7,6 +7,7 @@ Otherwise, falls back to a simple in-memory TTL cache.
 import hashlib
 import time
 import uuid
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -42,6 +43,14 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
 end
 return 0
 """
+
+
+@dataclass(frozen=True)
+class LockLease:
+    """一次锁获取的凭证；释放只能使用本次获取的 token."""
+
+    key: str
+    token: str
 
 
 class InMemoryCacheService:
@@ -102,7 +111,7 @@ class InMemoryCacheService:
         """
         self._cache.pop(key, None)
 
-    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> bool:
+    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> LockLease | None:
         """Acquire a process-local lock keyed by cache key.
 
         Args:
@@ -111,23 +120,24 @@ class InMemoryCacheService:
             fail_open: Compatibility option; in-memory acquisition has no external backend.
 
         Returns:
-            True if the lock was acquired, False if already held.
+            A lease owned by this acquisition, or None if already held.
         """
         entry = self._cache.get(key)
         if entry is not None and time.monotonic() <= entry[0]:
-            return False
-        # One process is the only possible holder here, so there is nothing to
-        # distinguish it from: the cross-worker hazard lives in the Redis path.
-        self._cache[key] = (time.monotonic() + ttl, "lock")
-        return True
+            return None
+        lease = LockLease(key, uuid.uuid4().hex)
+        self._cache[key] = (time.monotonic() + ttl, lease.token)
+        return lease
 
-    async def release_lock(self, key: str) -> None:
+    async def release_lock(self, lease: LockLease) -> None:
         """Release a process-local lock.
 
         Args:
-            key: The lock key.
+            lease: The credential returned by acquisition.
         """
-        self._cache.pop(key, None)
+        entry = self._cache.get(lease.key)
+        if entry is not None and entry[1] == lease.token:
+            self._cache.pop(lease.key, None)
 
     async def close(self) -> None:
         """Clear the in-memory cache."""
@@ -145,9 +155,6 @@ class ValkeyCacheService:
         """
         self._client: Optional[Redis] = None
         self._default_ttl = default_ttl
-        # Key -> token this process wrote; release must not drop a lock that
-        # expired and was then taken by another worker.
-        self._lock_tokens: dict[str, str] = {}
 
     async def initialize(self) -> None:
         """Connect to Redis/Valkey server."""
@@ -231,7 +238,7 @@ class ValkeyCacheService:
         except Exception as e:
             logger.warning("cache_delete_failed", key=key, error=str(e))
 
-    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> bool:
+    async def acquire_lock(self, key: str, ttl: int = 60, *, fail_open: bool = True) -> LockLease | None:
         """Acquire a distributed lock via SET NX EX.
 
         Args:
@@ -240,38 +247,35 @@ class ValkeyCacheService:
             fail_open: Permit execution during backend failure; sensitive operations use False.
 
         Returns:
-            True if the lock was acquired, False if already held. Fails open
-            (returns True) when the cache backend is unreachable so a cache
+            A lease owned by this acquisition, or None if already held. Fails open
+            (returns a bypass lease) when the cache backend is unreachable so a cache
             outage never blocks fund synchronization. Sensitive workflows can
             set fail_open=False to refuse unprotected execution.
         """
         if not self._client:
-            return fail_open
+            return LockLease(key, "") if fail_open else None
         token = uuid.uuid4().hex
         try:
             acquired = bool(await self._client.set(key, token, nx=True, ex=ttl))
-            if acquired:
-                self._lock_tokens[key] = token
-            return acquired
+            return LockLease(key, token) if acquired else None
         except Exception as e:
             logger.warning("cache_lock_acquire_failed", key=key, error=str(e))
-            return fail_open
+            return LockLease(key, "") if fail_open else None
 
-    async def release_lock(self, key: str) -> None:
+    async def release_lock(self, lease: LockLease) -> None:
         """Release a distributed lock.
 
         Args:
-            key: The lock key.
+            lease: The credential returned by acquisition.
         """
-        token = self._lock_tokens.pop(key, None)
-        if not self._client or token is None:
+        if not self._client or not lease.token:
             return
         try:
             # Compare-and-delete: a plain DELETE would free whoever holds the
             # lock after ours timed out.
-            await cast(Awaitable[Any], self._client.eval(_RELEASE_LOCK_SCRIPT, 1, key, token))
+            await cast(Awaitable[Any], self._client.eval(_RELEASE_LOCK_SCRIPT, 1, lease.key, lease.token))
         except Exception as e:
-            logger.warning("cache_lock_release_failed", key=key, error=str(e))
+            logger.warning("cache_lock_release_failed", key=lease.key, error=str(e))
 
     async def close(self) -> None:
         """Close the Valkey connection."""

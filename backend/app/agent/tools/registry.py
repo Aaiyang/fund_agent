@@ -20,6 +20,7 @@ from app.agent.tools.fund import (
     get_fund_managers,
     get_fund_announcements,
     get_fund_analysis_data,
+    get_fund_comparison_data,
     get_sector_market,
     search_funds,
     resolve_fund_for_analysis,
@@ -37,7 +38,7 @@ from app.agent.tools.portfolio import (
 )
 
 # 工具集版本：仅当工具增删或 Schema 变化时升级（KV Cache 全局前缀组成部分）
-TOOLS_VERSION = "v17"
+TOOLS_VERSION = "v19"
 
 # 基金域
 FUND_TOOLS: list[BaseTool] = [
@@ -51,6 +52,7 @@ FUND_TOOLS: list[BaseTool] = [
     get_fund_managers,
     get_fund_announcements,
     get_fund_analysis_data,
+    get_fund_comparison_data,
 ]
 
 # 组合域

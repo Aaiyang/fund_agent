@@ -22,7 +22,9 @@
 # v21：本轮持仓导入意图优先，附件存在不等于导入授权
 # v22：主图任务路由、有界研究子图与只读操作情景分析
 # v23：固定持仓快照、按任务加载skill与股票/板块/操作图表引用
-SYSTEM_PROMPT_VERSION = "fund-agent-v23"
+# v24：基金横向对比与共同净值窗口计算，保留数据不足及费用边界
+# v25：用户显式启动多角色研究与任务内证据通信边界
+SYSTEM_PROMPT_VERSION = "fund-agent-v25"
 
 import os
 from typing import Optional

@@ -175,6 +175,16 @@ class TradeCreateRequest(BaseModel):
     amount: float | None = Field(default=None, gt=0, description="买入/定投的成交金额")
     shares: float | None = Field(default=None, gt=0, description="卖出/转换份额")
     target_code: str | None = Field(default=None, min_length=6, max_length=6, description="转换目标基金")
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=64,
+        description="同一交易的重试沿用此键；复用键但改变参数返回 409",
+    )
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def _idempotency_key_not_blank(cls, value: str) -> str:
+        return clean_required_text(value) or value
 
     @model_validator(mode="after")
     def _order_carries_its_own_unit(self) -> "TradeCreateRequest":

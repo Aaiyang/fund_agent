@@ -2,9 +2,11 @@
 
 from collections.abc import Sequence
 from datetime import date
+import hashlib
+from typing import Any
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
@@ -38,14 +40,15 @@ class PortfolioRepository:
             )
             return list(result.scalars().all())
 
-    async def get_account(self, user_id: int, account_id: int) -> PortfolioAccount | None:
+    async def get_account(self, user_id: int, account_id: int, *, for_update: bool = False) -> PortfolioAccount | None:
         """读取该用户名下的一个账户."""
         async with get_async_session() as session:
-            result = await session.execute(
-                select(PortfolioAccount).where(
-                    col(PortfolioAccount.id) == account_id, col(PortfolioAccount.user_id) == user_id
-                )
+            statement = select(PortfolioAccount).where(
+                col(PortfolioAccount.id) == account_id, col(PortfolioAccount.user_id) == user_id
             )
+            if for_update:
+                statement = statement.with_for_update()
+            result = await session.execute(statement)
             return result.scalar_one_or_none()
 
     async def find_account_by_name(
@@ -208,6 +211,8 @@ class PortfolioRepository:
         profit_loss: float | None = None,
         purchase_date: date | None = None,
         reset: Sequence[str] = (),
+        *,
+        allow_unversioned_update: bool = False,
     ) -> PortfolioPosition | None:
         """带乐观锁的持仓插入或更新.
 
@@ -224,6 +229,7 @@ class PortfolioRepository:
             profit_loss: 累计盈亏。
             purchase_date: 首次购买确认日，持有天数从这一天开始算。
             reset: 应用完上面这些值之后要清空的列名，让这些数字重新回到查询时派生。
+            allow_unversioned_update: 仅供已持有账户事务锁的内部投影及确认导入使用。
 
         Returns:
             更新后的持仓；版本冲突或该行不存在时返回 None。
@@ -231,61 +237,52 @@ class PortfolioRepository:
         字段为 None 表示调用方没有提供，已存的值原样保留：spec 3.7.1 允许部分快照，
         同时禁止凭空造出数据。
         """
+        supplied = {
+            "shares": shares,
+            "cost_amount": cost_amount,
+            "average_cost_nav": average_cost_nav,
+            "market_value": market_value,
+            "profit_loss": profit_loss,
+            "purchase_date": purchase_date,
+        }
+        values: dict[str, Any] = {key: value for key, value in supplied.items() if value is not None}
+        values.update({key: None for key in reset if key in supplied})
+        values["updated_at"] = utc_now()
         async with get_async_session() as session:
-            existing = await self._select_position(session, user_id, account_id, fund_code)
-
-            if existing is None:
-                if expected_version is not None:
-                    return None  # 调用方以为行已经存在，按版本冲突处理
-                statement = pg_insert(PortfolioPosition).values(
+            if expected_version is not None:
+                statement = (
+                    update(PortfolioPosition)
+                    .where(
+                        col(PortfolioPosition.user_id) == user_id,
+                        col(PortfolioPosition.account_id) == account_id,
+                        col(PortfolioPosition.fund_code) == fund_code,
+                        col(PortfolioPosition.version) == expected_version,
+                    )
+                    .values(**values, version=col(PortfolioPosition.version) + 1)
+                    .returning(PortfolioPosition)
+                )
+            else:
+                insert = pg_insert(PortfolioPosition).values(
+                    **values,
                     user_id=user_id,
                     account_id=account_id,
                     fund_code=fund_code,
-                    shares=shares,
-                    cost_amount=cost_amount,
-                    average_cost_nav=average_cost_nav,
-                    market_value=market_value,
-                    profit_loss=profit_loss,
-                    purchase_date=purchase_date,
                     version=1,
-                    updated_at=utc_now(),
                     created_at=utc_now(),
                 )
-                created = (
-                    await session.execute(statement.on_conflict_do_nothing(constraint="uq_position_account_fund"))
-                ).rowcount
-                if created:
-                    return await self._select_position(session, user_id, account_id, fund_code)
-                # 并发的首次写入抢先落了这一行：改成更新它，而不是把唯一约束冲突
-                # 抛成一个 500。
-                existing = await self._select_position(session, user_id, account_id, fund_code)
-                if existing is None:
-                    return None
-
-            if expected_version is not None and existing.version != expected_version:
-                return None  # 乐观锁版本冲突
-
-            supplied = {
-                "shares": shares,
-                "cost_amount": cost_amount,
-                "average_cost_nav": average_cost_nav,
-                "market_value": market_value,
-                "profit_loss": profit_loss,
-                "purchase_date": purchase_date,
-            }
-            for key, value in supplied.items():
-                if value is not None:
-                    setattr(existing, key, value)
-            # `reset` 是调用方在说“把这个数字交回派生口径”；键要和上面同一份集合比对，
-            # 所以不可能只凭一个列名就清空某一列。
-            for key in reset:
-                if key in supplied:
-                    setattr(existing, key, None)
-            existing.version = (existing.version or 1) + 1
-            existing.updated_at = utc_now()
-            session.add(existing)
-            await session.flush()
-            return existing
+                if allow_unversioned_update:
+                    # 仅限已持有账户事务锁的账本投影和已确认导入。
+                    statement = insert.on_conflict_do_update(
+                        constraint="uq_position_account_fund",
+                        set_={**values, "version": col(PortfolioPosition.version) + 1},
+                        where=col(PortfolioPosition.user_id) == user_id,
+                    ).returning(PortfolioPosition)
+                else:
+                    statement = insert.on_conflict_do_nothing(constraint="uq_position_account_fund").returning(
+                        PortfolioPosition
+                    )
+            result = await session.execute(statement.execution_options(populate_existing=True))
+            return result.scalar_one_or_none()
 
     async def delete_position(self, user_id: int, account_id: int, fund_code: str) -> bool:
         """删掉一条持仓记录."""
@@ -394,6 +391,29 @@ class PortfolioRepository:
                 .limit(1)
             )
             return result.scalar_one_or_none() is not None
+
+    async def lock_transaction_ref(self, user_id: int, reference: str) -> None:
+        """在调用方事务中串行化同一用户的请求键，包括跨账户重用."""
+        digest = hashlib.sha256(f"trade:{user_id}:{reference}".encode()).digest()
+        lock_id = int.from_bytes(digest[:8], "big", signed=True)
+        async with get_async_session() as session:
+            await session.execute(select(func.pg_advisory_xact_lock(lock_id)))
+
+    async def transaction_by_ref(self, user_id: int, reference: str, *, prefix: bool = False) -> Transaction | None:
+        """读取已经提交的请求标识，用于幂等重放与参数冲突检查."""
+        async with get_async_session() as session:
+            criterion = (
+                col(Transaction.external_transaction_id).startswith(reference, autoescape=True)
+                if prefix
+                else col(Transaction.external_transaction_id) == reference
+            )
+            result = await session.execute(
+                select(Transaction)
+                .where(col(Transaction.user_id) == user_id, criterion)
+                .order_by(col(Transaction.id))
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
 
     async def delete_transactions_by_source(self, user_id: int, source: str) -> int:
         """删掉某个功能生成的全部流水，撤掉它时不留残余."""

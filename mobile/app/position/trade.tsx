@@ -13,6 +13,7 @@ import { useAccounts, usePosition, useRecordTrade, useTradePreview, type Positio
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUiStore } from '@/stores/ui';
 import { formatMoney, formatNumber, formatSignedMoney, localToday } from '@/utils/format';
+import { tradeRequestKey } from '@/utils/tradeRequestKey';
 
 const OPERATIONS: {
   key: TradeOperation;
@@ -95,6 +96,7 @@ function TradeForm({
   const [tradeDate, setTradeDate] = useState(localToday());
   const [afterCutoff, setAfterCutoff] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [requestKeys] = useState(() => new Map<string, string>());
 
   const settledAmount = useDebouncedValue(amount);
   const settledShares = useDebouncedValue(shares);
@@ -115,6 +117,7 @@ function TradeForm({
   const sized = entry.byMoney ? amount.trim() !== '' : shares.trim() !== '';
 
   function submit() {
+    if (record.isPending) return;
     setProblem(null);
     if (accountId === null) {
       setProblem('请先选择持仓账户');
@@ -135,19 +138,23 @@ function TradeForm({
       setProblem('请填写转入基金代码，需为 6 位数字');
       return;
     }
+    const payload = {
+      fundCode: fundCode.trim(),
+      account_id: accountId,
+      operation,
+      trade_date: entry.pickDate ? tradeDate.trim() : localToday(),
+      after_cutoff: entry.pickDate ? afterCutoff : false,
+      amount: entry.byMoney ? Number(amount) : null,
+      shares: entry.byMoney ? null : Number(shares),
+      target_code: operation === 'CONVERT' ? targetCode.trim() : null,
+    };
     record.mutate(
+      { ...payload, idempotency_key: tradeRequestKey(requestKeys, payload) },
       {
-        fundCode: fundCode.trim(),
-        account_id: accountId,
-        operation,
-        trade_date: entry.pickDate ? tradeDate.trim() : localToday(),
-        after_cutoff: entry.pickDate ? afterCutoff : false,
-        amount: entry.byMoney ? Number(amount) : null,
-        shares: entry.byMoney ? null : Number(shares),
-        target_code: operation === 'CONVERT' ? targetCode.trim() : null,
-      },
-      {
-        onSuccess: () => router.back(),
+        onSuccess: () => {
+          requestKeys.clear();
+          router.back();
+        },
         onError: (error) => setProblem(describeTradeError(error, held)),
       },
     );

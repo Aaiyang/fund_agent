@@ -1,5 +1,6 @@
 """研究任务的父子图契约；证据和中间推理仅属于研究子图."""
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from langgraph.graph.message import add_messages
@@ -7,9 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.schemas.fund_selection import FundSelectionOption
 from app.schemas.agent_skill import SkillName
+from app.schemas.multi_role_research import AgentReport, ResearchAssignment, ResearchReview, ResearchRole
 
 ResearchIntent = Literal[
-    "fund_research", "portfolio_diagnosis", "allocation_analysis", "sector_research", "stock_research"
+    "fund_research",
+    "fund_comparison",
+    "portfolio_diagnosis",
+    "allocation_analysis",
+    "sector_research",
+    "stock_research",
 ]
 AllocationAction = Literal["build", "increase", "reduce", "exit", "compare"]
 
@@ -20,6 +27,7 @@ class ResearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     intent: ResearchIntent
     mode: Literal["standard", "deep"] = "standard"
+    strategy: Literal["single", "multi_role"] = "single"
     fund_queries: list[str] = Field(default_factory=list, max_length=3)
     account_id: int | None = Field(default=None, ge=1, strict=True)
     action: AllocationAction | None = None
@@ -39,8 +47,12 @@ class ResearchRequest(BaseModel):
     @model_validator(mode="after")
     def valid_scope(self) -> "ResearchRequest":
         """单基金研究和操作分析必须指定对象，组合诊断可自动取重点基金."""
+        if self.strategy == "multi_role" and self.intent in {"sector_research", "stock_research"}:
+            raise ValueError("多角色研究暂支持基金、基金对比、持仓诊断和配置分析")
         if self.intent in {"fund_research", "allocation_analysis"} and not self.fund_queries:
             raise ValueError("请先提供要研究的基金名称或六位代码")
+        if self.intent == "fund_comparison" and len(self.fund_queries) < 2:
+            raise ValueError("基金对比需要两到三只不同的基金名称或代码")
         if self.intent == "sector_research" and not self.sector_query:
             raise ValueError("请提供板块名称或真实BK代码")
         if self.intent == "stock_research" and not self.stock_symbol:
@@ -67,6 +79,9 @@ class ResearchTask(BaseModel):
     request: ResearchRequest
     instruction: str
     resolved_funds: list[FundSelectionOption] = Field(default_factory=list)
+    source_research_id: str | None = None
+    # 授权来源：model 需要 route_task 逐项取证，followup/client 由服务端直接放行。
+    requested_by: Literal["model", "followup", "client"] = "model"
 
 
 class ResearchResult(BaseModel):
@@ -78,6 +93,7 @@ class ResearchResult(BaseModel):
     fund_codes: list[str] = Field(default_factory=list)
     evidence_tools: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
+    strategy: Literal["single", "multi_role"] = "single"
 
 
 class ResearchEvidence(BaseModel):
@@ -116,3 +132,11 @@ class ResearchGraphState(BaseModel):
     skill_instructions: str = ""
     skill_evidence: str = ""
     tool_plan: list[ResearchToolCall] = Field(default_factory=list)
+    agent_reports: list[AgentReport] = Field(default_factory=list)
+    agent_review: ResearchReview | None = None
+    agent_assignments: list[ResearchAssignment] = Field(default_factory=list)
+    agent_evidence_packet: list[dict] = Field(default_factory=list)
+    agent_initial_evidence_ids: list[str] = Field(default_factory=list)
+    agent_revision_roles: list[ResearchRole] = Field(default_factory=list)
+    agent_review_status: Literal["completed", "partial", "failed"] | None = None
+    agent_started_at: datetime | None = None

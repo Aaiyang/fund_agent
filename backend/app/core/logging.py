@@ -7,6 +7,7 @@
 
 import json
 import logging
+import re
 import sys
 from contextvars import ContextVar
 from datetime import datetime
@@ -32,6 +33,28 @@ settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # 存放单次请求专有数据的上下文变量
 _request_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar("request_context", default=None)
+
+_URL_CREDENTIALS = re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]*://)[^\s/]+@")
+_SENSITIVE_FIELDS = frozenset({"password", "api_key", "authorization", "access_token", "refresh_token", "secret"})
+
+
+def redact_sensitive_values(value: Any) -> Any:
+    """在渲染前清除结构化凭据与文本中的 URL 用户信息."""
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if str(key).lower() in _SENSITIVE_FIELDS else redact_sensitive_values(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_sensitive_values(item) for item in value]
+    if isinstance(value, str):
+        return _URL_CREDENTIALS.sub(r"\1[REDACTED]@", value)
+    return value
+
+
+def redact_log_event(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """同时保护事件、请求上下文和格式化后的异常文本."""
+    return redact_sensitive_values(event_dict)
 
 
 def bind_context(**kwargs: Any) -> None:
@@ -117,7 +140,7 @@ class JsonlFileHandler(logging.Handler):
             log_entry = {
                 "timestamp": datetime.fromtimestamp(record.created).isoformat(),
                 "level": record.levelname,
-                "message": record.getMessage(),
+                "message": redact_sensitive_values(record.getMessage()),
                 "module": record.module,
                 "function": record.funcName,
                 "filename": record.pathname,
@@ -126,7 +149,7 @@ class JsonlFileHandler(logging.Handler):
             }
             extra = getattr(record, "extra", None)
             if isinstance(extra, dict):
-                log_entry.update(extra)
+                log_entry.update(redact_sensitive_values(extra))
 
             with open(self.file_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_entry) + "\n")
@@ -180,6 +203,7 @@ def get_structlog_processors(include_file_info: bool = True) -> List[Any]:
 
     # 追加环境信息
     processors.append(lambda _, __, event_dict: {**event_dict, "environment": settings.ENVIRONMENT.value})
+    processors.append(redact_log_event)
 
     return processors
 

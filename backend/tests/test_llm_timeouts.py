@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import BaseModel
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk
@@ -68,20 +69,27 @@ class ChatState(TypedDict):
 
 
 class VendorReasoningStream(httpx.AsyncByteStream):
-    def __init__(self) -> None:
+    def __init__(self, answer: str = "answer") -> None:
         self.closed = False
+        self.answer = answer
 
     async def __aiter__(self):
         """模拟供应商通过 SSE 先返回推理，再返回最终正文."""
-        deltas = [{"reasoning_content": "hidden reasoning"}] * 7 + [{"content": "answer"}]
-        for delta in deltas:
+        deltas = [{"reasoning_content": "hidden reasoning"}] * 7 + [{"content": self.answer}]
+        for index, delta in enumerate(deltas):
             await asyncio.sleep(0.045)
             event = {
                 "id": "fixture-completion",
                 "object": "chat.completion.chunk",
                 "created": 1,
                 "model": "fixture",
-                "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", **delta} if index == 0 else delta,
+                        "finish_reason": "stop" if index == len(deltas) - 1 else None,
+                    }
+                ],
             }
             yield ("data: " + json.dumps(event) + "\n\n").encode()
         yield b"data: [DONE]\n\n"
@@ -306,9 +314,16 @@ def test_sdk_retries_disabled_to_avoid_nested_retry_budget():
     assert model.request_timeout == settings.LLM_REQUEST_TIMEOUT
 
 
-async def test_vendor_reasoning_progress_survives_actual_sdk_and_adapter(service_factory, monkeypatch):
+class StructuredAnswer(BaseModel):
+    """真实 SDK 结构化输出也必须在恢复任务时观察到流式进度."""
+
+    answer: str
+
+
+@pytest.mark.parametrize("structured", [False, True])
+async def test_vendor_reasoning_progress_survives_actual_sdk_and_adapter(service_factory, monkeypatch, structured):
     service, profiles = service_factory({"fixture": stream(["unused"], [0.005])})
-    wire_stream = VendorReasoningStream()
+    wire_stream = VendorReasoningStream('{"answer":"answer"}' if structured else "answer")
     requests = []
 
     async def handle(request: httpx.Request) -> httpx.Response:
@@ -316,14 +331,19 @@ async def test_vendor_reasoning_progress_survives_actual_sdk_and_adapter(service
         return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=wire_stream)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
-        model = _build_chat_model(
-            "fixture", "fixture", "https://fixture.invalid/v1", http_async_client=client, streaming=True
-        )
+        model = _build_chat_model("fixture", "fixture", "https://fixture.invalid/v1", http_async_client=client)
         monkeypatch.setattr(service_module, "_build_chat_model", lambda *_args, **_kwargs: model)
         with service.use_profiles(profiles):
-            result = await service.call("question")
-    assert result.content == "answer"
-    assert result.response_metadata["fund_reasoning_chars"] > 0
+            result = (
+                await service.call("question", response_format=StructuredAnswer, max_tokens=256)
+                if structured
+                else await service.call("question")
+            )
+    if structured:
+        assert isinstance(result, StructuredAnswer) and result.answer == "answer"
+    else:
+        assert result.content == "answer"
+        assert result.response_metadata["fund_reasoning_chars"] > 0
     assert "hidden reasoning" not in result.model_dump_json()
     assert len(requests) == 1 and requests[0]["stream"] is True
     assert wire_stream.closed

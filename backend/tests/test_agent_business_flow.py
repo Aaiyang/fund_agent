@@ -237,15 +237,53 @@ async def test_case_7_market(monkeypatch):
 
 
 async def test_tool_loop_is_bounded(monkeypatch):
-    """recursion_limit 给 chat/tool 之间的来回轮数封顶（约 12 轮工具）."""
-    from app.agent.graph.agent import TOOL_LOOP_RECURSION_LIMIT
+    """超步上限来自 settings：调小立刻封顶，默认值给多角色深研究留够余量.
+
+    父图和作为节点挂上的嵌套子图共用同一份预算，一次多角色深研究约需 19~25 步，
+    所以旧的写死 25 已经没有余量；上限改成运行时读取，便于按链路深度调整。
+    """
+    from app.core.config import settings
+
+    assert settings.AGENT_RECURSION_LIMIT >= 40
+
+    class LoopLLMService:
+        """每轮都要求再调一次工具，且每次换参数，让上限成为唯一的刹车."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_llm(self):
+            return None
+
+        async def call(self, messages, *args, **kwargs):
+            self.calls += 1
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "get_market_context",
+                        # 换参数才绕得开本轮重复守卫；否则两轮就被拦，测不到上限
+                        "args": {"scope": self.calls},
+                        "id": f"call_{self.calls}",
+                        "type": "tool_call",
+                    }
+                ],
+            )
 
     agent, _ = _build_agent(monkeypatch, [])
-    config = {"configurable": {"thread_id": "t"}, "metadata": {"user_id": "42"}}
-    set_limit = (await agent._get_graph()).nodes  # 图能正常编译出来
-    assert TOOL_LOOP_RECURSION_LIMIT == 25
-    # 这个上限是 LangGraph 负责强制执行的配置值，这里只断言接线还在。
-    assert config is not None and set_limit
+    fake_llm = LoopLLMService()
+    monkeypatch.setattr(agent, "llm_service", fake_llm)
+    _patch_tool_service(
+        monkeypatch,
+        "get_market_context",
+        SimpleNamespace(get_quotes=_async_quotes),
+    )
+    monkeypatch.setattr(settings, "AGENT_RECURSION_LIMIT", 7)
+
+    result = await agent.get_response([Message(role="user", content="最近市场怎么样")], "limit-case", user_id="42")
+
+    assert "处理步骤过多" in result[-1].content
+    assert fake_llm.calls < 7
 
 
 async def test_recursion_limit_returns_friendly_message(monkeypatch):

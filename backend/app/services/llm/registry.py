@@ -28,7 +28,7 @@ from app.services.llm.chat_model import ProgressChatOpenAI
 _PROFILE_FIELDS = ("name", "model", "base_url", "api_key")
 
 
-def _new_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOpenAI:
+def _new_chat_model(model: str, api_key: str, base_url: str, *, report_mode: bool = False, **kwargs) -> ChatOpenAI:
     """用应用级的公共默认参数构造一个 ChatOpenAI.
 
     调用方显式传入的 kwargs 优先于默认值；``max_tokens`` 一律放进
@@ -37,17 +37,26 @@ def _new_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOp
     params: dict[str, Any] = {
         "temperature": settings.DEFAULT_LLM_TEMPERATURE,
         "timeout": settings.LLM_REQUEST_TIMEOUT,
+        # 选择/继续接口用 graph.ainvoke，不能依赖 messages 流的隐式回调。
+        # ainvoke 仍汇总返回完整结果，底层流式让首段/无进展超时观察到真实进度。
+        "streaming": True,
         # 重试由 service.py 的 tenacity 统一管理，避免 SDK 隐式重试叠加。
         "max_retries": 0,
     }
     kwargs = dict(kwargs)
     max_tokens = kwargs.pop("max_tokens", None)
+    extra_body = dict(kwargs.pop("extra_body", None) or {})
+    extra_body["max_tokens"] = max_tokens or settings.MAX_TOKENS
+    if report_mode and model.lower().startswith("glm-5.3"):
+        # GLM-5.3 强制推理，默认 max 易耗尽报告正文额度；取证/角色研究保持原配置。
+        # https://docs.z.ai/guides/capabilities/thinking
+        extra_body.setdefault("reasoning_effort", "low")
     params.update(kwargs)
     return ProgressChatOpenAI(
         model=model,
         api_key=SecretStr(api_key),
         base_url=base_url,
-        extra_body={"max_tokens": max_tokens or settings.MAX_TOKENS},
+        extra_body=extra_body,
         **params,
     )
 

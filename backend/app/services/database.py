@@ -6,20 +6,14 @@ from typing import (
 )
 
 from fastapi import HTTPException
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import (
-    Session,
     col,
-    create_engine,
     delete,
     select,
 )
 
-from app.core.config import (
-    Environment,
-    settings,
-)
+from app.core.database import async_engine, async_session_factory, get_async_session
 from app.core.logging import logger
 from app.core.metrics import component_up
 from app.agent.context import state_store
@@ -45,43 +39,12 @@ class DatabaseService:
     """Service class for database operations.
 
     This class handles all database operations for Users, Sessions, and Messages.
-    It uses SQLModel for ORM operations and maintains a connection pool.
+    It uses SQLModel with the shared SQLAlchemy async engine.
     """
 
-    def __init__(self):
-        """Initialize database service with connection pool."""
-        try:
-            # Configure environment-specific database connection pool settings
-            pool_size = settings.POSTGRES_POOL_SIZE
-            max_overflow = settings.POSTGRES_MAX_OVERFLOW
-
-            # Create engine with appropriate pool configuration
-            connection_url = (
-                f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
-                f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
-            )
-
-            self.engine = create_engine(
-                connection_url,
-                pool_pre_ping=True,
-                poolclass=QueuePool,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=30,  # Connection timeout (seconds)
-                pool_recycle=1800,  # Recycle connections after 30 minutes
-            )
-
-            logger.info(
-                "database_initialized",
-                environment=settings.ENVIRONMENT.value,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-            )
-        except SQLAlchemyError as e:
-            logger.error("database_initialization_error", error=str(e), environment=settings.ENVIRONMENT.value)
-            # In production, don't raise - allow app to start even with DB issues
-            if settings.ENVIRONMENT != Environment.PRODUCTION:
-                raise
+    def __init__(self) -> None:
+        """复用领域仓储的异步引擎，不再创建第二个同步连接池."""
+        self.engine = async_engine
 
     async def create_user(self, email: str, password: str, username: str | None = None) -> User:
         """Create a new user.
@@ -94,11 +57,11 @@ class DatabaseService:
         Returns:
             User: The created user
         """
-        with Session(self.engine) as session:
+        async with get_async_session() as session:
             user = User(email=email, hashed_password=password, username=username)
             session.add(user)
-            session.commit()
-            session.refresh(user)
+            await session.flush()
+            await session.refresh(user)
             logger.info("user_created", email=email)
             return user
 
@@ -111,8 +74,8 @@ class DatabaseService:
         Returns:
             Optional[User]: The user if found, None otherwise
         """
-        with Session(self.engine) as session:
-            user = session.get(User, user_id)
+        async with get_async_session() as session:
+            user = await session.get(User, user_id)
             return user
 
     async def update_user(
@@ -128,8 +91,8 @@ class DatabaseService:
         Returns:
             Optional[User]: The updated user, or None when the id is gone.
         """
-        with Session(self.engine) as session:
-            user = session.get(User, user_id)
+        async with get_async_session() as session:
+            user = await session.get(User, user_id)
             if user is None:
                 return None
             if email is not None:
@@ -137,8 +100,8 @@ class DatabaseService:
             if username is not None:
                 user.username = username.strip() or None
             session.add(user)
-            session.commit()
-            session.refresh(user)
+            await session.flush()
+            await session.refresh(user)
             logger.info("user_profile_updated", user_id=user_id)
             return user
 
@@ -151,9 +114,9 @@ class DatabaseService:
         Returns:
             Optional[User]: The user if found, None otherwise
         """
-        with Session(self.engine) as session:
+        async with get_async_session() as session:
             statement = select(User).where(User.email == email)
-            user = session.exec(statement).first()
+            user = (await session.execute(statement)).scalars().first()
             return user
 
     async def revoke_refresh_tokens(self, user_id: int) -> bool:
@@ -165,13 +128,13 @@ class DatabaseService:
         Returns:
             bool: True when the user existed and was stamped.
         """
-        with Session(self.engine) as session:
-            user = session.get(User, user_id)
+        async with get_async_session() as session:
+            user = await session.get(User, user_id)
             if not user:
                 return False
             user.refresh_revoked_at = utc_now()
             session.add(user)
-            session.commit()
+            await session.flush()
             logger.info("refresh_tokens_revoked", user_id=user_id)
             return True
 
@@ -188,42 +151,46 @@ class DatabaseService:
         Returns:
             bool: True if deletion was successful, False if user not found
         """
-        with Session(self.engine) as session:
-            user = session.exec(select(User).where(User.email == email)).first()
+        async with get_async_session() as session:
+            user = (await session.execute(select(User).where(User.email == email))).scalars().first()
             if not user:
                 return False
 
-            thread_ids = list(session.exec(select(ChatSession.id).where(col(ChatSession.user_id) == user.id)).all())
+            thread_ids = list(
+                (await session.execute(select(ChatSession.id).where(col(ChatSession.user_id) == user.id)))
+                .scalars()
+                .all()
+            )
             user_id = user.id
 
             # ---- 业务数据：按 FK 依赖从子表到父表 ----
-            session.exec(
+            await session.execute(
                 delete(WatchlistGroupItem).where(
                     col(WatchlistGroupItem.group_id).in_(
                         select(WatchlistGroup.id).where(col(WatchlistGroup.user_id) == user_id)
                     )
                 )
             )
-            session.exec(delete(WatchlistGroup).where(col(WatchlistGroup.user_id) == user_id))
-            session.exec(delete(Watchlist).where(col(Watchlist.user_id) == user_id))
+            await session.execute(delete(WatchlistGroup).where(col(WatchlistGroup.user_id) == user_id))
+            await session.execute(delete(Watchlist).where(col(Watchlist.user_id) == user_id))
 
-            session.exec(delete(PortfolioTransaction).where(col(PortfolioTransaction.user_id) == user_id))
-            session.exec(delete(PortfolioPosition).where(col(PortfolioPosition.user_id) == user_id))
-            session.exec(delete(AutoInvestPlan).where(col(AutoInvestPlan.user_id) == user_id))
+            await session.execute(delete(PortfolioTransaction).where(col(PortfolioTransaction.user_id) == user_id))
+            await session.execute(delete(PortfolioPosition).where(col(PortfolioPosition.user_id) == user_id))
+            await session.execute(delete(AutoInvestPlan).where(col(AutoInvestPlan.user_id) == user_id))
 
-            session.exec(
+            await session.execute(
                 delete(HoldingImportItem).where(
                     col(HoldingImportItem.import_id).in_(
                         select(HoldingImport.id).where(col(HoldingImport.user_id) == user_id)
                     )
                 )
             )
-            session.exec(delete(HoldingImport).where(col(HoldingImport.user_id) == user_id))
-            session.exec(delete(PortfolioAccount).where(col(PortfolioAccount.user_id) == user_id))
+            await session.execute(delete(HoldingImport).where(col(HoldingImport.user_id) == user_id))
+            await session.execute(delete(PortfolioAccount).where(col(PortfolioAccount.user_id) == user_id))
 
-            session.exec(delete(ChatSession).where(col(ChatSession.user_id) == user_id))
-            session.delete(user)
-            session.commit()
+            await session.execute(delete(ChatSession).where(col(ChatSession.user_id) == user_id))
+            await session.delete(user)
+            await session.flush()
 
         # ---- LangGraph checkpoint 与进程内摘要缓存（best-effort）----
         for thread_id in thread_ids:
@@ -247,11 +214,11 @@ class DatabaseService:
         Returns:
             ChatSession: The created session
         """
-        with Session(self.engine) as session:
+        async with get_async_session() as session:
             chat_session = ChatSession(id=session_id, user_id=user_id, name=name, username=username)
             session.add(chat_session)
-            session.commit()
-            session.refresh(chat_session)
+            await session.flush()
+            await session.refresh(chat_session)
             logger.info("session_created", session_id=session_id, user_id=user_id, name=name)
             return chat_session
 
@@ -264,13 +231,13 @@ class DatabaseService:
         Returns:
             bool: True if deletion was successful, False if session not found
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with get_async_session() as session:
+            chat_session = await session.get(ChatSession, session_id)
             if not chat_session:
                 return False
 
-            session.delete(chat_session)
-            session.commit()
+            await session.delete(chat_session)
+            await session.flush()
             logger.info("session_deleted", session_id=session_id)
             return True
 
@@ -283,8 +250,8 @@ class DatabaseService:
         Returns:
             Optional[ChatSession]: The session if found, None otherwise
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with get_async_session() as session:
+            chat_session = await session.get(ChatSession, session_id)
             return chat_session
 
     async def get_user_sessions(self, user_id: int) -> List[ChatSession]:
@@ -296,13 +263,13 @@ class DatabaseService:
         Returns:
             List[ChatSession]: 该用户的会话列表，最近创建的排在最前面
         """
-        with Session(self.engine) as session:
+        async with get_async_session() as session:
             statement = (
                 select(ChatSession)
                 .where(col(ChatSession.user_id) == user_id)
                 .order_by(col(ChatSession.created_at).desc())
             )
-            sessions = session.exec(statement).all()
+            sessions = (await session.execute(statement)).scalars().all()
             return list(sessions)
 
     async def update_session_name(self, session_id: str, name: str) -> ChatSession:
@@ -318,25 +285,25 @@ class DatabaseService:
         Raises:
             HTTPException: If session is not found
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with get_async_session() as session:
+            chat_session = await session.get(ChatSession, session_id)
             if not chat_session:
                 raise HTTPException(status_code=404, detail="Session not found")
 
             chat_session.name = name
             session.add(chat_session)
-            session.commit()
-            session.refresh(chat_session)
+            await session.flush()
+            await session.refresh(chat_session)
             logger.info("session_name_updated", session_id=session_id, name=name)
             return chat_session
 
-    def get_session_maker(self):
+    def get_session_maker(self) -> AsyncSession:
         """Get a session maker for creating database sessions.
 
         Returns:
-            Session: A SQLModel session maker
+            AsyncSession: A caller-owned async session
         """
-        return Session(self.engine)
+        return async_session_factory()
 
     async def health_check(self) -> bool:
         """Check database connection health and export it as a metric.
@@ -345,14 +312,14 @@ class DatabaseService:
             bool: True if database is healthy, False otherwise
         """
         try:
-            with Session(self.engine) as session:
+            async with get_async_session() as session:
                 # Execute a simple query to check connection
-                session.exec(select(1)).first()
+                (await session.execute(select(1))).first()
                 component_up.labels(component="postgresql").set(1)
                 return True
         except Exception as e:
             component_up.labels(component="postgresql").set(0)
-            logger.error("database_health_check_failed", error=str(e))
+            logger.exception("database_health_check_failed", error=str(e))
             return False
 
 

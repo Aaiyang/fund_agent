@@ -24,6 +24,7 @@ from app.agent.tools.runtime import ToolRuntimeContext, set_tool_runtime
 from app.api.v1 import chatbot
 from app.api.v1.auth import get_current_session
 from app.core.cache import InMemoryCacheService
+from app.core import session_lock
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.integrations.holdings.base import DraftPositionItem, HoldingImportDraft
@@ -139,7 +140,7 @@ def scenario(monkeypatch, tmp_path):
     async def accounts(user_id):
         return [SimpleNamespace(id=7, name="支付宝"), SimpleNamespace(id=8, name="天天基金")] if user_id == 42 else []
 
-    async def account(user_id, account_id):
+    async def account(user_id, account_id, **kwargs):
         if user_id != 42 or account_id not in {7, 8}:
             raise AccountNotFoundError("account_not_found")
         return SimpleNamespace(id=account_id, name="支付宝" if account_id == 7 else "天天基金")
@@ -177,6 +178,7 @@ def scenario(monkeypatch, tmp_path):
     state.agent._graph = state.agent._build_graph(state.saver)
     state.llm = ScriptedLLM()
     monkeypatch.setattr(state.agent, "llm_service", state.llm)
+    monkeypatch.setattr(session_lock.database_service, "get_session", AsyncMock(return_value=object()))
     monkeypatch.setattr(chatbot, "agent", state.agent)
     state.app = FastAPI()
     state.app.state.limiter = limiter
@@ -592,10 +594,11 @@ async def test_account_can_be_supplied_in_chat_but_confirmation_cannot(scenario,
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=scenario.app), base_url="http://test") as client:
         selection = await attach_images(client)
         key = chatbot.cache_key("agent:holding-decision", SESSION_ID)
-        assert await chatbot.cache_service.acquire_lock(key)
+        lease = await chatbot.cache_service.acquire_lock(key)
+        assert lease is not None
         answer = {"messages": [{"role": "user", "content": "天天基金"}]}
         assert (await client.post(f"/chatbot/{endpoint}", json=answer)).status_code == 409
-        await chatbot.cache_service.release_lock(key)
+        await chatbot.cache_service.release_lock(lease)
         response = await client.post(f"/chatbot/{endpoint}", json=answer)
         assert response.status_code == 200, response.text
         review = (await client.get("/chatbot/pending-action")).json()["pending_action"]
@@ -869,7 +872,7 @@ def png_bytes():
 
 @pytest.mark.parametrize("case", ["valid", "unassigned", "invalid_image", "too_many", "wrong_account"])
 async def test_upload_uses_existing_queue_and_server_session(scenario, monkeypatch, case):
-    async def ensure_account(user_id, account_id):
+    async def ensure_account(user_id, account_id, **kwargs):
         if user_id != 42 or account_id != 7:
             raise AccountNotFoundError("account_not_found")
 

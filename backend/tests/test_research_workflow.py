@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.checkpoint.memory import InMemorySaver
@@ -21,6 +22,10 @@ from app.schemas.chat import Message
 from app.schemas.graph import GraphState
 from app.schemas.research import ResearchGraphState, ResearchRequest, ResearchResult, ResearchTask
 from app.schemas.research_card import StockChartReference, card_code_block
+from app.schemas.agent_resume import AgentContinueRequest
+from app.services.llm import service as llm_service_module
+from app.services.llm.registry import _build_chat_model
+from app.services.llm.service import LLMService
 from app.utils.task_routing import explicitly_supplied_amount, infer_research_request
 
 
@@ -82,6 +87,7 @@ def workflow(monkeypatch):
         "get_positions",
         "get_fund_snapshot",
         "get_fund_analysis_data",
+        "get_fund_comparison_data",
         "get_fund_holdings",
         "get_fund_managers",
         "get_fund_announcements",
@@ -137,7 +143,10 @@ async def test_public_research_single_report_no_private_tools_and_no_orphan_mess
     saved = await snapshot(workflow)
     assert result(saved).fund_codes == ["000001"]
     assert result(saved).status == "completed"
-    assert len(workflow.llm_calls) == 1 and workflow.llm_calls[0][1] == {"max_tokens": settings.MAX_TOKENS}
+    assert len(workflow.llm_calls) == 1 and workflow.llm_calls[0][1] == {
+        "max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS,
+        "report_mode": True,
+    }
     assert not {"get_portfolio", "get_positions"}.intersection(name for name, *_ in workflow.calls)
     assert all(user == 42 and thread == "research" for _, _, user, thread in workflow.calls)
     assert not {"evidence", "scenario", "owner_id", "active_call"}.intersection(saved.values)
@@ -154,6 +163,97 @@ async def test_public_research_single_report_no_private_tools_and_no_orphan_mess
     after = await snapshot(workflow)
     assert after.values["research_task"] is None and after.values["research_result"] is None
     assert after.values["turn_id"] != saved.values["turn_id"]
+
+
+class ReportWireStream(httpx.AsyncByteStream):
+    """真实 SDK 的两次流式响应，不暴露厂商隐藏推理正文."""
+
+    def __init__(self, content: str, finish_reason: str) -> None:
+        self.content = content
+        self.finish_reason = finish_reason
+        self.closed = False
+
+    async def __aiter__(self):
+        """依次发送正文增量及明确的结束原因."""
+        deltas = [{"role": "assistant", "reasoning_content": "private reasoning"}]
+        deltas.extend({"content": self.content[index : index + 8]} for index in range(0, len(self.content), 8))
+        for delta in deltas:
+            yield (
+                "data: " + json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}) + "\n\n"
+            ).encode()
+        yield (
+            "data: "
+            + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": self.finish_reason}]})
+            + "\n\n"
+        ).encode()
+        yield b"data: [DONE]\n\n"
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+async def test_real_sdk_truncated_report_stream_and_checkpoint_both_include_the_complete_tail(workflow, monkeypatch):
+    first = "## 结论\n已根据净值与持仓证据研究。\n" + "需结合披露日期判断风险。" * 6 + "\n## 数据来源\nfi"
+    tail = "xture。\n## 适用条件\n缺少个人风险偏好时仅作条件分析。"
+    requests = []
+    wires = [ReportWireStream(first, "length"), ReportWireStream(tail, "stop")]
+
+    async def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=wires[len(requests) - 1])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as upstream:
+
+        def build(model, api_key, base_url, **kwargs):
+            return _build_chat_model(model, api_key, base_url, http_async_client=upstream, **kwargs)
+
+        monkeypatch.setattr(llm_service_module, "_build_chat_model", build)
+        workflow.agent.llm_service = LLMService()
+        with workflow.agent.llm_service.use_profiles(
+            [
+                {
+                    "name": "fixture",
+                    "model": "glm-5.3-flash",
+                    "api_key": "fixture",  # pragma: allowlist secret
+                    "base_url": "https://fixture.invalid/v1",
+                }
+            ]
+        ):
+            output = await run(workflow, "分析000001的潜力", stream=True)
+
+    saved = await snapshot(workflow)
+    assert output == saved.values["messages"][-1].content == first + tail
+    assert result(saved).status == "completed" and not saved.next
+    assert saved.values["messages"][-1].response_metadata["report_continuations"] == 1
+    assert len(requests) == 2 and all(item["stream"] for item in requests)
+    assert all(item["max_tokens"] == settings.RESEARCH_REPORT_MAX_TOKENS for item in requests)
+    assert all(item["reasoning_effort"] == "low" for item in requests)
+    assert all("tools" not in item and "report_mode" not in item for item in requests)
+    assert requests[1]["messages"][-2]["content"] == first
+    assert "private reasoning" not in output and all(wire.closed for wire in wires)
+    assert len(workflow.calls) == len({(name, str(args)) for name, args, *_ in workflow.calls})
+
+
+async def test_exhausted_report_is_continuable_without_repeating_evidence(workflow, monkeypatch):
+    monkeypatch.setattr(settings, "RESEARCH_REPORT_MAX_CONTINUATIONS", 1)
+    workflow.script = [AIMessage(content="尚未完成。", response_metadata={"finish_reason": "length"})] * 2
+    with pytest.raises(Exception, match="尚未完整生成"):
+        await run(workflow, "分析000001的潜力", stream=True)
+    saved = await snapshot(workflow)
+    assert saved.next and saved.values["research_result"] is None
+    evidence_before = list(workflow.calls)
+    continuation = await workflow.agent.get_run_continuation("research")
+    assert continuation is not None
+    output = "".join(
+        [
+            chunk
+            async for chunk in workflow.agent.get_stream_response(
+                [], "research", user_id="42", resume=AgentContinueRequest(turn_id=continuation.turn_id)
+            )
+        ]
+    )
+    assert "已根据真实证据" in output and workflow.calls == evidence_before
+    assert result(await snapshot(workflow)).status == "completed"
 
 
 async def test_ambiguous_name_pauses_research_until_selection_then_resumes_original_task(workflow):
@@ -285,6 +385,96 @@ async def test_partial_tool_failure_marks_result_without_retry_loops(workflow):
     assert result(await snapshot(workflow)).status == "partial"
     assert sum(name == "get_fund_managers" for name, *_ in workflow.calls) == 1
     assert "get_fund_managers查询失败" in str(workflow.llm_calls[-1][0])
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_fund_comparison_uses_shared_window_tool_and_one_report(workflow, stream):
+    workflow.data["get_fund_comparison_data"] = {"status": "completed", "gaps": [], "common_from": "2025-10-13"}
+    await run(workflow, "对比000001和000002", stream=stream)
+    saved = await snapshot(workflow)
+    research = result(saved)
+    assert research.intent == "fund_comparison" and research.fund_codes == ["000001", "000002"]
+    assert research.status == "completed" and len(workflow.llm_calls) == 1
+    names = [name for name, *_ in workflow.calls]
+    assert names.count("get_fund_comparison_data") == 1
+    assert "get_fund_analysis_data" not in names and "get_portfolio_snapshot" not in names
+    assert names.count("get_fund_snapshot") == names.count("get_fund_managers") == 2
+    assert all(user == 42 for _, _, user, _ in workflow.calls)
+    context = "\n".join(str(message.content) for message in workflow.llm_calls[0][0])
+    assert "基金对比" in context and "common_from" in context
+    assert not {"evidence", "tool_plan"}.intersection(saved.values)
+
+
+async def test_comparison_propagates_unavailable_window_gaps(workflow):
+    workflow.data["get_fund_comparison_data"] = {"status": "unavailable", "gaps": ["没有共同日期"]}
+    await run(workflow, "比较000001和000002")
+    research = result(await snapshot(workflow))
+    assert research.status == "partial" and "没有共同日期" in research.gaps
+
+
+async def test_comparison_confirmations_finish_before_any_evidence(workflow):
+    workflow.candidates = [
+        SimpleNamespace(fund_code=f"00000{i}", fund_name=f"成长{i}", fund_type="混合型") for i in (1, 2)
+    ]
+    workflow.script = [research_call(intent="fund_comparison", fund_queries=["成长", "价值"])]
+    await run(workflow, "比较成长和价值")
+    first = await workflow.agent.get_pending_holding_review("research")
+    assert first.kind == "fund_selection" and not workflow.calls
+    await workflow.agent.resume_holding_import(
+        "research",
+        first.interrupt_id,
+        {"interrupt_id": first.interrupt_id, "decision": "select", "fund_code": "000001"},
+        user_id="42",
+    )
+    second = await workflow.agent.get_pending_holding_review("research")
+    assert second.kind == "fund_selection" and not workflow.calls
+    await workflow.agent.resume_holding_import(
+        "research",
+        second.interrupt_id,
+        {"interrupt_id": second.interrupt_id, "decision": "select", "fund_code": "000002"},
+        user_id="42",
+    )
+    assert result(await snapshot(workflow)).fund_codes == ["000001", "000002"]
+    assert sum(name == "get_fund_comparison_data" for name, *_ in workflow.calls) == 1
+
+
+async def test_comparison_aliases_resolving_to_same_code_require_another_object(workflow):
+    workflow.candidates = [SimpleNamespace(fund_code="000001", fund_name="成长A", fund_type="混合型")]
+    workflow.script = [research_call(intent="fund_comparison", fund_queries=["成长A", "成长"])]
+    await run(workflow, "对比成长A和成长")
+    pending = await workflow.agent.get_pending_holding_review("research")
+    await workflow.agent.resume_holding_import(
+        "research",
+        pending.interrupt_id,
+        {"interrupt_id": pending.interrupt_id, "decision": "select", "fund_code": "000001"},
+        user_id="42",
+    )
+    assert result(await snapshot(workflow)).status == "needs_input"
+    assert not workflow.calls and len(workflow.llm_calls) == 1
+
+
+async def test_personal_comparison_reads_snapshot_only_when_requested(workflow):
+    workflow.script = [research_call(intent="fund_comparison", fund_queries=["000001", "000002"])]
+    await run(workflow, "结合我的持仓对比000001和000002")
+    assert sum(name == "get_portfolio_snapshot" for name, *_ in workflow.calls) == 1
+
+
+async def test_comparison_cancellation_does_not_collect_or_write_report(workflow):
+    workflow.candidates = [SimpleNamespace(fund_code="000001", fund_name="成长A", fund_type="混合型")]
+    workflow.script = [research_call(intent="fund_comparison", fund_queries=["成长", "价值"])]
+    await run(workflow, "比较成长和价值")
+    pending = await workflow.agent.get_pending_holding_review("research")
+    await workflow.agent.resume_holding_import(
+        "research", pending.interrupt_id, {"interrupt_id": pending.interrupt_id, "decision": "cancel"}, user_id="42"
+    )
+    assert not workflow.calls and len(workflow.llm_calls) == 1
+
+
+async def test_deep_comparison_reuses_announcements_without_duplicate_nav_analysis(workflow):
+    await run(workflow, "深入比较000001和000002")
+    names = [name for name, *_ in workflow.calls]
+    assert names.count("get_fund_announcements") == 2
+    assert names.count("get_fund_comparison_data") == 1 and "get_fund_analysis_data" not in names
 
 
 def test_router_rejects_invented_amount_and_pairs_all_calls():

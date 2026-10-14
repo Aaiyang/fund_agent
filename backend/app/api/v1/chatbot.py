@@ -7,8 +7,8 @@ streaming chat, message history management, and chat history clearing.
 import asyncio
 import json
 import re
-from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+from contextlib import aclosing, asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator
 
 from fastapi import (
     APIRouter,
@@ -18,15 +18,19 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from app.api.v1.auth import get_current_session
 from app.core.config import settings
 from app.core.cache import cache_key, cache_service
 from app.agent.graph.agent import LangGraphAgent
+from app.agent.graph.research_followup import ResearchFollowupError
+from app.schemas.multi_role_research import ResearchProgress
 from app.agent.context.models import ContextInvariantError
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.core.metrics import llm_stream_duration_seconds
+from app.core.session_lock import ensure_session_exists, session_execution_guard
 from app.models.session import Session
 from app.schemas.chat import (
     ChatRequest,
@@ -70,14 +74,8 @@ _CONTEXT_INVARIANT_TEXT = "会话状态在本次请求中已变化，未能继�
 @asynccontextmanager
 async def _chat_execution_guard(session_id: str) -> AsyncIterator[None]:
     """普通聊天与人工恢复互斥，避免另一请求覆盖已确认任务的轮次和状态."""
-    key = cache_key("agent:holding-decision", session_id)
-    ttl = max(600, settings.LLM_TOTAL_TIMEOUT * 30)
-    if not await cache_service.acquire_lock(key, ttl=ttl, fail_open=False):
-        raise HTTPException(status_code=409, detail="agent_decision_in_progress")
-    try:
+    async with session_execution_guard(session_id, cache=cache_service):
         yield
-    finally:
-        await asyncio.shield(cache_service.release_lock(key))
 
 
 async def _validate_chat_imports(session: Session, chat_request: ChatRequest) -> None:
@@ -98,11 +96,20 @@ async def _validate_chat_imports(session: Session, chat_request: ChatRequest) ->
             if isinstance(pending, FundSelectionAction)
             else "holding_import_review_pending",
         )
+    if chat_request.multi_role_fund_codes and pending:
+        # 挂着人工卡时这条文本会被当成卡的答复，研究请求会被静默吞掉
+        raise HTTPException(status_code=409, detail="multi_role_research_requires_no_pending_action")
     if chat_request.holding_account_id is not None:
         try:
             await agent_holding_import_service.resolve_account(session.user_id, "", chat_request.holding_account_id)
         except AccountNotFoundError as exc:
             raise HTTPException(status_code=404, detail="account_not_found") from exc
+
+    if chat_request.research_followup_id:
+        try:
+            await agent.validate_research_source(session.id, chat_request.research_followup_id)
+        except ResearchFollowupError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
 async def _pending_review(
@@ -173,11 +180,13 @@ async def _continue_agent_run(session: Session, payload: AgentContinueRequest) -
     """按钮和明确的自然语言继续指令共用相同锁与检查点恢复."""
     key = cache_key("agent:holding-decision", session.id)
     timeout = max(60, settings.LLM_TOTAL_TIMEOUT * 2)
-    if not await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False):
+    lease = await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False)
+    if lease is None:
         raise HTTPException(status_code=409, detail="agent_decision_in_progress")
     try:
-        profiles = await user_profile_service.execution_profiles(session.user_id)
         async with asyncio.timeout(timeout):
+            await ensure_session_exists(session.id)
+            profiles = await user_profile_service.execution_profiles(session.user_id)
             with llm_service.use_profiles(profiles):
                 messages = await agent.continue_run(
                     session.id,
@@ -185,11 +194,11 @@ async def _continue_agent_run(session: Session, payload: AgentContinueRequest) -
                     user_id=str(session.user_id),
                     username=session.username,
                 )
-        return ChatResponse(
-            messages=messages,
-            pending_action=await _pending_review(session),
-            continuation=await agent.get_run_continuation(session.id),
-        )
+            return ChatResponse(
+                messages=messages,
+                pending_action=await _pending_review(session),
+                continuation=await agent.get_run_continuation(session.id),
+            )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail="agent_continuation_mismatch") from exc
     except TimeoutError as exc:
@@ -200,7 +209,129 @@ async def _continue_agent_run(session: Session, payload: AgentContinueRequest) -
         logger.exception("agent_run_continue_failed", session_id=session.id, turn_id=payload.turn_id)
         raise HTTPException(status_code=503, detail="agent_continue_failed_check_status") from exc
     finally:
-        await asyncio.shield(cache_service.release_lock(key))
+        await asyncio.shield(cache_service.release_lock(lease))
+
+
+async def _stream_events(chunks: AsyncGenerator[str | ResearchProgress, None]) -> AsyncGenerator[str, None]:
+    """所有正文流共用分帧与心跳，等待推理/取证时连接也保持活跃."""
+    pending = None
+    try:
+        while True:
+            pending = asyncio.create_task(anext(chunks))
+            while not (await asyncio.wait({pending}, timeout=15))[0]:
+                yield ": ping\n\n"
+            try:
+                chunk = pending.result()
+            except StopAsyncIteration:
+                return
+            response = (
+                StreamResponse(research_progress=chunk)
+                if isinstance(chunk, ResearchProgress)
+                else StreamResponse(content=chunk)
+            )
+            yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        await chunks.aclose()
+
+
+@router.post("/fund-selection/decision/stream")
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["chat_stream"][0])
+async def choose_analysis_fund_stream(
+    request: Request,
+    payload: FundSelectionDecision,
+    session: Session = Depends(get_current_session),
+) -> StreamingResponse:
+    """选择后直接从原检查点流式输出报告，复用普通聊天的过滤与图表校验."""
+    return await _stream_agent_resume(session, payload)
+
+
+@router.post("/continue/stream")
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["chat_stream"][0])
+async def continue_agent_run_stream(
+    request: Request,
+    payload: AgentContinueRequest,
+    session: Session = Depends(get_current_session),
+) -> StreamingResponse:
+    """原任务继续也流式输出，不重选基金、不新增问题、不重复取证."""
+    return await _stream_agent_resume(session, payload)
+
+
+async def _stream_agent_resume(
+    session: Session, payload: FundSelectionDecision | AgentContinueRequest
+) -> StreamingResponse:
+    """流开始前鉴权和加锁；结束、取消和断线都释放同一执行锁."""
+    ttl = max(600, settings.LLM_TOTAL_TIMEOUT * 30)
+    lease = await cache_service.acquire_lock(cache_key("agent:holding-decision", session.id), ttl=ttl, fail_open=False)
+    if lease is None:
+        raise HTTPException(status_code=409, detail="agent_decision_in_progress")
+    released = False
+
+    async def release() -> None:
+        """生成器和响应清理共用幂等释放，防止连接早退留下执行锁."""
+        nonlocal released
+        if not released:
+            released = True
+            await asyncio.shield(cache_service.release_lock(lease))
+
+    try:
+        await ensure_session_exists(session.id)
+        await agent.validate_stream_resume(session.id, payload)
+        profiles = await user_profile_service.execution_profiles(session.user_id)
+    except ValueError as exc:
+        await release()
+        code = str(exc)
+        raise HTTPException(status_code=422 if code == "fund_not_in_candidates" else 409, detail=code) from exc
+    except BaseException:
+        await release()
+        raise
+
+    async def events() -> AsyncGenerator[str, None]:
+        """终帧携带最新中断/继续状态；上游失败不给用户展示内部异常栈."""
+        try:
+            async with asyncio.timeout(ttl - 120):
+                yield ": connected\n\n"
+                with llm_service.use_profiles(profiles):
+                    with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
+                        async with aclosing(
+                            _stream_events(
+                                agent.get_stream_response(
+                                    [],
+                                    session.id,
+                                    user_id=str(session.user_id),
+                                    username=session.username,
+                                    resume=payload,
+                                )
+                            )
+                        ) as stream:
+                            async for event in stream:
+                                yield event
+                response = StreamResponse(
+                    done=True,
+                    pending_action=await _pending_review(session),
+                    continuation=await agent.get_run_continuation(session.id),
+                )
+                yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+        except Exception:
+            logger.exception("agent_resume_stream_failed", session_id=session.id)
+            response = StreamResponse(
+                content="研究暂时未完成，已保存的任务可通过“继续已确认的任务”重试。",
+                done=True,
+                pending_action=await _pending_review(session),
+                continuation=await agent.get_run_continuation(session.id),
+            )
+            yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+        finally:
+            await release()
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(release),
+    )
 
 
 @router.post("/fund-selection/decision", response_model=ChatResponse)
@@ -213,16 +344,20 @@ async def choose_analysis_fund(
     """仅接受当前会话真实候选和中断 ID，选择后恢复原问题的分析."""
     key = cache_key("agent:holding-decision", session.id)
     timeout = max(60, settings.LLM_TOTAL_TIMEOUT * 2)
-    if not await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False):
+    lease = await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False)
+    if lease is None:
         raise HTTPException(status_code=409, detail="agent_decision_in_progress")
     try:
-        pending = await _pending_review(session)
-        if not isinstance(pending, FundSelectionAction) or pending.interrupt_id != payload.interrupt_id:
-            raise HTTPException(status_code=409, detail="fund_selection_interrupt_mismatch")
-        if payload.decision == "select" and payload.fund_code not in {item.fund_code for item in pending.candidates}:
-            raise HTTPException(status_code=422, detail="fund_not_in_candidates")
-        profiles = await user_profile_service.execution_profiles(session.user_id)
         async with asyncio.timeout(timeout):
+            await ensure_session_exists(session.id)
+            pending = await _pending_review(session)
+            if not isinstance(pending, FundSelectionAction) or pending.interrupt_id != payload.interrupt_id:
+                raise HTTPException(status_code=409, detail="fund_selection_interrupt_mismatch")
+            if payload.decision == "select" and payload.fund_code not in {
+                item.fund_code for item in pending.candidates
+            }:
+                raise HTTPException(status_code=422, detail="fund_not_in_candidates")
+            profiles = await user_profile_service.execution_profiles(session.user_id)
             with llm_service.use_profiles(profiles):
                 messages = await agent.resume_holding_import(
                     session.id,
@@ -231,11 +366,11 @@ async def choose_analysis_fund(
                     user_id=str(session.user_id),
                     username=session.username,
                 )
-        return ChatResponse(
-            messages=messages,
-            pending_action=await _pending_review(session),
-            continuation=await agent.get_run_continuation(session.id),
-        )
+            return ChatResponse(
+                messages=messages,
+                pending_action=await _pending_review(session),
+                continuation=await agent.get_run_continuation(session.id),
+            )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="fund_selection_resume_timeout_check_status") from exc
     except HTTPException:
@@ -244,7 +379,7 @@ async def choose_analysis_fund(
         logger.exception("fund_selection_resume_failed", session_id=session.id)
         raise HTTPException(status_code=503, detail="fund_selection_resume_failed_check_status") from exc
     finally:
-        await asyncio.shield(cache_service.release_lock(key))
+        await asyncio.shield(cache_service.release_lock(lease))
 
 
 @router.get("/holding-imports/{import_id}", response_model=ImportDetailResponse)
@@ -299,40 +434,42 @@ async def _resume_import_stage(
     """选择、识别继续及最终决策共用会话锁，拒绝旧中断和跨会话恢复."""
     key = cache_key("agent:holding-decision", session.id)
     timeout = max(60, settings.LLM_TOTAL_TIMEOUT * 2)
-    if not await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False):
+    lease = await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False)
+    if lease is None:
         raise HTTPException(status_code=409, detail="holding_import_decision_in_progress")
     try:
-        pending = await _pending_review(session, service)
-        if (
-            pending is None
-            or isinstance(pending, (FundSelectionAction, HumanQuestionAction))
-            or pending.import_id != import_id
-            or pending.interrupt_id != interrupt_id
-        ):
-            raise HTTPException(status_code=409, detail="holding_import_interrupt_mismatch")
-        detail = await service.detail(session.user_id, session.id, import_id)
-        if account_id is not None:
-            if not isinstance(pending, HoldingImportAccountSelection):
-                raise HTTPException(status_code=409, detail="holding_import_account_not_pending")
-            await service.resolve_account(session.user_id, "", account_id)
-            decision = {"import_id": import_id, "account_id": account_id}
-        else:
-            if not isinstance(pending, HoldingImportProcessing):
-                raise HTTPException(status_code=409, detail="holding_import_processing_not_pending")
-            if detail.status in {"UPLOADED", "PARSING"}:
-                raise HTTPException(status_code=409, detail="holding_import_still_parsing")
-            decision = {"import_id": import_id, "action": "continue"}
-        profiles = await user_profile_service.execution_profiles(session.user_id)
         async with asyncio.timeout(timeout):
+            await ensure_session_exists(session.id)
+            pending = await _pending_review(session, service)
+            if (
+                pending is None
+                or isinstance(pending, (FundSelectionAction, HumanQuestionAction))
+                or pending.import_id != import_id
+                or pending.interrupt_id != interrupt_id
+            ):
+                raise HTTPException(status_code=409, detail="holding_import_interrupt_mismatch")
+            detail = await service.detail(session.user_id, session.id, import_id)
+            if account_id is not None:
+                if not isinstance(pending, HoldingImportAccountSelection):
+                    raise HTTPException(status_code=409, detail="holding_import_account_not_pending")
+                await service.resolve_account(session.user_id, "", account_id)
+                decision = {"import_id": import_id, "account_id": account_id}
+            else:
+                if not isinstance(pending, HoldingImportProcessing):
+                    raise HTTPException(status_code=409, detail="holding_import_processing_not_pending")
+                if detail.status in {"UPLOADED", "PARSING"}:
+                    raise HTTPException(status_code=409, detail="holding_import_still_parsing")
+                decision = {"import_id": import_id, "action": "continue"}
+            profiles = await user_profile_service.execution_profiles(session.user_id)
             with llm_service.use_profiles(profiles):
                 messages = await agent.resume_holding_import(
                     session.id, interrupt_id, decision, user_id=str(session.user_id), username=session.username
                 )
-        return ChatResponse(
-            messages=messages,
-            pending_action=await _pending_review(session, service),
-            continuation=await agent.get_run_continuation(session.id),
-        )
+            return ChatResponse(
+                messages=messages,
+                pending_action=await _pending_review(session, service),
+                continuation=await agent.get_run_continuation(session.id),
+            )
     except ImportStateError as exc:
         raise HTTPException(status_code=404 if str(exc) == "import_not_found" else 409, detail=str(exc)) from exc
     except AccountNotFoundError as exc:
@@ -345,11 +482,13 @@ async def _resume_import_stage(
         logger.exception("holding_import_resume_failed", session_id=session.id, import_id=import_id)
         raise HTTPException(status_code=503, detail="holding_import_resume_failed_check_status") from exc
     finally:
-        await asyncio.shield(cache_service.release_lock(key))
+        await asyncio.shield(cache_service.release_lock(lease))
 
 
 async def _chat_account_reply(session: Session, chat_request: ChatRequest) -> ChatResponse | None:
     """补充账户或明确继续原任务时恢复检查点，不把继续指令当新一轮消息."""
+    if chat_request.research_followup_id:
+        return None
     if not chat_request.holding_import_ids and re.fullmatch(
         r"(?:请|帮我)?(?:继续|重试)(?:刚才|之前|原来的|原)?的?(?:分析|研究|任务|流程)?(?:一下|吧)?[。！!？?]?",
         chat_request.messages[-1].content.strip(),
@@ -382,10 +521,12 @@ async def decide_holding_import(
     """人工确认/取消是独立 HTTP 操作；先校验真实中断，再应用草稿并恢复 Agent."""
     timeout = max(60, settings.LLM_TOTAL_TIMEOUT * 2)
     key = cache_key("agent:holding-decision", session.id)
-    if not await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False):
+    lease = await cache_service.acquire_lock(key, ttl=timeout + 120, fail_open=False)
+    if lease is None:
         raise HTTPException(status_code=409, detail="holding_import_decision_in_progress")
     try:
         async with asyncio.timeout(timeout):
+            await ensure_session_exists(session.id)
             return await _decide_holding_import(session, import_id, payload, service)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="holding_import_decision_timeout_check_status") from exc
@@ -395,7 +536,7 @@ async def decide_holding_import(
         logger.exception("holding_import_decision_failed", session_id=session.id, import_id=import_id)
         raise HTTPException(status_code=503, detail="holding_import_decision_failed_check_status") from exc
     finally:
-        await asyncio.shield(cache_service.release_lock(key))
+        await asyncio.shield(cache_service.release_lock(lease))
 
 
 async def _decide_holding_import(
@@ -487,13 +628,13 @@ async def chat(
             message_count=len(chat_request.messages),
         )
 
-        async with _chat_execution_guard(session.id):
+        async with _chat_execution_guard(session.id), asyncio.timeout(settings.AGENT_TURN_TIMEOUT):
             await _validate_chat_imports(session, chat_request)
             profiles = await user_profile_service.execution_profiles(session.user_id)
             messages = [Message(role="user", content=m.content) for m in chat_request.messages]
             with llm_service.use_profiles(profiles):
                 if settings.SESSION_NAMING_ENABLED:
-                    maybe_name_session(session.id, session.name, messages)
+                    await maybe_name_session(session.id, session.name, messages)
                 result = await agent.get_response(
                     messages,
                     session.id,
@@ -501,6 +642,8 @@ async def chat(
                     username=session.username,
                     holding_import_ids=chat_request.holding_import_ids,
                     holding_account_id=chat_request.holding_account_id,
+                    research_followup_id=chat_request.research_followup_id,
+                    multi_role_fund_codes=chat_request.multi_role_fund_codes,
                 )
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -511,6 +654,9 @@ async def chat(
         )
     except HTTPException:
         raise
+    except TimeoutError as e:
+        logger.warning("chat_turn_timeout", session_id=session.id, budget_seconds=settings.AGENT_TURN_TIMEOUT)
+        raise HTTPException(status_code=504, detail="chat_turn_timeout_use_continue") from e
     except ContextInvariantError as e:
         logger.warning("chat_context_invariant_failed", session_id=session.id, code=e.code)
         raise HTTPException(status_code=409, detail=_CONTEXT_INVARIANT_TEXT) from e
@@ -569,22 +715,28 @@ async def chat_stream(
                     final_response = StreamResponse(content="", done=True, pending_action=selected.pending_action)
                     yield f"data: {json.dumps(final_response.model_dump(mode='json'))}\n\n"
                     return
-                async with _chat_execution_guard(session.id):
+                async with _chat_execution_guard(session.id), asyncio.timeout(settings.AGENT_TURN_TIMEOUT):
                     await _validate_chat_imports(session, chat_request)
                     with llm_service.use_profiles(profiles):
                         if settings.SESSION_NAMING_ENABLED:
-                            maybe_name_session(session.id, session.name, messages)
+                            await maybe_name_session(session.id, session.name, messages)
                         with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
-                            async for chunk in agent.get_stream_response(
-                                messages,
-                                session.id,
-                                user_id=str(session.user_id),
-                                username=session.username,
-                                holding_import_ids=chat_request.holding_import_ids,
-                                holding_account_id=chat_request.holding_account_id,
-                            ):
-                                response = StreamResponse(content=chunk, done=False)
-                                yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+                            async with aclosing(
+                                _stream_events(
+                                    agent.get_stream_response(
+                                        messages,
+                                        session.id,
+                                        user_id=str(session.user_id),
+                                        username=session.username,
+                                        holding_import_ids=chat_request.holding_import_ids,
+                                        holding_account_id=chat_request.holding_account_id,
+                                        research_followup_id=chat_request.research_followup_id,
+                                        multi_role_fund_codes=chat_request.multi_role_fund_codes,
+                                    )
+                                )
+                            ) as stream:
+                                async for event in stream:
+                                    yield event
 
                     # Send final message indicating completion
                     final_response = StreamResponse(
@@ -599,6 +751,21 @@ async def chat_stream(
                 logger.warning("stream_chat_context_invariant_failed", session_id=session.id, code=e.code)
                 error_response = StreamResponse(content=_CONTEXT_INVARIANT_TEXT, done=True)
                 yield f"data: {json.dumps(error_response.model_dump(mode='json'))}\n\n"
+            except TimeoutError:
+                logger.warning(
+                    "stream_chat_turn_timeout",
+                    session_id=session.id,
+                    budget_seconds=settings.AGENT_TURN_TIMEOUT,
+                )
+                error_response = StreamResponse(
+                    content=(
+                        "本轮已超过服务端允许的最长时间并停止。已完成的取证与结论仍留在会话里，"
+                        "可以继续这一轮，或把问题拆得更具体。"
+                    ),
+                    done=True,
+                    continuation=await agent.get_run_continuation(session.id),
+                )
+                yield f"data: {json.dumps(error_response.model_dump(mode='json'))}\n\n"
             except Exception as e:
                 logger.exception(
                     "stream_chat_request_failed",
@@ -608,7 +775,11 @@ async def chat_stream(
                 error_response = StreamResponse(content=str(e), done=True)
                 yield f"data: {json.dumps(error_response.model_dump(mode='json'))}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     except Exception as e:
         logger.exception(
@@ -665,8 +836,11 @@ async def clear_chat_history(
         dict: A message indicating the chat history was cleared.
     """
     try:
-        await agent.clear_chat_history(session.id)
+        async with _chat_execution_guard(session.id):
+            await agent.clear_chat_history(session.id)
         return {"message": "Chat history cleared successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("clear_chat_history_failed", session_id=session.id, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

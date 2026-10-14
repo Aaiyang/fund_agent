@@ -1,13 +1,47 @@
 """明确任务的无模型快速路径；歧义和复合请求留给主模型结构化工具调用."""
 
 import re
+from typing import Literal
 
 from app.schemas.research import AllocationAction, ResearchRequest
 
 _CODES = re.compile(r"(?<!\d)\d{6}(?!\d)")
-_RESEARCH = re.compile(r"分析|研究|诊断|潜力|涨跌原因|为什么.*(?:涨|跌)")
-_NEGATED = re.compile(r"(?:不要|不用|别|不需要).{0,8}(?:分析|诊断|研究|导入|同步|加仓|减仓|建仓)")
+_COMPARISON = re.compile(r"对比|比较|区别|哪个好|哪只好|选哪|二选一|三选一")
+_RESEARCH = re.compile(
+    r"分析|研究|诊断|潜力|涨跌原因|为什么.*(?:涨|跌)|对比|比较|区别|哪个好|哪只好|选哪|二选一|三选一"
+)
+_NEGATED = re.compile(
+    r"(?:不要|不用|(?<![分区类识差])别|不需要|不想|暂不|先不).{0,8}(?:分析|诊断|研究|对比|比较|导入|同步|加仓|减仓|建仓)"
+)
 _ACTION_WORDS: dict[str, AllocationAction] = {"建仓": "build", "加仓": "increase", "减仓": "reduce", "清仓": "exit"}
+
+
+def explicit_multi_role_research(text: str) -> bool:
+    """Expensive collaboration requires an explicit request or a validated report button."""
+    return bool(re.search(r"多角色|多智能体|多身份|多\s*agents?|协作研究", text, re.IGNORECASE))
+
+
+def research_strategy(text: str) -> Literal["single", "multi_role"]:
+    """Keep ordinary deep research independent from agent collaboration."""
+    return "multi_role" if explicit_multi_role_research(text) else "single"
+
+
+def client_multi_role_request(codes: list[str]) -> ResearchRequest:
+    """客户端按钮直接授权的多智能体研究；对象是已确认的六位代码，不含名称猜测.
+
+    与 ``explicit_multi_role_research`` 走同一套 ``ResearchRequest`` 校验，只是授权
+    来源从"用户原话里有那几个字"换成"用户点了那只基金的研究按钮"。名称解析、歧义
+    时的人工选卡、深度取证全部沿用原节点，不在这里另开一条链。
+    """
+    unique = list(dict.fromkeys(codes))
+    if not 1 <= len(unique) <= 3:
+        raise ValueError("多智能体研究一次最多三只基金")
+    return ResearchRequest(
+        intent="fund_comparison" if len(unique) > 1 else "fund_research",
+        fund_queries=unique,
+        mode="deep",
+        strategy="multi_role",
+    )
 
 
 def request_after_fund_selection(text: str, codes: list[str]) -> ResearchRequest | None:
@@ -15,7 +49,10 @@ def request_after_fund_selection(text: str, codes: list[str]) -> ResearchRequest
     if not codes or len(codes) > 3 or _NEGATED.search(text) or re.search(r"导入|同步持仓|更新持仓|解释|什么是", text):
         return None
     actions: list[AllocationAction] = [action for word, action in _ACTION_WORDS.items() if word in text]
-    if not actions and not re.search(r"分析|研究|潜力|怎么样|如何|值得", text):
+    comparison = bool(_COMPARISON.search(text)) and not actions
+    if comparison and len(set(codes)) < 2:
+        return None
+    if not actions and not comparison and not re.search(r"分析|研究|潜力|怎么样|如何|值得", text):
         return None
     account = re.search(r"(?:账户|账号)\s*(?:ID|id|编号)?\s*[：:#]?\s*(\d+)(?!\d)", text)
     if re.search(r"账户|账号", text) and (account is None or int(account.group(1)) <= 0):
@@ -38,9 +75,10 @@ def request_after_fund_selection(text: str, codes: list[str]) -> ResearchRequest
     elif actions:
         action = "compare"
     return ResearchRequest(
-        intent="allocation_analysis" if actions else "fund_research",
+        intent="allocation_analysis" if actions else "fund_comparison" if comparison else "fund_research",
         fund_queries=codes,
         mode="deep" if re.search(r"深度|深入|详细|全面", text) else "standard",
+        strategy=research_strategy(text),
         account_id=int(account.group(1)) if account and int(account.group(1)) > 0 else None,
         action=action,
         proposed_amount=amount,
@@ -51,6 +89,8 @@ def infer_research_request(text: str) -> ResearchRequest | None:
     """仅自动路由代码明确的研究和明确本人组合诊断，不猜名称或隐含操作."""
     if _NEGATED.search(text) or re.search(r"导入|同步持仓|更新持仓|解释|什么是|是什么意思", text):
         return None
+    if re.search(r"订单|流水|手机号|验证码|编号", text):
+        return None  # 六位编号不能直接当作基金代码，交由主模型核对。
     actions = [action for word, action in _ACTION_WORDS.items() if word in text]
     codes = list(dict.fromkeys(_CODES.findall(text)))
     if len(codes) > 3 or len(actions) > 1:
@@ -63,7 +103,14 @@ def infer_research_request(text: str) -> ResearchRequest | None:
         r"(?<![A-Za-z0-9.])(?:sh\d{6}|sz\d{6}|bj\d{6}|hk\d{5}|us[A-Z][A-Z.]{0,10})(?![A-Za-z0-9.])", text
     )
     if symbols:
-        if len(set(symbols)) == 1 and _RESEARCH.search(text) and not re.search(r"账户|账号|持仓|成本|基金", text):
+        remaining_codes = _CODES.findall(re.sub(r"(?:sh|sz|bj)\d{6}|hk\d{5}|us[A-Z][A-Z.]{0,10}", "", text))
+        if (
+            len(set(symbols)) == 1
+            and not remaining_codes
+            and not _COMPARISON.search(text)
+            and _RESEARCH.search(text)
+            and not re.search(r"账户|账号|持仓|成本|基金", text)
+        ):
             return ResearchRequest(intent="stock_research", mode=mode, stock_symbol=symbols[0])
         return None
     sectors = re.findall(r"BK\d{4,6}(?!\d)", text)
@@ -76,11 +123,17 @@ def infer_research_request(text: str) -> ResearchRequest | None:
     if re.search(r"我的持仓|我的组合|整个组合|持仓诊断|组合诊断", text) and _RESEARCH.search(text):
         if codes or re.search(r"账户|账号|组合[一二三四五六七八九]|账户\s*\d", text):
             return None
-        return ResearchRequest(intent="portfolio_diagnosis", mode=mode)
+        return ResearchRequest(intent="portfolio_diagnosis", mode=mode, strategy=research_strategy(text))
     if codes and _RESEARCH.search(text):
         if re.search(r"账户|账号|持仓|成本|盈亏|加仓|减仓|建仓|买入|卖出", text):
             return None
-        return ResearchRequest(intent="fund_research", mode=mode, fund_queries=codes)
+        if _COMPARISON.search(text):
+            if len(codes) < 2:
+                return None
+            return ResearchRequest(
+                intent="fund_comparison", mode=mode, fund_queries=codes, strategy=research_strategy(text)
+            )
+        return ResearchRequest(intent="fund_research", mode=mode, fund_queries=codes, strategy=research_strategy(text))
     return None
 
 

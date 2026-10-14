@@ -12,6 +12,19 @@
 
 import { API_BASE_URL, apiError } from '@/api/client';
 import type { ChatPendingAction } from '@/hooks/useChatImport';
+import type { AgentRunContinuation } from '@/hooks/useChatImport';
+
+export type AgentResumeAction =
+  | { kind: 'fund_selection'; interruptId: string; fundCode?: string }
+  | { kind: 'continue'; turnId: string };
+
+export type ChatResearchProgress = {
+  kind: 'research_progress';
+  run_id: string;
+  stage: 'evidence' | 'analysis' | 'review' | 'supplement' | 'revision' | 'report';
+  role: 'fundamentals' | 'risk' | 'portfolio' | null;
+  status: 'started' | 'completed' | 'partial' | 'failed' | 'skipped';
+};
 
 /** 后端 StreamResponse 的一帧；OpenAPI 里没有这个类型（流式响应没法描述）。 */
 export type ChatStreamChunk = {
@@ -19,6 +32,8 @@ export type ChatStreamChunk = {
   done?: boolean;
   /** Agent 走到人工复核时会带着它：卡片只能由 HTTP 端点决定，聊天文本不算确认。 */
   pending_action?: ChatPendingAction | null;
+  research_progress?: ChatResearchProgress | null;
+  continuation?: AgentRunContinuation | null;
 };
 
 /** 服务端把那一次生成的失败原因放在 done 帧的 content 里回传。 */
@@ -48,8 +63,11 @@ function parseFrame(frame: string, handlers: StreamHandlers): void {
   for (const line of frame.split('\n')) {
     if (!line.startsWith(DATA_PREFIX)) continue;
     const chunk = JSON.parse(line.slice(DATA_PREFIX.length)) as ChatStreamChunk;
+    if (chunk.research_progress) handlers.onResearchProgress(chunk.research_progress);
     if (chunk.pending_action || (chunk.done && Object.prototype.hasOwnProperty.call(chunk, 'pending_action'))) handlers.onPendingAction(chunk.pending_action ?? null);
     if (chunk.done) {
+      handlers.onDone();
+      if (Object.prototype.hasOwnProperty.call(chunk, 'continuation')) handlers.onContinuation(chunk.continuation ?? null);
       // 正常收尾的 done 帧是空的；带内容的那一帧就是服务端的失败原因。
       if (chunk.content) throw new ChatStreamError(chunk.content);
       continue;
@@ -61,6 +79,18 @@ function parseFrame(frame: string, handlers: StreamHandlers): void {
 type StreamHandlers = {
   onDelta: (delta: string) => void;
   onPendingAction: (review: ChatPendingAction | null) => void;
+  onResearchProgress: (progress: ChatResearchProgress) => void;
+  onContinuation: (continuation: AgentRunContinuation | null) => void;
+  onDone: () => void;
+};
+
+type StreamInput = {
+  token: string;
+  signal: AbortSignal;
+  onDelta: (delta: string) => void;
+  onPendingAction?: (review: ChatPendingAction | null) => void;
+  onResearchProgress?: (progress: ChatResearchProgress) => void;
+  onContinuation?: (continuation: AgentRunContinuation | null) => void;
 };
 
 /**
@@ -69,19 +99,42 @@ type StreamHandlers = {
  * 抛错的情形：HTTP 非 2xx（鉴权失效、限流）、服务端 done 帧带了错误文本、
  * 以及连接自己断了。调用方 AbortSignal 时 promise 以 AbortError 拒绝。
  */
-export function streamChatMessage(input: {
-  token: string;
+export function streamChatMessage(input: StreamInput & {
   text: string;
   /** 这一条消息带上的截图批次；后端会校验它们确实属于这个会话。 */
   holdingImportIds?: string[];
-  signal: AbortSignal;
-  onDelta: (delta: string) => void;
-  onPendingAction?: (review: ChatPendingAction | null) => void;
+  researchFollowupId?: string;
+  /** 基金页按钮直接授权的多智能体研究对象（六位代码）。 */
+  multiRoleFundCodes?: string[];
 }): Promise<void> {
-  const { token, text, holdingImportIds = [], signal } = input;
+  const { text, holdingImportIds = [] } = input;
+  return streamRequest(input, '/chatbot/chat/stream', {
+    messages: [{ role: 'user', content: text }],
+    ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
+    ...(input.researchFollowupId ? { research_followup_id: input.researchFollowupId } : {}),
+    ...(input.multiRoleFundCodes?.length ? { multi_role_fund_codes: input.multiRoleFundCodes } : {}),
+  });
+}
+
+/** 人工选择和检查点继续使用相同的 SSE 传输，不伪造一条新的用户提问。 */
+export function streamAgentResume(input: StreamInput & { action: AgentResumeAction }): Promise<void> {
+  const { action } = input;
+  return action.kind === 'fund_selection'
+    ? streamRequest(input, '/chatbot/fund-selection/decision/stream', {
+        interrupt_id: action.interruptId, decision: action.fundCode ? 'select' : 'cancel', fund_code: action.fundCode,
+      })
+    : streamRequest(input, '/chatbot/continue/stream', { turn_id: action.turnId });
+}
+
+function streamRequest(input: StreamInput, path: string, body: unknown): Promise<void> {
+  const { token, signal } = input;
+  let done = false;
   const handlers: StreamHandlers = {
     onDelta: input.onDelta,
     onPendingAction: input.onPendingAction ?? (() => undefined),
+    onResearchProgress: input.onResearchProgress ?? (() => undefined),
+    onContinuation: input.onContinuation ?? (() => undefined),
+    onDone: () => { done = true; },
   };
 
   return new Promise<void>((resolve, reject) => {
@@ -91,7 +144,7 @@ export function streamChatMessage(input: {
     }
 
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE_URL}/chatbot/chat/stream`);
+    xhr.open('POST', `${API_BASE_URL}${path}`);
     xhr.responseType = 'text';
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('Content-Type', 'application/json');
@@ -141,6 +194,7 @@ export function streamChatMessage(input: {
       }
       try {
         drain(true);
+        if (!done) throw new ChatStreamError('连接已结束，研究尚未完成，请查看任务状态并继续原任务。');
         settled = true;
         cleanup();
         resolve();
@@ -161,12 +215,7 @@ export function streamChatMessage(input: {
     // 整段重发会重复计入上下文。附件走结构化字段，不塞进正文——工具读的是
     // `holding_import_ids`，写在文本里它拿不到批次号，还会被后端当成编造的导入。
     try {
-      xhr.send(
-        JSON.stringify({
-          messages: [{ role: 'user', content: text }],
-          ...(holdingImportIds.length ? { holding_import_ids: holdingImportIds } : {}),
-        }),
-      );
+      xhr.send(JSON.stringify(body));
     } catch (error) {
       fail(error, true);
     }

@@ -15,6 +15,7 @@ async def load_skill(skill_name: SkillName, section: SkillSection = "instruction
 
     portfolio-diagnosis适用于“诊断我的持仓”“组合是否合理”“持仓太集中/重复买了吗/如何调整”。
     fund-analysis适用于指定基金潜力、近期涨跌原因和后续策略的完整研究。
+    fund-comparison适用于两到三只基金横向对比，量化指标使用共同日期窗口计算工具。
     fund-allocation适用于基金建仓/加减仓方案；sector-analysis研究A股板块，stock-analysis研究已确认市场代码的股票。
     先加载instructions，需要工具证据与图表协议时加载evidence；简单净值查询无需加载。
     不访问外部URL、任意路径或执行脚本；不会取得用户身份、读取持仓或修改账户。

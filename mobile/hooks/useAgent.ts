@@ -73,6 +73,11 @@ export function useDeleteAgentSession() {
   });
 }
 
+export async function fetchAgentMessages(client: QueryClient, sessionId: string): Promise<ChatResponse> {
+  const token = await ensureSessionToken(client, sessionId);
+  return request<ChatResponse>('/chatbot/messages', { bearer: token });
+}
+
 export function useAgentMessages(sessionId: string | null) {
   const client = useQueryClient();
   return useQuery({
@@ -83,8 +88,7 @@ export function useAgentMessages(sessionId: string | null) {
     staleTime: Infinity,
     queryFn: async () => {
       if (!sessionId) throw new Error('还没有选中会话');
-      const token = await ensureSessionToken(client, sessionId);
-      return request<ChatResponse>('/chatbot/messages', { bearer: token });
+      return fetchAgentMessages(client, sessionId);
     },
   });
 }

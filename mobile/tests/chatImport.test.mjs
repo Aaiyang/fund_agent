@@ -129,7 +129,8 @@ test('fund selection submits only candidate code and real interrupt using the ac
   await assert.rejects(h.exports.useSelectAnalysisFund(null).mutationFn({ interruptId: 'fund-choice' }));
 });
 
-test('a late stream action from the previous session stays hidden in the current session', async () => {
+for (const entry of ['message', 'fund_selection', 'continue']) {
+test(`a late ${entry} stream stays hidden in the current session`, async () => {
   const values = [];
   let cursor = 0;
   let stream;
@@ -159,7 +160,13 @@ test('a late stream action from the previous session stays hidden in the current
       if (name === '@/api/chatStream') return {
         ChatStreamError: Error,
         streamChatMessage: (input) => { stream = input; return new Promise((resolve) => { finish = resolve; }); },
+        streamAgentResume: (input) => { stream = input; return new Promise((resolve) => { finish = resolve; }); },
       };
+      if (name === '@/utils/researchProgress') {
+        const progressExports = {};
+        vm.runInNewContext(compile('../utils/researchProgress.ts'), { exports: progressExports });
+        return progressExports;
+      }
       throw new Error(`Unexpected import ${name}`);
     },
   });
@@ -167,14 +174,142 @@ test('a late stream action from the previous session stays hidden in the current
     cursor = 0;
     return exports.useAgentChat({ sessionId: id, ensureSession: async () => id });
   };
-  const sending = render('A').send('同步截图', ['batch']);
+  const sending = entry === 'message' ? render('A').send('同步截图', ['batch']) : render('A').resume(
+    entry === 'fund_selection' ? { kind: entry, interruptId: 'actual', fundCode: '002207' } : { kind: entry, turnId: 'original' },
+  );
   await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(render('A').resume({ kind: 'continue', turnId: 'original' }), /上一条还在生成中/);
   render('B');
   stream.onPendingAction({ kind: 'holding_import_processing', import_id: 'batch', interrupt_id: 'wait' });
   stream.onDelta('正在识别');
+  stream.onResearchProgress({ kind: 'research_progress', run_id: 'run-A', stage: 'analysis', role: 'risk', status: 'started' });
   assert.equal(render('B').review, null);
   assert.equal(render('B').turns.length, 0);
   assert.equal(render('A').review.import_id, 'batch');
+  assert.match(render('A').turns.at(-1).researchProgress, /风险分析员进行中/);
+  assert.equal(render('A').turns.filter((turn) => turn.role === 'user').length, entry === 'message' ? 1 : 0);
   finish();
   await sending;
+});
+}
+
+function completedChatHarness() {
+  const values = [];
+  const cache = new Map();
+  const streams = [];
+  const refreshes = [];
+  let cursor = 0;
+  const exports = {};
+  const client = {
+    invalidateQueries: async () => {},
+    fetchQuery: ({ queryKey }) => new Promise((resolve, reject) => {
+      refreshes.push({
+        id: queryKey[1], reject,
+        resolve(data) { cache.set(queryKey[1], data); resolve(data); },
+      });
+    }),
+  };
+  const progressExports = {};
+  vm.runInNewContext(compile('../utils/researchProgress.ts'), { exports: progressExports });
+  vm.runInNewContext(compile('../hooks/useAgentChat.ts'), {
+    exports, AbortController,
+    require(name) {
+      if (name === 'react') return {
+        useState(initial) {
+          const index = cursor++;
+          if (!(index in values)) values[index] = initial;
+          return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value; }];
+        },
+        useRef(initial) {
+          const index = cursor++;
+          return values[index] ??= { current: initial };
+        },
+        useCallback: (fn) => fn, useEffect: () => {},
+      };
+      if (name === '@tanstack/react-query') return { useQueryClient: () => client };
+      if (name === '@/api/queries') return { queryKeys: {
+        chatPendingAction: ['pending'], agentSessions: ['sessions'], agentMessages: (id) => ['messages', id],
+      } };
+      if (name === '@/hooks/useAgent') return {
+        ensureSessionToken: async () => 'token',
+        fetchAgentMessages: async () => {},
+        useAgentMessages: (id) => ({ data: cache.get(id) ?? { messages: [] }, refetch: async () => {} }),
+      };
+      if (name === '@/api/chatStream') {
+        const start = (input) => new Promise((resolve, reject) => streams.push({ ...input, finish: resolve, reject }));
+        return { ChatStreamError: Error, streamChatMessage: start, streamAgentResume: start };
+      }
+      if (name === '@/utils/researchProgress') return progressExports;
+      throw new Error(`Unexpected import ${name}`);
+    },
+  });
+  return {
+    cache, streams, refreshes,
+    render(id) {
+      cursor = 0;
+      return exports.useAgentChat({ sessionId: id, ensureSession: async () => id ?? 'new-session' });
+    },
+  };
+}
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+for (const outcome of ['failed', 'stale', 'complete']) {
+test(`completed research remains visible while history refresh is ${outcome}`, async () => {
+  const h = completedChatHarness();
+  const old = [{ role: 'user', content: '之前的问题' }, { role: 'assistant', content: '之前的报告' }];
+  h.cache.set('A', { messages: old });
+  const task = h.render('A').resume({ kind: 'fund_selection', interruptId: 'choice', fundCode: '002207' });
+  await tick();
+  h.streams[0].onDelta('完整的研究正文。\n');
+  h.streams[0].onDelta('数据来源与风险说明。');
+  h.streams[0].finish();
+  await tick();
+  const answer = '完整的研究正文。\n数据来源与风险说明。';
+  assert.equal(h.render('A').turns.at(-1).content, answer);
+  assert.equal(h.render('A').sending, false);
+  assert.equal(h.refreshes[0].id, 'A');
+  if (outcome === 'failed') h.refreshes[0].reject(new Error('offline'));
+  else h.refreshes[0].resolve({ messages: outcome === 'complete' ? [...old, { role: 'assistant', content: answer }] : old });
+  await task;
+  const turns = h.render('A').turns;
+  assert.equal(turns.at(-1).content, answer);
+  assert.equal(turns.filter((turn) => turn.content === answer).length, 1);
+  assert.equal(turns.length, 3);
+});
+}
+
+test('an old refresh cannot remove a newer stream or use the newly selected session', async () => {
+  const h = completedChatHarness();
+  const first = h.render('A').send('分析基金');
+  await tick();
+  h.streams[0].onDelta('A 的完整回答');
+  h.streams[0].finish();
+  await tick();
+  const second = h.render('B').send('研究另一个基金');
+  await tick();
+  h.streams[1].onDelta('B 的回答正在生成');
+  h.refreshes[0].resolve({ messages: [{ role: 'user', content: '分析基金' }, { role: 'assistant', content: 'A 的完整回答' }] });
+  await first;
+  // 即使旧 transport 再发迟到的增量，也不能改写新一轮。
+  h.streams[0].onDelta('迟到的 A 内容');
+  assert.equal(h.render('B').turns.at(-1).content, 'B 的回答正在生成');
+  assert.equal(h.render('B').sending, true);
+  h.streams[1].finish();
+  await tick();
+  assert.equal(h.refreshes[1].id, 'B');
+  h.refreshes[1].reject(new Error('offline'));
+  await second;
+});
+
+test('a newly created session refreshes its own complete history', async () => {
+  const h = completedChatHarness();
+  const task = h.render(null).send('研究基金');
+  await tick();
+  h.streams[0].onDelta('完整报告');
+  h.streams[0].finish();
+  await tick();
+  assert.equal(h.refreshes[0].id, 'new-session');
+  h.refreshes[0].resolve({ messages: [{ role: 'user', content: '研究基金' }, { role: 'assistant', content: '完整报告' }] });
+  await task;
+  assert.equal(h.render('new-session').turns.length, 2);
 });

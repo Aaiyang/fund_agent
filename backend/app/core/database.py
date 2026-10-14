@@ -1,8 +1,6 @@
 """异步数据库引擎与会话工厂.
 
-按 MVP spec，新的基金/自选/资产组合模块统一使用这套 SQLAlchemy Async + asyncpg
-的引擎；遗留的 chat/auth 服务继续用原有的同步 database_service，两者连的是同一个
-PostgreSQL。
+按 MVP spec，基金、资产组合、聊天与认证统一使用 SQLAlchemy Async + asyncpg 引擎。
 """
 
 from collections.abc import AsyncIterator
@@ -10,6 +8,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from urllib.parse import quote_plus
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -64,7 +63,7 @@ async def get_async_session() -> AsyncIterator[AsyncSession]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except BaseException:
             await session.rollback()
             raise
 
@@ -86,8 +85,6 @@ async def async_health_check() -> bool:
     Returns:
         数据库有响应返回 True，否则 False。
     """
-    from sqlalchemy import text
-
     try:
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))

@@ -2,6 +2,7 @@
 
 import re
 from typing import (
+    Annotated,
     List,
     Literal,
 )
@@ -9,12 +10,18 @@ from typing import (
 from pydantic import (
     BaseModel,
     Field,
+    StringConstraints,
     field_validator,
+    model_validator,
 )
 
 from app.schemas.base import BaseResponse
 from app.schemas.agent_import import AgentPendingAction, ImportId
 from app.schemas.agent_resume import AgentRunContinuation
+from app.schemas.multi_role_research import ResearchProgress
+
+# 多智能体入口的对象只能是从基金页带过来的六位代码，不接受名称（名称要经解析节点确认）
+MultiRoleFundCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
 
 
 class Message(BaseModel):
@@ -30,6 +37,7 @@ class Message(BaseModel):
     role: Literal["user", "assistant", "system"] = Field(..., description="The role of the message sender")
     # 模型输出长度由生成 token 预算控制；历史必须能原样返回已保存的正文。
     content: str = Field(..., description="The complete content of the message", min_length=1)
+    research_id: str | None = Field(default=None, description="服务端签发的可进一步研究的报告标识")
 
 
 class ChatInputMessage(BaseModel):
@@ -77,6 +85,37 @@ class ChatRequest(BaseModel):
     )
     holding_import_ids: list[ImportId] = Field(default_factory=list, max_length=5)
     holding_account_id: int | None = Field(default=None, gt=0)
+    research_followup_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    multi_role_fund_codes: list[MultiRoleFundCode] = Field(
+        default_factory=list,
+        max_length=3,
+        description="客户端按钮直接授权的多智能体研究对象；只能是六位基金代码",
+    )
+
+    @model_validator(mode="after")
+    def valid_research_followup(self) -> "ChatRequest":
+        """A follow-up uses the source's scope, without competing attachment or account inputs."""
+        if self.research_followup_id and (
+            self.holding_import_ids or self.holding_account_id is not None or len(self.messages) != 1
+        ):
+            raise ValueError("进一步研究不能与附件、账户变更或多条新消息混合提交")
+        return self
+
+    @model_validator(mode="after")
+    def valid_multi_role_request(self) -> "ChatRequest":
+        """多智能体入口只接受代码，且单独发起：附件、账户变更、追问都不能同行."""
+        if not self.multi_role_fund_codes:
+            return self
+        if len(set(self.multi_role_fund_codes)) != len(self.multi_role_fund_codes):
+            raise ValueError("多智能体研究的基金代码不能重复")
+        if (
+            self.holding_import_ids
+            or self.holding_account_id is not None
+            or self.research_followup_id
+            or len(self.messages) != 1
+        ):
+            raise ValueError("多智能体研究需要单独发起，不能与附件、账户变更或追问混合提交")
+        return self
 
 
 class ChatResponse(BaseResponse):
@@ -103,6 +142,7 @@ class StreamResponse(BaseResponse):
     done: bool = Field(default=False, description="Whether the stream is complete")
     pending_action: AgentPendingAction | None = None
     continuation: AgentRunContinuation | None = None
+    research_progress: ResearchProgress | None = None
 
 
 class HoldingImportDecisionResponse(ChatResponse):

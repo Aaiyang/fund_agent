@@ -26,7 +26,7 @@ import { Screen, Card, Button } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useCreateAgentSession } from '@/hooks/useAgent';
 import { useAgentChat } from '@/hooks/useAgentChat';
-import { useAdvanceChatImport, useChatImportProgress, useDecideChatImport, usePendingChatAction, useUploadChatScreenshots, useSelectAnalysisFund, useContinueAgentRun } from '@/hooks/useChatImport';
+import { useAdvanceChatImport, useChatImportProgress, useDecideChatImport, usePendingChatAction, useUploadChatScreenshots } from '@/hooks/useChatImport';
 import { useFundDetail } from '@/hooks/useFunds';
 import { useLlmProfiles } from '@/hooks/useLlmProfiles';
 import { useUiStore } from '@/stores/ui';
@@ -101,13 +101,16 @@ function ChatSkeleton({ label }: { label: string }) {
  * 一条消息。借 DeepSeek 的排版：助手的回答不套气泡，直接铺在页面上，
  * 只有用户那一句是右侧一块浅色——长回答读起来不像在被逐条"回话"。
  */
-function Message({ role, content, streaming, failed, onRetry, label }: {
+function Message({ role, content, streaming, failed, onRetry, label, onResearch, researchDisabled, researchProgress }: {
   role: string;
   content: string;
   streaming?: boolean;
   failed?: string;
   onRetry?: () => void;
   label?: string;
+  onResearch?: () => void;
+  researchDisabled?: boolean;
+  researchProgress?: string;
 }) {
   if (role === 'user') {
     return (
@@ -132,11 +135,31 @@ function Message({ role, content, streaming, failed, onRetry, label }: {
     <View style={{ marginBottom: 20 }}>
       {label ? <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 6 }}>{label}</Text> : null}
       {content ? <MarkdownText content={content} /> : null}
+      {streaming && researchProgress ? (
+        <Text accessibilityLiveRegion="polite" style={{ fontSize: 13, color: theme.textMuted, marginTop: 8 }}>{researchProgress}</Text>
+      ) : null}
       {streaming && !content ? (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <ActivityIndicator color={theme.primary} size="small" />
-          <Text style={{ fontSize: 14, color: theme.textMuted, marginLeft: 8 }}>正在思考…</Text>
+          <Text style={{ fontSize: 14, color: theme.textMuted, marginLeft: 8 }}>{researchProgress ? '多角色研究进行中…' : '正在思考…'}</Text>
         </View>
+      ) : null}
+      {onResearch ? (
+        <Text
+          accessibilityRole="link"
+          accessibilityState={{ disabled: Boolean(researchDisabled) }}
+          onPress={researchDisabled ? undefined : onResearch}
+          style={{
+            alignSelf: 'flex-start',
+            marginTop: 10,
+            paddingVertical: 4,
+            fontSize: 14,
+            color: researchDisabled ? theme.textFaint : theme.primary,
+            textDecorationLine: 'underline',
+          }}
+        >
+          多角色深度研究
+        </Text>
       ) : null}
       {failed ? (
         <View style={{ marginTop: 8 }}>
@@ -229,8 +252,6 @@ export default function AgentScreen() {
 
   const upload = useUploadChatScreenshots();
   const decide = useDecideChatImport(sessionId);
-  const fundChoice = useSelectAnalysisFund(sessionId);
-  const continueRun = useContinueAgentRun(sessionId);
   const currentSession = useRef(sessionId);
   useEffect(() => { currentSession.current = sessionId; }, [sessionId]);
   const pending = usePendingChatAction(sessionId);
@@ -258,7 +279,7 @@ export default function AgentScreen() {
   }, [sessionId, processing, progress.data, advancing, advanceImport, setReview, refetchChatHistory, refetchPending]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
-  const canSend = !uploading && !advance.isPending && !decide.isPending && !fundChoice.isPending && !continueRun.isPending
+  const canSend = !uploading && !advance.isPending && !decide.isPending
     && (!review || ((review.kind === 'holding_import_account' || review.kind === 'human_question') && !attachments.length))
     && (Boolean(draft.trim()) || attachments.length > 0);
   // 回答上面标一句"是谁说的"：档案名是用户自己起的，标的是它底下那个模型号。
@@ -324,6 +345,24 @@ export default function AgentScreen() {
     requestAnimationFrame(stickToBottom);
   }
 
+  /**
+   * 基金页带过来的上下文里直接发起多智能体研究。
+   *
+   * 代码走 `multi_role_fund_codes` 这个结构化字段，由后端当作"用户点按钮"的授权，
+   * 不靠模型自己决定要不要多花几倍 token；消息正文仍然照常展示，也保证后端在结构化
+   * 字段缺失时仍能按原文规则识别。
+   */
+  function startMultiRoleResearch() {
+    if (!contextCode || chat.sending || uploading || review || pending.data?.continuation) return;
+    const name = context.data?.fund_name;
+    atBottom.current = true;
+    setOffBottomDuringStream(false);
+    void chat
+      .send(`请对 ${contextCode}${name ? ` ${name}` : ''} 做多智能体深度研究`, [], undefined, [contextCode])
+      .catch((error: unknown) => setProblem(describeError(error)));
+    requestAnimationFrame(stickToBottom);
+  }
+
   function decideImport(decision: 'confirm' | 'cancel') {
     const review = chat.review ?? pending.data?.pending_action ?? null;
     if (!review || review.kind === 'fund_selection' || review.kind === 'human_question') return;
@@ -350,46 +389,28 @@ export default function AgentScreen() {
   }
 
   function chooseFund(fundCode?: string) {
-    if (review?.kind !== 'fund_selection' || !review.interrupt_id || fundChoice.isPending) return;
+    if (review?.kind !== 'fund_selection' || !review.interrupt_id || chat.sending) return;
     const active = sessionId;
     setProblem(null);
-    fundChoice.mutate({ interruptId: review.interrupt_id, fundCode }, {
-      onSuccess: (result) => {
-        if (currentSession.current !== active) return;
-        chat.setReview(result.pending_action ?? null);
-        void pending.refetch();
-        void chat.history.refetch();
-      },
-      onError: (error) => {
-        if (currentSession.current !== active) return;
-        setProblem(describeError(error));
-        chat.setReview(null);
-        void pending.refetch();
-        void chat.history.refetch();
-      },
+    atBottom.current = true;
+    setOffBottomDuringStream(false);
+    void chat.resume({ kind: 'fund_selection', interruptId: review.interrupt_id, fundCode }).catch((error: unknown) => {
+      if (currentSession.current === active) setProblem(describeError(error));
     });
+    requestAnimationFrame(stickToBottom);
   }
 
   function continueOriginalTask() {
     const action = pending.data?.continuation;
-    if (!action || !sessionId || continueRun.isPending || chat.sending) return;
+    if (!action || !sessionId || chat.sending) return;
     const active = sessionId;
     setProblem(null);
-    continueRun.mutate({ turnId: action.turn_id }, {
-      onSuccess: (result) => {
-        if (currentSession.current !== active) return;
-        chat.reset();
-        chat.setReview(result.pending_action ?? null);
-        void pending.refetch();
-        void chat.history.refetch();
-      },
-      onError: (error) => {
-        if (currentSession.current !== active) return;
-        setProblem(describeError(error));
-        void pending.refetch();
-        void chat.history.refetch();
-      },
+    atBottom.current = true;
+    setOffBottomDuringStream(false);
+    void chat.resume({ kind: 'continue', turnId: action.turn_id }).catch((error: unknown) => {
+      if (currentSession.current === active) setProblem(describeError(error));
     });
+    requestAnimationFrame(stickToBottom);
   }
 
   function continueImport(accountId?: number) {
@@ -424,6 +445,15 @@ export default function AgentScreen() {
               }}
             >
               <Text style={{ fontSize: 12, color: theme.warning }}>已带上下文 {contextCode}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="对这只基金发起多智能体研究"
+                hitSlop={8}
+                disabled={chat.sending || uploading || Boolean(review) || Boolean(pending.data?.continuation)}
+                onPress={startMultiRoleResearch}
+              >
+                <Text style={{ fontSize: 12, color: theme.warning, marginLeft: 10 }}>多智能体分析</Text>
+              </Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel="不带这个上下文" hitSlop={8} onPress={() => setContextDismissed(true)}>
                 <Text style={{ fontSize: 12, color: theme.warning, marginLeft: 6 }}>✕</Text>
               </Pressable>
@@ -475,6 +505,12 @@ export default function AgentScreen() {
                 failed={turn.state === 'failed' ? turn.error : undefined}
                 onRetry={chat.retry}
                 label={turn.role === 'assistant' ? assistantLabel : undefined}
+                researchProgress={turn.researchProgress}
+                researchDisabled={chat.sending || uploading || Boolean(review) || Boolean(pending.data?.continuation)}
+                onResearch={turn.role === 'assistant' && turn.research_id ? () => {
+                  void chat.send('请对这份报告进行多角色深度研究', [], turn.research_id ?? undefined)
+                    .catch((error: unknown) => setProblem(describeError(error)));
+                } : undefined}
               />
             ))}
             {problem ? <Text style={{ fontSize: 13, color: theme.danger, marginBottom: 8 }}>{problem}</Text> : null}
@@ -510,13 +546,13 @@ export default function AgentScreen() {
               {pending.data.continuation.selected_fund_name} · {pending.data.continuation.selected_fund_code}
             </Text> : null}
             <Text style={{ color: theme.textMuted, fontSize: 12, lineHeight: 18, marginVertical: 8 }}>{pending.data.continuation.notice}</Text>
-            <Button label={continueRun.isPending ? '正在继续…' : '继续已确认的任务'} disabled={continueRun.isPending || chat.sending || fundChoice.isPending || decide.isPending || advance.isPending} onPress={continueOriginalTask} />
+            <Button label={chat.sending ? '正在继续…' : '继续已确认的任务'} disabled={chat.sending || decide.isPending || advance.isPending} onPress={continueOriginalTask} />
           </Card>
         </View> : null}
         {review ? (
           <View style={{ paddingHorizontal: theme.gap, paddingTop: theme.gap }}>
             {review.kind === 'fund_selection' ? (
-              <FundSelectionCard action={review} busy={fundChoice.isPending} onSelect={chooseFund} onCancel={() => chooseFund()} />
+              <FundSelectionCard action={review} busy={chat.sending} onSelect={chooseFund} onCancel={() => chooseFund()} />
             ) : review.kind === 'human_question' ? <Card>
               <Text style={{ color: theme.text, fontSize: 14 }}>{review.question}</Text>
               <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>{review.notice}</Text>

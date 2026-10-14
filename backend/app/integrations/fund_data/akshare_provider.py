@@ -332,20 +332,20 @@ class AKShareFundProvider:
         # 最终会突破 AKSHARE_MAX_CONCURRENCY 的上限。
         await self._semaphore.acquire()
         try:
+            await self._throttle()
             # run_in_executor 只转发位置参数：这里用到的 AKShare 函数都是关键字
             # 参数（symbol、indicator）方式调的，必须先把它们绑好，否则 executor
             # 会拒收。
             future = asyncio.get_running_loop().run_in_executor(
                 None, functools.partial(self._call_sync, func_name, *args, **kwargs)
             )
-        except Exception:
+        except BaseException:
             self._semaphore.release()
             raise
         future.add_done_callback(lambda _future: self._semaphore.release())
 
         try:
-            await self._throttle()
-            records = await asyncio.wait_for(future, timeout=settings.AKSHARE_TIMEOUT_SECONDS)
+            records = await asyncio.wait_for(asyncio.shield(future), timeout=settings.AKSHARE_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             logger.warning(
                 "akshare_call_timeout",

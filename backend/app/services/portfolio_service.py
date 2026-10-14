@@ -8,6 +8,8 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import hashlib
+import json
 
 from sqlalchemy.exc import IntegrityError
 
@@ -26,6 +28,7 @@ from app.analytics.positions import (
 from app.analytics.returns import NavPoint
 from app.analytics.settlement import settlement_date
 from app.core.logging import logger
+from app.core.database import transaction_scope
 from app.models.fund import FundNav
 from app.models.portfolio import PortfolioAccount, PortfolioPosition
 from app.repositories.auto_invest_repository import auto_invest_repository
@@ -75,6 +78,10 @@ class TradeInputError(Exception):
     """这笔委托缺少它的方向所必需的那个数值."""
 
 
+class TradeIdempotencyConflictError(Exception):
+    """同一请求键已被另一组交易参数使用."""
+
+
 class TradeTooLargeError(Exception):
     """卖出的份额比流水账本里持有的还多，会把账本写成负数."""
 
@@ -116,14 +123,14 @@ class PortfolioService:
     # 账户
     # ------------------------------------------------------------------
 
-    async def ensure_account(self, user_id: int, account_id: int) -> PortfolioAccount:
+    async def ensure_account(self, user_id: int, account_id: int, *, for_update: bool = False) -> PortfolioAccount:
         """返回该账户；账户不属于调用方时抛异常.
 
         所有按账户范围的写入、以及显式指定账户的读取都走这里；持仓和流水是以
         account_id 为键的，仓储层分不清"账户是别人的"和"账户下本来就是空的"，
         所以归属必须在这一层先查清楚。
         """
-        account = await portfolio_repository.get_account(user_id, account_id)
+        account = await portfolio_repository.get_account(user_id, account_id, for_update=for_update)
         if account is None:
             raise AccountNotFoundError(f"portfolio account {account_id} not found")
         return account
@@ -304,38 +311,43 @@ class PortfolioService:
             AccountNotFoundError: 账户不存在或属于他人 → 上游 HTTP 404。
             PositionConflictError: `version` 不匹配 → 上游 HTTP 409。
         """
-        await self.ensure_account(user_id, account_id)
-        ledger = await portfolio_repository.ledger_rows(user_id, account_id)
-        if ledger.get((account_id, fund_code)):
-            for owned in ("cost_amount", "profit_loss"):
-                fields.pop(owned, None)
-                reset = [name for name in reset if name != owned]
-        elif fields.get("average_cost_nav") is not None:
-            reset = [*reset, "cost_amount", "profit_loss"]
-        elif fields.get("profit_loss") is not None:
-            reset = [*reset, "cost_amount", "average_cost_nav"]
-        updated = await portfolio_repository.upsert_position(
-            user_id,
-            account_id,
-            fund_code,
-            expected_version,
-            purchase_date=purchase_date,
-            reset=reset,
-            **fields,
-        )
-        if updated is None:
-            raise PositionConflictError(f"position version conflict for fund {fund_code}; reload and retry")
-        await portfolio_repository.add_transaction(
-            user_id=user_id,
-            account_id=account_id,
-            fund_code=fund_code,
-            transaction_type="MANUAL_ADJUSTMENT",
-            trade_date=business_today(),
-            shares=updated.shares,
-            nav=updated.average_cost_nav,
-            amount=updated.market_value,
-            source="manual",
-        )
+        async with transaction_scope():
+            await self.ensure_account(user_id, account_id, for_update=True)
+            ledger = await portfolio_repository.ledger_rows(user_id, account_id)
+            if ledger.get((account_id, fund_code)):
+                for owned in ("cost_amount", "profit_loss"):
+                    fields.pop(owned, None)
+                    reset = [name for name in reset if name != owned]
+            elif fields.get("average_cost_nav") is not None:
+                reset = [*reset, "cost_amount", "profit_loss"]
+            elif fields.get("profit_loss") is not None:
+                reset = [*reset, "cost_amount", "average_cost_nav"]
+            updated = await portfolio_repository.upsert_position(
+                user_id,
+                account_id,
+                fund_code,
+                expected_version,
+                purchase_date=purchase_date,
+                reset=reset,
+                shares=fields.get("shares"),
+                cost_amount=fields.get("cost_amount"),
+                average_cost_nav=fields.get("average_cost_nav"),
+                market_value=fields.get("market_value"),
+                profit_loss=fields.get("profit_loss"),
+            )
+            if updated is None:
+                raise PositionConflictError(f"position version conflict for fund {fund_code}; reload and retry")
+            await portfolio_repository.add_transaction(
+                user_id=user_id,
+                account_id=account_id,
+                fund_code=fund_code,
+                transaction_type="MANUAL_ADJUSTMENT",
+                trade_date=business_today(),
+                shares=updated.shares,
+                nav=updated.average_cost_nav,
+                amount=updated.market_value,
+                source="manual",
+            )
         logger.info(
             "position_upserted",
             user_id=user_id,
@@ -456,7 +468,9 @@ class PortfolioService:
 
     async def reproject(self, user_id: int, account_id: int, fund_code: str) -> None:
         """用流水重建某只持仓。定投计划的撤销路径要用，所以对外公开."""
-        await self._reproject(user_id, account_id, fund_code)
+        async with transaction_scope():
+            await self.ensure_account(user_id, account_id, for_update=True)
+            await self._reproject(user_id, account_id, fund_code)
 
     async def _reproject(self, user_id: int, account_id: int, fund_code: str) -> None:
         """从流水重新算出持仓的份额、持仓成本和市值.
@@ -481,6 +495,7 @@ class PortfolioService:
             # 快照在这两列里留下的数字描述的是旧持仓，
             # 不是这份流水现在累加出来的那份。
             reset=["average_cost_nav", "profit_loss"],
+            allow_unversioned_update=True,
         )
 
     @staticmethod
@@ -594,9 +609,75 @@ class PortfolioService:
         target_code: str | None = None,
         source: str = "manual",
         external_ref: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> PositionItem:
+        """在同一事务内校验持仓、写完整流水并投影；请求键重放不再次记账."""
+        reference = external_ref
+        prefix = False
+        if idempotency_key is not None:
+            if not 1 <= len(idempotency_key) <= 64 or not idempotency_key.strip():
+                raise TradeInputError("invalid idempotency key")
+            key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()[:32]
+            payload = [
+                account_id,
+                fund_code,
+                operation,
+                trade_date.isoformat(),
+                after_cutoff,
+                amount,
+                shares,
+                target_code,
+                source,
+            ]
+            payload_hash = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:32]
+            reference = f"trade:{key_hash}:{payload_hash}"
+            prefix = True
+        async with transaction_scope():
+            await self.ensure_account(user_id, account_id, for_update=True)
+            if reference:
+                lookup = reference[:39] if prefix else reference
+                await portfolio_repository.lock_transaction_ref(user_id, lookup)
+                existing = await portfolio_repository.transaction_by_ref(user_id, lookup, prefix=prefix)
+                if existing is not None:
+                    if (
+                        existing.external_transaction_id != reference
+                        or existing.account_id != account_id
+                        or existing.fund_code != fund_code
+                    ):
+                        raise TradeIdempotencyConflictError("idempotency_key_reused")
+                    position = await self.get_position(user_id, account_id, fund_code)
+                    if position is None:
+                        raise TradeIdempotencyConflictError("idempotent_position_missing")
+                    return position
+            return await self._record_trade_locked(
+                user_id,
+                account_id,
+                fund_code,
+                operation,
+                trade_date,
+                after_cutoff,
+                amount,
+                shares,
+                target_code,
+                source,
+                reference,
+            )
+
+    async def _record_trade_locked(
+        self,
+        user_id: int,
+        account_id: int,
+        fund_code: str,
+        operation: Operation,
+        trade_date: date,
+        after_cutoff: bool,
+        amount: float | None = None,
+        shares: float | None = None,
+        target_code: str | None = None,
+        source: str = "manual",
+        external_ref: str | None = None,
     ) -> PositionItem:
         """写入这笔委托的流水行，并把被它碰到的每只基金重新投影一遍."""
-        await self.ensure_account(user_id, account_id)
         confirm, _, rows = await self._plan_order(
             user_id, account_id, fund_code, operation, trade_date, after_cutoff, amount, shares, target_code
         )
@@ -614,7 +695,7 @@ class PortfolioService:
                 nav=nav,
                 amount=delta.amount,
                 source=source,
-                # 幂等键只挂在买入那一腿上：一笔委托只对应一个键，
+                # 幂等键只挂在第一腿上：一笔委托只对应一个键，
                 # 重试时不能把这一对流水再写第二遍。
                 external_transaction_id=external_ref if index == 0 else None,
             )
@@ -645,11 +726,12 @@ class PortfolioService:
         同时删掉该基金的 定投计划，因为活着的计划会在下一个扣款日结算，
         把他刚删掉的那行流水又复活出来。
         """
-        await self.ensure_account(user_id, account_id)
-        deleted = await portfolio_repository.delete_position(user_id, account_id, fund_code)
-        if deleted:
-            await auto_invest_repository.delete_plans_for_fund(user_id, account_id, fund_code)
-        return deleted
+        async with transaction_scope():
+            await self.ensure_account(user_id, account_id, for_update=True)
+            deleted = await portfolio_repository.delete_position(user_id, account_id, fund_code)
+            if deleted:
+                await auto_invest_repository.delete_plans_for_fund(user_id, account_id, fund_code)
+            return deleted
 
     # ------------------------------------------------------------------
     # 汇总

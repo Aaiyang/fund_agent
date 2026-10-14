@@ -20,12 +20,16 @@ from app.agent.graph.agent import LangGraphAgent
 from app.api.v1 import chatbot
 from app.api.v1.auth import get_current_session
 from app.core.cache import InMemoryCacheService
+from app.core import session_lock
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.schemas.chat import Message
 from app.schemas.fund_selection import FundSelectionAction, FundSelectionDecision, FundSelectionResult
 from app.schemas.graph import GraphState
 from app.services.fund_service import FundService
+from app.services.llm import service as llm_service_module
+from app.services.llm.registry import _build_chat_model
+from app.services.llm.service import LLMService
 
 
 class LegacyRootState(TypedDict):
@@ -127,6 +131,7 @@ def scenario(monkeypatch):
         get_llm=lambda: SimpleNamespace(model_name="fixture", get_name=lambda: "fixture"),
         call=respond,
     )
+    monkeypatch.setattr(session_lock.database_service, "get_session", AsyncMock(return_value=object()))
     monkeypatch.setattr(chatbot, "agent", state.agent)
     state.app = FastAPI()
     state.app.state.limiter = limiter
@@ -475,6 +480,209 @@ async def test_confirmation_survives_report_failure_and_continues_without_resele
         assert history[-1]["content"] == "使用已确认的基金继续分析。"
         again = await client.post("/chatbot/continue", json={"turn_id": data["continuation"]["turn_id"]})
         assert again.status_code == 200 and report_calls == 2
+
+
+class ResearchReportStream(httpx.AsyncByteStream):
+    """报告持续输出的总时长超过首段等待；模拟 GLM 先推理再给正文."""
+
+    async def __aiter__(self):
+        """持续提供有效进度，不输出隐藏推理正文给客户端."""
+        deltas = [{"reasoning_content": "private thinking"}] * 7 + [{"content": "已确认基金的研究报告。"}]
+        for delta in deltas:
+            await asyncio.sleep(0.045)
+            event = {
+                "id": "fixture-report",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "fixture",
+                "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+            }
+            yield ("data: " + json.dumps(event) + "\n\n").encode()
+        yield b"data: [DONE]\n\n"
+
+
+class PausedReportStream(httpx.AsyncByteStream):
+    """正文已经返回时暂停，便于验证客户端断线确实停止 SDK 请求."""
+
+    def __init__(self) -> None:
+        """不允许模拟报告在断线之前自行完成."""
+        self.closed = False
+
+    async def __aiter__(self):
+        """真实 SSE 格式输出足够长的正文，然后一直等待取消."""
+        event = {
+            "id": "fixture-report",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "fixture",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "正在输出已确认基金的分析内容。" * 8},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        yield ("data: " + json.dumps(event) + "\n\n").encode()
+        await asyncio.Event().wait()
+
+    async def aclose(self) -> None:
+        """SDK 关闭底层连接时记录清理结果."""
+        self.closed = True
+
+
+async def test_selection_stream_outputs_before_finish_and_disconnect_preserves_resume(scenario, monkeypatch):
+    wire = PausedReportStream()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["stream"] is True
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=wire)
+
+    async with client_for(scenario) as client, httpx.AsyncClient(transport=httpx.MockTransport(handle)) as upstream:
+        pending = await start(client, stream=True)
+        model = _build_chat_model("fixture", "fixture", "https://fixture.invalid/v1", http_async_client=upstream)
+        monkeypatch.setattr(llm_service_module, "_build_chat_model", lambda *_args, **_kwargs: model)
+        scenario.agent.llm_service = LLMService()
+        response = await chatbot._stream_agent_resume(
+            scenario.identity,
+            FundSelectionDecision(
+                interrupt_id=pending["interrupt_id"],
+                decision="select",
+                fund_code="000002",
+            ),
+        )
+        assert (await anext(response.body_iterator)).startswith(": connected")
+        first = await asyncio.wait_for(anext(response.body_iterator), timeout=5)
+        frame = json.loads(first[6:])
+        assert frame["content"].startswith("正在输出") and not frame["done"]
+        key = chatbot.cache_key("agent:holding-decision", scenario.identity.id)
+        assert await chatbot.cache_service.acquire_lock(key, ttl=60, fail_open=False) is None
+        await response.body_iterator.aclose()
+        assert wire.closed
+        lock = await chatbot.cache_service.acquire_lock(key, ttl=60, fail_open=False)
+        assert lock is not None
+        await chatbot.cache_service.release_lock(lock)
+        continuation = await scenario.agent.get_run_continuation(scenario.identity.id)
+        assert continuation is not None and continuation.selected_fund_code == "000002"
+        assert scenario.search.await_count == 1
+
+
+@pytest.mark.parametrize("resume", ["selection", "continuation"])
+async def test_report_progress_survives_nonstreaming_http_resume(scenario, monkeypatch, resume):
+    """覆盖真正的选择/继续 API、检查点及 SDK，不借助 graph messages 回调开启流式."""
+    requests = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if not payload.get("stream"):
+            # 非流式直到完整报告才返回，旧实现会在这之前误触发首段超时。
+            await asyncio.sleep(0.4)
+            return httpx.Response(200, json={})
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=ResearchReportStream())
+
+    async with client_for(scenario) as client, httpx.AsyncClient(transport=httpx.MockTransport(handle)) as upstream:
+        pending = await start(client, stream=True)
+        choice = {"interrupt_id": pending["interrupt_id"], "decision": "select", "fund_code": "000002"}
+        if resume == "continuation":
+            scenario.agent.llm_service.call = AsyncMock(side_effect=RuntimeError("fixture interrupted report"))
+            assert (await client.post("/chatbot/fund-selection/decision", json=choice)).status_code == 503
+            continuation = (await client.get("/chatbot/pending-action")).json()["continuation"]
+            before_evidence = list(scenario.evidence_calls)
+
+        monkeypatch.setattr(settings, "LLM_REQUEST_TIMEOUT", 0.18)
+        monkeypatch.setattr(settings, "LLM_STREAM_IDLE_TIMEOUT", 0.12)
+        monkeypatch.setattr(settings, "LLM_TOTAL_TIMEOUT", 1.5)
+        model = _build_chat_model("fixture", "fixture", "https://fixture.invalid/v1", http_async_client=upstream)
+        monkeypatch.setattr(llm_service_module, "_build_chat_model", lambda *_args, **_kwargs: model)
+        scenario.agent.llm_service = LLMService()
+
+        response = (
+            await client.post("/chatbot/fund-selection/decision", json=choice)
+            if resume == "selection"
+            else await client.post("/chatbot/continue", json={"turn_id": continuation["turn_id"]})
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["messages"][-1]["content"] == "已确认基金的研究报告。"
+        assert response.json()["pending_action"] is None and response.json()["continuation"] is None
+        assert "private thinking" not in response.text
+        assert scenario.search.await_count == 1
+        assert len(requests) == 1 and requests[0]["stream"] is True
+        assert "000002" in json.dumps(requests[0]["messages"])
+        if resume == "continuation":
+            assert scenario.evidence_calls == before_evidence
+        snapshot = await scenario.agent._graph.aget_state({"configurable": {"thread_id": scenario.identity.id}})
+        assert snapshot.values["research_result"].fund_codes == ["000002"] and not snapshot.next
+
+
+def stream_frames(response: httpx.Response) -> list[dict]:
+    """忽略心跳，只解析真正的 SSE 数据帧."""
+    return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+
+
+async def test_selection_and_continuation_stream_validate_before_headers(scenario):
+    async with client_for(scenario) as client:
+        pending = await start(client, stream=True)
+        body = {"interrupt_id": pending["interrupt_id"], "decision": "select", "fund_code": "000002"}
+        assert (
+            await client.post("/chatbot/fund-selection/decision/stream", json={**body, "fund_code": "000004"})
+        ).status_code == 422
+        assert (
+            await client.post("/chatbot/fund-selection/decision/stream", json={**body, "interrupt_id": "stale"})
+        ).status_code == 409
+        assert (await client.post("/chatbot/continue/stream", json={"turn_id": "stale"})).status_code == 409
+        lock = await chatbot.cache_service.acquire_lock(
+            chatbot.cache_key("agent:holding-decision", scenario.identity.id), ttl=60, fail_open=False
+        )
+        assert lock is not None
+        assert (await client.post("/chatbot/fund-selection/decision/stream", json=body)).status_code == 409
+        await chatbot.cache_service.release_lock(lock)
+        response = await client.post("/chatbot/fund-selection/decision/stream", json=body)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers["x-accel-buffering"] == "no"
+        frames = stream_frames(response)
+        assert "".join(item["content"] for item in frames) == "使用已确认的基金继续分析。"
+        assert frames[-1]["done"] and frames[-1]["pending_action"] is None and frames[-1]["continuation"] is None
+        assert scenario.search.await_count == 1 and len(scenario.calls) == 2
+        assert (await client.post("/chatbot/fund-selection/decision/stream", json=body)).status_code == 409
+        snapshot = await scenario.agent._graph.aget_state({"configurable": {"thread_id": scenario.identity.id}})
+        completed = await client.post("/chatbot/continue/stream", json={"turn_id": snapshot.values["turn_id"]})
+        assert completed.status_code == 200 and len(scenario.calls) == 2
+
+
+async def test_stream_failure_keeps_confirmation_and_continues_without_repeating_evidence(scenario):
+    original = scenario.agent.llm_service.call
+
+    async def fail_report(messages, **kwargs):
+        if kwargs:
+            raise RuntimeError("private provider error")
+        return await original(messages, **kwargs)
+
+    scenario.agent.llm_service.call = fail_report
+    async with client_for(scenario) as client:
+        pending = await start(client, stream=True)
+        response = await client.post(
+            "/chatbot/fund-selection/decision/stream",
+            json={
+                "interrupt_id": pending["interrupt_id"],
+                "decision": "select",
+                "fund_code": "000002",
+            },
+        )
+        frames = stream_frames(response)
+        assert frames[-1]["done"] and frames[-1]["pending_action"] is None
+        assert "private provider error" not in response.text
+        assert "继续" in frames[-1]["content"]
+        continuation = frames[-1]["continuation"]
+        assert continuation["selected_fund_code"] == "000002"
+        evidence_before = list(scenario.evidence_calls)
+        scenario.agent.llm_service.call = original
+        result = await client.post("/chatbot/continue/stream", json={"turn_id": continuation["turn_id"]})
+        finished = stream_frames(result)
+        assert finished[-1]["continuation"] is None
+        assert "".join(item["content"] for item in finished) == "使用已确认的基金继续分析。"
+        assert scenario.evidence_calls == evidence_before and scenario.search.await_count == 1
 
 
 async def test_continue_cannot_answer_or_skip_a_real_human_interrupt(scenario):

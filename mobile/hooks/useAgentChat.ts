@@ -3,26 +3,32 @@
  *
  * 界面看到的是 `turns`：已经落进 LangGraph 检查点的历史，加上本地这一轮
  * （提问 + 正在流式写入的回答）。本轮结束后再向服务端重取一次历史，
- * 本地那份就撤掉 —— 让服务端始终是唯一的真源，两边不会各存一份答案。
+ * 确认历史包含完整回答后才撤掉本地那份，避免刷新失败或延迟时丢失正文。
  */
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { streamChatMessage, ChatStreamError } from '@/api/chatStream';
+import { streamChatMessage, streamAgentResume, ChatStreamError } from '@/api/chatStream';
+import type { AgentResumeAction } from '@/api/chatStream';
 import { queryKeys } from '@/api/queries';
-import { ensureSessionToken, useAgentMessages } from '@/hooks/useAgent';
+import { ensureSessionToken, fetchAgentMessages, useAgentMessages } from '@/hooks/useAgent';
 import type { ChatPendingAction } from '@/hooks/useChatImport';
 import type { ChatMessage } from '@/hooks/useAgent';
+import type { ChatResearchProgress } from '@/api/chatStream';
+import { describeResearchProgress, mergeResearchProgress } from '@/utils/researchProgress';
 
 export type ChatTurn = ChatMessage & {
-  /** 只有本地这一轮的那两条有值：正在生成 / 已被用户停止 / 服务端报错。 */
-  state?: 'streaming' | 'stopped' | 'failed';
+  /** 仅本地这一轮有值；完整历史接管后撤掉。 */
+  state?: 'streaming' | 'completed' | 'stopped' | 'failed';
   /** state 为 failed 时给界面显示的失败原因。 */
   error?: string;
+  researchProgress?: string;
 };
 
 type Overlay = {
+  runId: symbol;
+  baseCount: number;
   sessionId: string;
   question: string;
   answer: string;
@@ -30,6 +36,11 @@ type Overlay = {
   error?: string;
   /** 这一轮带出去的截图批次，失败后「重试」要按同一批重发。 */
   importIds: string[];
+  researchFollowupId?: string;
+  /** 重试要按同一种授权重发，否则按钮点第二次会变成普通提问。 */
+  multiRoleFundCodes?: string[];
+  resumeAction?: AgentResumeAction;
+  progress: ChatResearchProgress[];
 };
 
 export function useAgentChat(input: {
@@ -40,64 +51,100 @@ export function useAgentChat(input: {
   const { sessionId, ensureSession } = input;
   const client = useQueryClient();
   const history = useAgentMessages(sessionId);
-  // useQuery 的结果对象每次渲染都是新的，依赖里只放解构出来的 refetch。
-  const { refetch: refetchHistory } = history;
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   // 流里的识别、选账户和复核卡片按会话隔离，恢复后以服务端状态为准。
   const [pending, setPending] = useState<{ sessionId: string; action: ChatPendingAction | null } | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
 
-  const send = useCallback(
-    async (text: string, importIds: string[] = []) => {
+  const run = useCallback(
+    async (text: string, importIds: string[] = [], researchFollowupId?: string, resumeAction?: AgentResumeAction, multiRoleFundCodes?: string[]) => {
       if (controller.current) throw new Error('上一条还在生成中');
       const content = text.trim();
-      if (!content) throw new Error('要说点什么');
+      if (!content && !resumeAction) throw new Error('要说点什么');
 
-      const active = await ensureSession();
-      const token = await ensureSessionToken(client, active);
-      setOverlay({ sessionId: active, question: content, answer: '', state: 'streaming', importIds });
       const abort = new AbortController();
+      const runId = Symbol('chat-run');
       controller.current = abort;
+      let active: string;
+      let token: string;
+      try {
+        active = resumeAction ? sessionId ?? '' : await ensureSession();
+        if (!active) throw new Error('还没有选中会话');
+        token = await ensureSessionToken(client, active);
+      } catch (error) {
+        controller.current = null;
+        throw error;
+      }
+      const baseCount = sessionId === active ? (history.data?.messages ?? []).filter((message) => message.role !== 'system').length : 0;
+      setOverlay({ runId, baseCount, sessionId: active, question: content, answer: '', state: 'streaming', importIds, researchFollowupId, multiRoleFundCodes, resumeAction, progress: [] });
 
       let failed: string | null = null;
       let stopped = false;
+      let answer = '';
+      let receiving = true;
       try {
-        await streamChatMessage({
+        const handlers = {
           token,
-          text: content,
-          holdingImportIds: importIds,
           signal: abort.signal,
-          onDelta: (delta) => setOverlay((prev) => (
-            prev?.sessionId === active && !abort.signal.aborted
-              ? { ...prev, answer: prev.answer + delta }
+          onDelta: (delta: string) => {
+            if (!receiving || abort.signal.aborted) return;
+            answer += delta;
+            setOverlay((prev) => (
+              prev?.runId === runId
+                ? { ...prev, answer: prev.answer + delta }
+                : prev
+            ));
+          },
+          onPendingAction: (action: ChatPendingAction | null) => setPending((prev) => !receiving || abort.signal.aborted ? prev : { sessionId: active, action }),
+          onResearchProgress: (progress: ChatResearchProgress) => setOverlay((prev) => (
+            receiving && prev?.runId === runId && !abort.signal.aborted
+              ? { ...prev, progress: mergeResearchProgress(prev.progress, progress) }
               : prev
           )),
-          onPendingAction: (action) => setPending((prev) => abort.signal.aborted ? prev : { sessionId: active, action }),
-        });
+        };
+        if (resumeAction) await streamAgentResume({ ...handlers, action: resumeAction });
+        else await streamChatMessage({ ...handlers, text: content, holdingImportIds: importIds, researchFollowupId, multiRoleFundCodes });
       } catch (error) {
         if ((error as Error).name === 'AbortError') stopped = true;
         else if (error instanceof ChatStreamError) failed = error.message;
         else failed = (error as Error).message || '这条回答没生成出来';
       } finally {
+        receiving = false;
         controller.current = null;
         void client.invalidateQueries({ queryKey: [...queryKeys.chatPendingAction, active] });
       }
 
-      // 停止与正常收尾都以服务端的历史为准；失败时保留本地这条，好让"重试"还在。
+      // 完整历史成功返回前保留流式正文；刷新失败不会清空已经生成的报告。
       if (!failed) {
-        setOverlay(null);
-        await refetchHistory();
+        setOverlay((prev) => prev?.runId === runId ? { ...prev, state: stopped ? 'stopped' : 'completed' } : prev);
+        try {
+          const refreshed = await client.fetchQuery({
+            queryKey: queryKeys.agentMessages(active),
+            queryFn: () => fetchAgentMessages(client, active),
+            staleTime: 0,
+          });
+          const saved = refreshed.messages.filter((message) => message.role !== 'system');
+          if (saved.some((message, index) => index >= baseCount && message.role === 'assistant' && message.content === answer)) {
+            setOverlay((prev) => prev?.runId === runId ? null : prev);
+          }
+        } catch {
+          // 网络恢复后读取完整历史会自动替换本地回答。
+        }
       } else {
-        setOverlay((prev) => (prev ? { ...prev, state: 'failed', error: failed ?? undefined } : prev));
+        setOverlay((prev) => (prev?.runId === runId ? { ...prev, state: 'failed', error: failed ?? undefined } : prev));
       }
       if (!failed && !stopped) {
         // 会话标题是服务端在回答之后异步补的，回头失效一次才追得上。
         void client.invalidateQueries({ queryKey: queryKeys.agentSessions });
       }
     },
-    [client, ensureSession, refetchHistory],
+    [client, ensureSession, history.data, sessionId],
   );
+
+  const send = useCallback((text: string, importIds: string[] = [], researchFollowupId?: string, multiRoleFundCodes?: string[]) =>
+    run(text, importIds, researchFollowupId, undefined, multiRoleFundCodes), [run]);
+  const resume = useCallback((action: AgentResumeAction) => run('', [], undefined, action), [run]);
 
   const stop = useCallback(() => controller.current?.abort(), []);
   const setReview = useCallback((action: ChatPendingAction | null) => {
@@ -106,21 +153,27 @@ export function useAgentChat(input: {
 
   // 本地这一轮属于哪条会话：跳到会话列表换了一条，半截的旧回答不能跟过来。
   const current = overlay?.sessionId === sessionId ? overlay : null;
+  const savedMessages = (history.data?.messages ?? []).filter((message) => message.role !== 'system');
+  const savedCurrent = current && current.state !== 'streaming' && current.state !== 'failed'
+    && savedMessages.some((message, index) => index >= current.baseCount && message.role === 'assistant' && message.content === current.answer);
+  useEffect(() => {
+    if (savedCurrent) setOverlay((prev) => prev?.runId === current?.runId ? null : prev);
+  }, [savedCurrent, current?.runId]);
 
   /** 失败那条回答还在本地叠着，重试就是撤掉它再发一遍同一个问题。 */
   const retry = useCallback(() => {
-    const question = current?.state === 'failed' ? current.question : null;
+    const question = current?.state === 'failed' && !current.resumeAction ? current.question : null;
     if (!question) return;
     setOverlay(null);
-    void send(question, current?.importIds ?? []);
+    void send(question, current?.importIds ?? [], current?.researchFollowupId, current?.multiRoleFundCodes);
   }, [current, send]);
 
   const turns: ChatTurn[] = [
-    ...(history.data?.messages ?? []).filter((message) => message.role !== 'system'),
-    ...(current
+    ...(current && !savedCurrent ? savedMessages.slice(0, current.baseCount) : savedMessages),
+    ...(current && !savedCurrent
       ? [
-          { role: 'user' as const, content: current.question },
-          { role: 'assistant' as const, content: current.answer, state: current.state, error: current.error },
+          ...(current.question ? [{ role: 'user' as const, content: current.question }] : []),
+          { role: 'assistant' as const, content: current.answer, state: current.state, error: current.error, researchProgress: describeResearchProgress(current.progress) },
         ]
       : []),
   ];
@@ -128,7 +181,7 @@ export function useAgentChat(input: {
   return {
     turns,
     sending: current?.state === 'streaming',
-    canRetry: current?.state === 'failed',
+    canRetry: current?.state === 'failed' && !current.resumeAction,
     lastFailed: current?.state === 'failed' ? current.error : undefined,
     // 没有会话时历史查询是 disabled，而 react-query v5 里 disabled 的查询
     // 状态恒为 pending —— 直接拿 isPending 当加载态会让页面永远卡在"正在读历史"。
@@ -140,6 +193,7 @@ export function useAgentChat(input: {
     setReview,
     history,
     send,
+    resume,
     stop,
     retry,
     /** 清空后要能把半截的本地状态丢掉。 */

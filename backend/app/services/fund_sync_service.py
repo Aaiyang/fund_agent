@@ -71,7 +71,8 @@ class FundSyncService:
             worker 的任务流水需要区分它们：跳过不等于失败。
         """
         lock_key = f"fund_sync:{fund_code}:{business_today().isoformat()}"
-        if not await cache_service.acquire_lock(lock_key, ttl=600):
+        lease = await cache_service.acquire_lock(lock_key, ttl=600)
+        if lease is None:
             fund_sync_total.labels(status="skipped").inc()
             logger.debug("fund_sync_skipped_locked", fund_code=fund_code)
             return "skipped"
@@ -107,7 +108,7 @@ class FundSyncService:
             logger.exception("fund_sync_failed", fund_code=fund_code, error=str(e))
             return "failed"
         finally:
-            await cache_service.release_lock(lock_key)
+            await cache_service.release_lock(lease)
 
     async def sync_funds_bounded(self, fund_codes: list[str], concurrency: int = 5) -> dict[str, int]:
         """以受限的并发量同步一批基金（MVP spec 7.7）.

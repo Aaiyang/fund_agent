@@ -385,7 +385,8 @@ class MarketService:
         if coverage is not None and _covers(coverage, start, today):
             return
         lock_key = cache_key("index_sync", index_code)
-        if not await cache_service.acquire_lock(lock_key, ttl=_SYNC_TTL_SECONDS):
+        lease = await cache_service.acquire_lock(lock_key, ttl=_SYNC_TTL_SECONDS)
+        if lease is None:
             return
 
         try:
@@ -399,7 +400,7 @@ class MarketService:
             # 基准数据源出问题不能把一次读请求变成 500：
             # 库里有什么就先给什么，把重试留给下一个请求。
             logger.warning("index_history_sync_failed", index_code=index_code, error=str(e))
-            await cache_service.release_lock(lock_key)
+            await cache_service.release_lock(lease)
 
 
 def _daily_change(closes: list[float]) -> float | None:

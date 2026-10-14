@@ -3,10 +3,13 @@
 import asyncio
 import json
 import time
+from contextlib import aclosing
 from dataclasses import replace
 from typing import (
+    Any,
     AsyncGenerator,
     Optional,
+    cast,
 )
 from urllib.parse import quote_plus
 from uuid import uuid4
@@ -17,6 +20,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
+    SystemMessage,
     ToolMessage,
     convert_to_openai_messages,
 )
@@ -46,11 +50,14 @@ from psycopg.rows import (
 )
 from psycopg_pool import AsyncConnectionPool
 from pydantic import TypeAdapter
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.agent.graph.fund_selection import FUND_SELECTION_TOOL, build_fund_selection_subgraph
 from app.agent.graph.holding_import import HOLDING_IMPORT_TOOL_NAMES, build_holding_import_subgraph
 from app.agent.graph.research import build_research_subgraph
+from app.agent.graph.report_generation import generate_research_report
+from app.agent.graph.research_followup import completed_followup, research_source, validate_research_followup
 from app.agent.graph.task_router import continue_research, route_task
 from app.agent.tools import tools
 from app.agent.tools.guard import DuplicateToolGuard, build_tool_signature, count_signature_occurrences
@@ -65,11 +72,14 @@ from app.schemas import (
     Message,
 )
 from app.schemas.agent_import import AgentPendingAction, HoldingImportAccountSelection
-from app.schemas.agent_resume import AgentRunContinuation
+from app.schemas.agent_resume import AgentContinueRequest, AgentRunContinuation
+from app.schemas.fund_selection import FundSelectionAction, FundSelectionDecision
 from app.schemas.human_question import HumanQuestionAction
-from app.schemas.research import ResearchGraphState
+from app.schemas.research import ResearchGraphState, ResearchTask
+from app.schemas.multi_role_research import ResearchProgress
 from app.services.agent_holding_import_service import agent_holding_import_service
 from app.utils.clock import business_now, trading_session_label
+from app.utils.task_routing import client_multi_role_request
 from app.agent.prompts import SYSTEM_PROMPT_VERSION
 from app.agent.tools.registry import TOOLS_VERSION
 from app.core.metrics import (
@@ -91,9 +101,8 @@ from app.agent.context.models import ContextRequest, SessionSnapshot
 
 PostgresConnPool = AsyncConnectionPool[AsyncConnection[DictRow]]
 
-# 图级“超级步数”上限（chat/tool 之间的跳转）。一轮工具调用消耗两步，
-# 因此本限制把每轮对话的工具调用次数约束在约 12 次以内。
-TOOL_LOOP_RECURSION_LIMIT = 25
+# 超步上限取自 settings.AGENT_RECURSION_LIMIT：父图与作为节点挂上的嵌套子图共用
+# 同一份预算，多角色深研究一步就吃掉十几步，所以运行时读取而不是写死常量。
 # 在工具内部调用 interrupt()、会让本超步写入全部作废的工具。它们不能与别的工具
 # 同批执行，否则 resume 会把同批调用重放一遍。
 _INTERRUPTING_TOOLS = frozenset({"ask_human"})
@@ -318,7 +327,7 @@ class LangGraphAgent:
             with llm_inference_duration_seconds.labels(model=model_name).time():
                 # 已取证报告使用现有one-off无工具路径，保留用户模型、降级和Langfuse。
                 response_message = (
-                    await self.llm_service.call(messages, max_tokens=settings.MAX_TOKENS)
+                    await generate_research_report(messages, self.llm_service.call)
                     if final_report
                     else await self.llm_service.call(messages)
                 )
@@ -441,34 +450,17 @@ class LangGraphAgent:
         async def _execute_tool(tool_call: dict) -> ToolMessage:
             # Duplicate Tool Guard：执行前阻止当前 Run 内的同参数重复调用
             # （优先阻止而非事后删除历史 ToolMessage，保住配对与缓存）
+            #
+            # 计数窗口只限本轮：任何工具的数据都会随时间变化（净值、行情、识别
+            # 状态、画像候选），跨用户轮累计会让一句正常的重复提问在长会话里被
+            # 永久拦下。原先按工具名手写的白名单已经漏掉 get_fund_history、
+            # get_calendar、search_funds、resolve_fund_for_analysis 等，去掉这份
+            # 名单才是加新工具时不会腐烂的写法。
             tool_history = state.messages[:-1]
-            if tool_call["name"] in {
-                "get_realtime_market",
-                "get_market_context",
-                "get_market_events",
-                "identify_event_portfolio_links",
-                "get_fund_sectors",
-                "get_fund_managers",
-                "get_fund_announcements",
-                "load_skill",
-                "get_fund_analysis_data",
-                "get_portfolio",
-                "get_portfolio_snapshot",
-                "get_stock_analysis_data",
-                "get_positions",
-                "get_fund_snapshot",
-                "get_fund_holdings",
-                "get_sector_market",
-                "get_holding_import",
-                "request_holding_import_confirmation",
-                "propose_user_profile_update",
-            }:
-                # 实时行情/识别状态会变化，画像候选也需要按本轮消息取证。
-                # 新用户轮可以重新调用，轮次内仍保留重复调用上限。
-                for index in range(len(tool_history) - 1, -1, -1):
-                    if getattr(tool_history[index], "type", None) == "human":
-                        tool_history = tool_history[index + 1 :]
-                        break
+            for index in range(len(tool_history) - 1, -1, -1):
+                if getattr(tool_history[index], "type", None) == "human":
+                    tool_history = tool_history[index + 1 :]
+                    break
             if self._tool_guard.should_block(
                 count_signature_occurrences(tool_history, build_tool_signature(tool_call["name"], tool_call["args"]))
             ):
@@ -524,6 +516,19 @@ class LangGraphAgent:
         return any(task.interrupts for task in state.tasks)
 
     @staticmethod
+    def _pending_interrupt_value(state: StateSnapshot) -> object:
+        """取等待人工输入的中断值；挂起但没有中断时回兜底文案.
+
+        ``state.tasks`` 非空不代表 ``interrupts`` 非空：崩溃或断连遗留的挂起节点
+        同样会让 ``state.next`` 有值，裸取 ``tasks[0].interrupts[0]`` 会 IndexError
+        把一次可恢复状态变成 500。
+        """
+        for task in state.tasks or ():
+            if task.interrupts:
+                return task.interrupts[0].value
+        return "Waiting for input."
+
+    @staticmethod
     def _holding_review(state: StateSnapshot) -> AgentPendingAction | None:
         """提取图保存的复核卡和真实中断 ID，不信任客户端编造的卡片."""
         if not state.next:
@@ -568,8 +573,15 @@ class LangGraphAgent:
         state = await graph.aget_state({"configurable": {"thread_id": session_id}})
         if not state.next or self._pending_interrupt(state) or not state.values.get("turn_id"):
             return None
-        outcome = GraphState.model_validate(state.values).fund_selection_result
+        graph_state = GraphState.model_validate(state.values)
+        outcome = graph_state.fund_selection_result
         selected = outcome.fund if outcome is not None and outcome.turn_id == state.values["turn_id"] else None
+        task = graph_state.research_task
+        if task is not None and task.turn_id == state.values["turn_id"]:
+            if len(task.resolved_funds) == 1:
+                selected = task.resolved_funds[0]
+            elif len(task.resolved_funds) > 1:
+                selected = None
         return AgentRunContinuation(
             turn_id=state.values["turn_id"],
             notice="原任务尚未完成，继续会保留已确认的对象和已取得的证据，无需重新选择。",
@@ -585,7 +597,7 @@ class LangGraphAgent:
         config: RunnableConfig = {
             "configurable": {"thread_id": session_id},
             "callbacks": [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else [],
-            "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
+            "recursion_limit": settings.AGENT_RECURSION_LIMIT,
             "metadata": {"user_id": user_id, "session_id": session_id, "username": username},
         }
         state = await graph.aget_state(config)
@@ -608,7 +620,7 @@ class LangGraphAgent:
         config: RunnableConfig = {
             "configurable": {"thread_id": session_id},
             "callbacks": [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else [],
-            "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
+            "recursion_limit": settings.AGENT_RECURSION_LIMIT,
             "metadata": {"user_id": user_id, "session_id": session_id, "username": username},
         }
         # 连续复核可能让同一父任务暂停多次，不在每次 resume 中重复写
@@ -635,6 +647,7 @@ class LangGraphAgent:
                 "chat",
                 "fund_selection",
                 "fund_research",
+                "fund_comparison",
                 "portfolio_diagnosis",
                 "allocation_analysis",
                 "sector_research",
@@ -656,12 +669,16 @@ class LangGraphAgent:
         graph_builder.add_edge("fund_selection", "continue_research")
         for intent in (
             "fund_research",
+            "fund_comparison",
             "portfolio_diagnosis",
             "allocation_analysis",
             "sector_research",
             "stock_research",
         ):
-            graph_builder.add_node(intent, build_research_subgraph(intent, self._tool_call, self._research_report))
+            graph_builder.add_node(
+                intent,
+                build_research_subgraph(intent, self._tool_call, self._research_report, self._research_agent_call),
+            )
             graph_builder.add_edge(intent, END)
         graph_builder.add_node(
             "tool_call",
@@ -697,6 +714,26 @@ class LangGraphAgent:
             intent=task.request.intent if task is not None else None,
         )
         return Command(update={**(command.update or {}), "memory_write_status": status}, goto=command.goto)
+
+    async def _research_agent_call(
+        self, prompt: str, data: str, schema: type[BaseModel], config: RunnableConfig
+    ) -> BaseModel:
+        """Structured one-off calls inherit graph callbacks and never mutate shared tool bindings."""
+        if config.get("metadata", {}).get("langgraph_node") in {"portfolio_analysis", "portfolio_revision"}:
+            persona = await user_persona_service.context(config.get("metadata", {}).get("user_id"))
+            if persona:
+                payload = json.loads(data)
+                payload["confirmed_user_profile"] = persona
+                data = json.dumps(payload, ensure_ascii=False)
+        current_llm = self.llm_service.get_llm()
+        model_name = getattr(current_llm, "model_name", settings.DEFAULT_LLM_MODEL)
+        with llm_inference_duration_seconds.labels(model=model_name).time():
+            result = await self.llm_service.call(
+                [SystemMessage(content=prompt), HumanMessage(content=data)],
+                response_format=schema,
+                max_tokens=settings.MULTI_ROLE_RESEARCH_MAX_TOKENS,
+            )
+        return schema.model_validate(result)
 
     async def _research_report(self, state: ResearchGraphState, config: RunnableConfig, context: str) -> AIMessage:
         """子图只回传最终回答和紧凑结果，父图不再次改写或重复执行工具."""
@@ -853,7 +890,7 @@ class LangGraphAgent:
         memory: str,
         holding_import_ids: list[str] | None,
         holding_account_id: int | None,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """流式/非流式同一入口；只在新提问时清理本轮目标，恢复保持不变."""
         return {
             "messages": dump_messages(messages),
@@ -867,6 +904,20 @@ class LangGraphAgent:
             "research_result": None,
             "memory_write_status": None,
         }
+
+    @staticmethod
+    def _client_research_task(turn_id: str, instruction: str, codes: list[str]) -> ResearchTask:
+        """基金页按钮的直接授权：不经过模型提出 start_research，对象仍是待解析代码.
+
+        与追问按钮共用 ``route_task`` 的同一道服务端放行口；名称解析、歧义时的人工
+        选卡和有界取证一律沿用原节点，不另开一条链。
+        """
+        return ResearchTask(
+            turn_id=turn_id,
+            request=client_multi_role_request(codes),
+            instruction=instruction,
+            requested_by="client",
+        )
 
     async def _memory_snapshot(self, *, user_id: str | None, thread_id: str, query: str) -> str:
         """每次按当前问题召回；数据库版本缓存代替冻结的会话快照."""
@@ -882,6 +933,8 @@ class LangGraphAgent:
         username: Optional[str] = None,
         holding_import_ids: list[str] | None = None,
         holding_account_id: int | None = None,
+        research_followup_id: str | None = None,
+        multi_role_fund_codes: list[str] | None = None,
     ) -> list[Message]:
         """从 LLM 获取响应.
 
@@ -892,6 +945,8 @@ class LangGraphAgent:
             username (Optional[str]): 用户显示名。
             holding_import_ids: 本轮已经验证归属的图片导入批次。
             holding_account_id: 用户显式指定的目标账户，不做默认选择。
+            research_followup_id: 绑定本会话已有报告的进一步研究标识。
+            multi_role_fund_codes: 基金页按钮直接授权的多智能体研究对象（六位代码）。
 
         Returns:
             list[Message]: LLM 的响应消息。
@@ -903,7 +958,7 @@ class LangGraphAgent:
             "callbacks": callbacks,
             # 每轮工具调用消耗一个 chat 步 + 一个 tool 步；25 把循环
             # 上限控制在约 12 轮，防止工具密集的计划无限跑下去。
-            "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
+            "recursion_limit": settings.AGENT_RECURSION_LIMIT,
             "metadata": {
                 "user_id": user_id,
                 "username": username,
@@ -915,6 +970,10 @@ class LangGraphAgent:
 
         try:
             state = await graph.aget_state(config)
+            followup = validate_research_followup(state, research_followup_id) if research_followup_id else None
+            cached = completed_followup(state, research_followup_id) if research_followup_id else None
+            if cached is not None:
+                return self.__process_messages(state.values["messages"])
             pending = self._holding_review(state)
             if pending and not isinstance(pending, HumanQuestionAction):
                 return [Message(role="assistant", content=self._interrupt_text(pending.model_dump()))]
@@ -922,7 +981,11 @@ class LangGraphAgent:
             relevant_memory = (
                 ""
                 if holding_import_ids
-                else await self._memory_snapshot(user_id=user_id, thread_id=session_id, query=messages[-1].content)
+                else await self._memory_snapshot(
+                    user_id=user_id,
+                    thread_id=session_id,
+                    query=followup.instruction if followup is not None else messages[-1].content,
+                )
             )
 
             if state.next and self._pending_interrupt(state):
@@ -935,15 +998,22 @@ class LangGraphAgent:
                 # 没有等待人工输入的中断：作为全新提问处理。崩溃遗留的挂起
                 # 节点（比如触发递归上限的那次）会被这次新运行自然覆盖，
                 # 用户的新消息会真正进入对话线程。
+                new_input = self._new_turn_state(messages, relevant_memory, holding_import_ids, holding_account_id)
+                if followup is not None:
+                    new_input["research_task"] = followup.model_copy(update={"turn_id": new_input["turn_id"]})
+                elif multi_role_fund_codes:
+                    new_input["research_task"] = self._client_research_task(
+                        new_input["turn_id"], messages[-1].content, multi_role_fund_codes
+                    )
                 response = await graph.ainvoke(
-                    input=self._new_turn_state(messages, relevant_memory, holding_import_ids, holding_account_id),
+                    input=new_input,
                     config=config,
                 )
 
             # 检查本次调用期间图是否被中断
             state = await graph.aget_state(config)
             if state.next:
-                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+                interrupt_value = self._pending_interrupt_value(state)
                 logger.info(
                     "graph_interrupted", session_id=session_id, interrupt_value=self._interrupt_text(interrupt_value)
                 )
@@ -961,7 +1031,7 @@ class LangGraphAgent:
             ]
         except GraphInterrupt:
             state = await graph.aget_state(config)
-            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+            interrupt_value = self._pending_interrupt_value(state)
             logger.info(
                 "graph_interrupted", session_id=session_id, interrupt_value=self._interrupt_text(interrupt_value)
             )
@@ -978,7 +1048,10 @@ class LangGraphAgent:
         username: Optional[str] = None,
         holding_import_ids: list[str] | None = None,
         holding_account_id: int | None = None,
-    ) -> AsyncGenerator[str, None]:
+        research_followup_id: str | None = None,
+        multi_role_fund_codes: list[str] | None = None,
+        resume: FundSelectionDecision | AgentContinueRequest | None = None,
+    ) -> AsyncGenerator[str | ResearchProgress, None]:
         """以流式方式从 LLM 获取响应.
 
         Args:
@@ -988,6 +1061,9 @@ class LangGraphAgent:
             username (Optional[str]): 用户显示名。
             holding_import_ids: 本轮已经验证归属的图片导入批次。
             holding_account_id: 用户显式指定的目标账户。
+            research_followup_id: 绑定本会话已有报告的进一步研究标识。
+            multi_role_fund_codes: 基金页按钮直接授权的多智能体研究对象（六位代码）。
+            resume: 已验证的人工决定或原任务轮次，不创建新的用户消息。
 
         Yields:
             str: LLM 响应的文本片段。
@@ -997,7 +1073,7 @@ class LangGraphAgent:
             "configurable": {"thread_id": session_id},
             "callbacks": callbacks,
             # 与非流式路径相同的工具循环上限。
-            "recursion_limit": TOOL_LOOP_RECURSION_LIMIT,
+            "recursion_limit": settings.AGENT_RECURSION_LIMIT,
             "metadata": {
                 "user_id": user_id,
                 "username": username,
@@ -1010,21 +1086,46 @@ class LangGraphAgent:
 
         try:
             state = await graph.aget_state(config)
-            pending = self._holding_review(state)
-            if pending and not isinstance(pending, HumanQuestionAction):
-                yield self._interrupt_text(pending.model_dump())
-                return
-            relevant_memory = (
-                ""
-                if holding_import_ids
-                else await self._memory_snapshot(user_id=user_id, thread_id=session_id, query=messages[-1].content)
-            )
-
-            if state.next and self._pending_interrupt(state):
-                logger.info("resuming_interrupted_graph_stream", session_id=session_id, next_nodes=state.next)
-                graph_input = Command(resume=messages[-1].content, update={"long_term_memory": relevant_memory})
+            if resume is not None:
+                graph_input = self._resume_input(state, resume)
+                if graph_input is None and not state.next:
+                    saved = self.__process_messages(state.values.get("messages", []))
+                    if saved and saved[-1].role == "assistant":
+                        yield saved[-1].content
+                    return
             else:
-                graph_input = self._new_turn_state(messages, relevant_memory, holding_import_ids, holding_account_id)
+                followup = validate_research_followup(state, research_followup_id) if research_followup_id else None
+                cached = completed_followup(state, research_followup_id) if research_followup_id else None
+                if cached is not None:
+                    yield extract_text_content(cached.content)
+                    return
+                pending = self._holding_review(state)
+                if pending and not isinstance(pending, HumanQuestionAction):
+                    yield self._interrupt_text(pending.model_dump())
+                    return
+                relevant_memory = (
+                    ""
+                    if holding_import_ids
+                    else await self._memory_snapshot(
+                        user_id=user_id,
+                        thread_id=session_id,
+                        query=followup.instruction if followup is not None else messages[-1].content,
+                    )
+                )
+
+                if state.next and self._pending_interrupt(state):
+                    logger.info("resuming_interrupted_graph_stream", session_id=session_id, next_nodes=state.next)
+                    graph_input = Command(resume=messages[-1].content, update={"long_term_memory": relevant_memory})
+                else:
+                    graph_input = self._new_turn_state(
+                        messages, relevant_memory, holding_import_ids, holding_account_id
+                    )
+                    if followup is not None:
+                        graph_input["research_task"] = followup.model_copy(update={"turn_id": graph_input["turn_id"]})
+                    elif multi_role_fund_codes:
+                        graph_input["research_task"] = self._client_research_task(
+                            graph_input["turn_id"], messages[-1].content, multi_role_fund_codes
+                        )
 
             stream_started = time.perf_counter()
             first_token_at: float | None = None
@@ -1033,37 +1134,59 @@ class LangGraphAgent:
             research_nodes = {
                 "write_report",
                 "fund_research",
+                "fund_comparison",
                 "portfolio_diagnosis",
                 "allocation_analysis",
                 "sector_research",
                 "stock_research",
             }
-            async for token, metadata in graph.astream(
-                graph_input,
-                config,
-                stream_mode="messages",
-            ):
-                if not isinstance(token, (AIMessage, AIMessageChunk)):
-                    continue
+            async with aclosing(
+                cast(
+                    AsyncGenerator[Any, None],
+                    graph.astream(
+                        graph_input,
+                        config,
+                        stream_mode=["messages", "custom"],
+                        subgraphs=True,
+                    ),
+                )
+            ) as events:
+                async for _namespace, mode, event in events:
+                    if mode == "custom":
+                        if isinstance(event, dict) and event.get("kind") == "research_progress":
+                            yield ResearchProgress.model_validate(event)
+                        continue
+                    token, metadata = event
+                    if isinstance(metadata, dict) and metadata.get("research_internal"):
+                        continue
+                    if (
+                        not _namespace
+                        and isinstance(metadata, dict)
+                        and metadata.get("langgraph_node") in research_nodes - {"write_report"}
+                    ):
+                        # The parent re-emits a child's saved message; only its original stream is public.
+                        continue
+                    if not isinstance(token, (AIMessage, AIMessageChunk)):
+                        continue
 
-                text = extract_text_content(token.content)
-                if text and isinstance(metadata, dict) and metadata.get("langgraph_node") in research_nodes:
-                    # 文字照常流式；新图表引用及其后缀等最终服务端校验后再发。
-                    # 留一段尾部处理跨token分割的代码栅栏，禁止未校验引用触发取数。
-                    research_buffer += text
-                    marker = research_buffer.find("```research-chart")
-                    boundary = marker if marker >= 0 else max(0, len(research_buffer) - 32)
-                    text = research_buffer[len(research_emitted) : boundary]
-                    research_emitted += text
-                if text:
-                    if first_token_at is None:
-                        first_token_at = time.perf_counter()
-                        logger.info(
-                            "llm_ttft",
-                            ttft_ms=round((first_token_at - stream_started) * 1000, 1),
-                            session_id=session_id,
-                        )
-                    yield text
+                    text = extract_text_content(token.content)
+                    if text and isinstance(metadata, dict) and metadata.get("langgraph_node") in research_nodes:
+                        # 文字照常流式；新图表引用及其后缀等最终服务端校验后再发。
+                        # 留一段尾部处理跨token分割的代码栅栏，禁止未校验引用触发取数。
+                        research_buffer += text
+                        marker = research_buffer.find("```research-chart")
+                        boundary = marker if marker >= 0 else max(0, len(research_buffer) - 32)
+                        text = research_buffer[len(research_emitted) : boundary]
+                        research_emitted += text
+                    if text:
+                        if first_token_at is None:
+                            first_token_at = time.perf_counter()
+                            logger.info(
+                                "llm_ttft",
+                                ttft_ms=round((first_token_at - stream_started) * 1000, 1),
+                                session_id=session_id,
+                            )
+                        yield text
 
             # 流结束后检查中断；记忆在 chat 节点已登记。
             state = await graph.aget_state(config)
@@ -1082,7 +1205,7 @@ class LangGraphAgent:
                 if len(final_text) > len(research_emitted):
                     yield final_text[len(research_emitted) :]
             if state.next:
-                interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+                interrupt_value = self._pending_interrupt_value(state)
                 logger.info(
                     "graph_interrupted_stream",
                     session_id=session_id,
@@ -1091,7 +1214,7 @@ class LangGraphAgent:
                 yield self._interrupt_text(interrupt_value)
         except GraphInterrupt:
             state = await graph.aget_state(config)
-            interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
+            interrupt_value = self._pending_interrupt_value(state)
             logger.info(
                 "graph_interrupted_stream",
                 session_id=session_id,
@@ -1105,6 +1228,30 @@ class LangGraphAgent:
         except Exception as stream_error:
             logger.exception("stream_processing_failed", error=str(stream_error), session_id=session_id)
             raise stream_error
+
+    @staticmethod
+    def _resume_input(state: StateSnapshot, payload: FundSelectionDecision | AgentContinueRequest) -> Command | None:
+        """选择只消费当前中断；继续只重跑原轮次未完成的节点."""
+        if isinstance(payload, FundSelectionDecision):
+            pending = LangGraphAgent._holding_review(state)
+            if not isinstance(pending, FundSelectionAction) or pending.interrupt_id != payload.interrupt_id:
+                raise ValueError("fund_selection_interrupt_mismatch")
+            if payload.decision == "select" and payload.fund_code not in {
+                item.fund_code for item in pending.candidates
+            }:
+                raise ValueError("fund_not_in_candidates")
+            return Command(resume={payload.interrupt_id: payload.model_dump()})
+        if state.values.get("turn_id") != payload.turn_id or LangGraphAgent._pending_interrupt(state):
+            raise ValueError("agent_continuation_mismatch")
+        return None
+
+    async def validate_stream_resume(
+        self, session_id: str, payload: FundSelectionDecision | AgentContinueRequest
+    ) -> None:
+        """发送流式响应头之前，在会话锁内核验中断和轮次."""
+        graph = await self._get_graph()
+        state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+        self._resume_input(state, payload)
 
     async def get_chat_history(self, session_id: str) -> list[Message]:
         """获取指定会话的聊天历史.
@@ -1121,14 +1268,31 @@ class LangGraphAgent:
         state: StateSnapshot = await graph.aget_state(config=config)
         return self.__process_messages(state.values["messages"]) if state.values else []
 
+    async def validate_research_source(self, session_id: str, reference: str) -> None:
+        """Validate references before streaming and again under the session lock."""
+        graph = await self._get_graph()
+        state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+        validate_research_followup(state, reference)
+
     def __process_messages(self, messages: list[BaseMessage]) -> list[Message]:
-        openai_style_messages = convert_to_openai_messages(messages)
-        # 只保留 assistant 与 user 两类消息
-        return [
-            Message(role=message["role"], content=str(message["content"]))
-            for message in openai_style_messages
-            if message["role"] in ["assistant", "user"] and message["content"]
-        ]
+        result: list[Message] = []
+        completed_sources = {
+            message.additional_kwargs.get("research_followup_source")
+            for message in messages
+            if isinstance(message, AIMessage)
+        }
+        for original in messages:
+            source = research_source(original)
+            for message in convert_to_openai_messages([original]):
+                if message["role"] in ["assistant", "user"] and message["content"]:
+                    result.append(
+                        Message(
+                            role=message["role"],
+                            content=str(message["content"]),
+                            research_id=source.turn_id if source and source.turn_id not in completed_sources else None,
+                        )
+                    )
+        return result
 
     async def clear_chat_history(self, session_id: str) -> None:
         """清空指定会话的全部聊天历史.

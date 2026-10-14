@@ -18,11 +18,15 @@ async def start_research(
     proposed_amount: float | None = None,
     sector_query: str | None = None,
     stock_symbol: str | None = None,
+    strategy: Literal["single", "multi_role"] = "single",
 ) -> str:
     """启动基金研究、组合诊断、建仓/加减仓、板块或股票研究，只读不交易.
 
     基金名称/代码放fund_queries，最多三只，服务端先解析并在歧义时等待Top3人工选择。
+    明确比较两到三只基金用fund_comparison，分别分析多只基金仍用fund_research；同一代码不构成对比。
     深入研究用deep，普通完整研究用standard；纯净值、行情、概念查询不用此工具。
+    用户明确要求多角色、多智能体或多agent研究时strategy用multi_role；默认single。
+    multi_role暂支持基金、基金对比、组合诊断及配置分析，不能用于股票或板块研究。
     account_id只用本轮用户明确指定的账户编号，不从名称猜编号；公开基金研究无需账户或已有持仓。
     allocation_analysis的action可为build/increase/reduce/exit/compare。
     proposed_amount仅使用用户明确提供的人民币金额；未提供不猜数，不构成交易授权。
@@ -34,6 +38,7 @@ async def start_research(
     request = ResearchRequest(
         intent=intent,
         mode=mode,
+        strategy=strategy,
         fund_queries=fund_queries or [],
         account_id=account_id,
         action=action,

@@ -18,7 +18,7 @@ function harness() {
     responseText = '';
     aborts = 0;
     constructor() { requests.push(this); }
-    open() {}
+    open(method, url) { this.method = method; this.url = url; }
     setRequestHeader() {}
     send(body) { this.body = JSON.parse(body); }
     abort() { this.aborts += 1; this.onabort?.(); }
@@ -48,6 +48,94 @@ function harness() {
 }
 
 const frame = (chunk) => `data: ${JSON.stringify(chunk)}\n\n`;
+
+test('research follow-up uses a report reference and progress never becomes answer text', async () => {
+  const h = harness();
+  const progress = [];
+  const pending = h.start({ researchFollowupId: 'a'.repeat(32), onResearchProgress: (event) => progress.push(event) });
+  assert.equal(h.requests[0].body.research_followup_id, 'a'.repeat(32));
+  h.requests[0].append(frame({ content: '', research_progress: { kind: 'research_progress', run_id: 'run', stage: 'review', role: null, status: 'started' } }));
+  h.requests[0].append(frame({ content: '综合报告', done: false }));
+  h.requests[0].append(frame({ content: '', done: true }));
+  h.requests[0].onload();
+  await pending;
+  assert.deepEqual(h.deltas, ['综合报告']);
+  assert.equal(progress[0].stage, 'review');
+});
+
+test('fund-page multi-role research sends the structured authorization, not only prose', async () => {
+  const h = harness();
+  const pending = h.start({ multiRoleFundCodes: ['022287'] });
+  assert.deepEqual(h.requests[0].body.multi_role_fund_codes, ['022287']);
+  h.requests[0].append(frame({ content: '三个角色已合议', done: false }));
+  h.requests[0].append(frame({ content: '', done: true }));
+  h.requests[0].onload();
+  await pending;
+  assert.deepEqual(h.deltas, ['三个角色已合议']);
+});
+
+test('ordinary chat leaves the multi-role field out of the body entirely', async () => {
+  const h = harness();
+  const pending = h.start();
+  h.requests[0].append(frame({ content: '', done: true }));
+  h.requests[0].onload();
+  await pending;
+  assert.equal('multi_role_fund_codes' in h.requests[0].body, false);
+});
+
+for (const action of [
+  { kind: 'fund_selection', interruptId: 'actual', fundCode: '002207' },
+  { kind: 'continue', turnId: 'original-turn' },
+]) {
+  test(`${action.kind} uses SSE without adding a new user message and displays deltas before completion`, async () => {
+    const h = harness();
+    const continuation = [];
+    const pending = h.exports.streamAgentResume({
+      token: 'token', action, signal: h.controller.signal,
+      onDelta: (delta) => h.deltas.push(delta),
+      onContinuation: (value) => continuation.push(value),
+    });
+    const xhr = h.requests[0];
+    assert.ok(xhr.url.endsWith(action.kind === 'fund_selection' ? '/fund-selection/decision/stream' : '/continue/stream'));
+    assert.equal(xhr.body.messages, undefined);
+    assert.equal(xhr.body.fund_code ?? xhr.body.turn_id, action.fundCode ?? action.turnId);
+    xhr.append(': ping\n\n');
+    xhr.append(frame({ content: '第一段' }));
+    assert.deepEqual(h.deltas, ['第一段']);
+    xhr.append(frame({ content: '第二段' }));
+    xhr.append(frame({ done: true, content: '', pending_action: null, continuation: null }));
+    xhr.onload();
+    await pending;
+    assert.deepEqual(h.deltas, ['第一段', '第二段']);
+    assert.deepEqual(continuation, [null]);
+  });
+}
+
+test('an interrupted resume preserves partial text and returns the original task continuation', async () => {
+  const h = harness();
+  const continuation = [];
+  const pending = h.exports.streamAgentResume({
+    token: 'token', action: { kind: 'fund_selection', interruptId: 'actual', fundCode: '002207' },
+    signal: h.controller.signal, onDelta: (delta) => h.deltas.push(delta),
+    onContinuation: (value) => continuation.push(value),
+  });
+  const rejected = assert.rejects(pending, { name: 'ChatStreamError', message: '继续原任务' });
+  h.requests[0].append(frame({ content: '部分报告' }));
+  h.requests[0].append(frame({ done: true, content: '继续原任务', continuation: { turn_id: 'original' } }));
+  await rejected;
+  assert.deepEqual(h.deltas, ['部分报告']);
+  assert.equal(continuation[0].turn_id, 'original');
+});
+
+test('a transport ending without a terminal frame does not silently claim completion', async () => {
+  const h = harness();
+  const pending = h.start();
+  const rejected = assert.rejects(pending, /研究尚未完成/);
+  h.requests[0].append(frame({ content: '部分报告' }));
+  h.requests[0].onload();
+  await rejected;
+  assert.deepEqual(h.deltas, ['部分报告']);
+});
 
 for (const kind of ['holding_import_processing', 'holding_import_account', 'holding_import_review', 'fund_selection']) {
   test(`terminal stream frame preserves the ${kind} action`, async () => {

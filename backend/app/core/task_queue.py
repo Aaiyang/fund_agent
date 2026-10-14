@@ -7,6 +7,14 @@ PostgreSQL 里的记录为准。
 """
 
 from typing import Any
+from urllib.parse import quote, urlsplit
+
+from taskiq import InMemoryBroker
+
+try:
+    from taskiq_redis import ListQueueBroker
+except ImportError:
+    ListQueueBroker = None
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -16,7 +24,7 @@ def _resolve_redis_url() -> str:
     """推导 broker 的 Redis URL：优先用 TASKIQ_REDIS_URL，否则由 Valkey 配置拼出."""
     if settings.TASKIQ_REDIS_URL:
         return settings.TASKIQ_REDIS_URL
-    password_part = f":{settings.VALKEY_PASSWORD}@" if settings.VALKEY_PASSWORD else ""
+    password_part = f":{quote(settings.VALKEY_PASSWORD, safe='')}@" if settings.VALKEY_PASSWORD else ""
     return f"redis://{password_part}{settings.VALKEY_HOST}:{settings.VALKEY_PORT}/{settings.VALKEY_DB}"
 
 
@@ -27,21 +35,16 @@ def _create_broker() -> Any:
         Taskiq broker 实例：配了 Redis 就用 Redis 后端，否则用进程内实现。
     """
     if not settings.VALKEY_HOST and not settings.TASKIQ_REDIS_URL:
-        from taskiq import InMemoryBroker
-
         logger.info("task_broker_in_memory_fallback", reason="redis_not_configured")
         return InMemoryBroker()
 
-    try:
-        from taskiq_redis import ListQueueBroker
-
-        logger.info("task_broker_redis", url=_resolve_redis_url())
-        return ListQueueBroker(url=_resolve_redis_url())
-    except ImportError:
-        from taskiq import InMemoryBroker
-
-        logger.warning("task_broker_in_memory_fallback", reason="taskiq_redis_not_installed")
-        return InMemoryBroker()
+    if ListQueueBroker is not None:
+        url = _resolve_redis_url()
+        endpoint = urlsplit(url)
+        logger.info("task_broker_redis", host=endpoint.hostname, port=endpoint.port)
+        return ListQueueBroker(url=url)
+    logger.warning("task_broker_in_memory_fallback", reason="taskiq_redis_not_installed")
+    return InMemoryBroker()
 
 
 broker = _create_broker()

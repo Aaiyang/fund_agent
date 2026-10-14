@@ -2061,6 +2061,10 @@ export interface components {
             holding_import_ids?: string[];
             /** Holding Account Id */
             holding_account_id?: number | null;
+            /** Server-issued report reference for multi-role research. */
+            research_followup_id?: string | null;
+            /** 客户端按钮直接授权的多智能体研究对象；只能是六位基金代码 */
+            multi_role_fund_codes?: string[];
         };
         /**
          * ChatResponse
@@ -3288,6 +3292,8 @@ export interface components {
              * @description The complete content of the message
              */
             content: string;
+            /** Server-issued reference for an eligible source research report. */
+            research_id?: string | null;
         };
         /**
          * MinuteExternalPoint
@@ -4148,6 +4154,8 @@ export interface components {
          * @description 加减仓：记一笔买入、赎回、定投期数或转换.
          */
         TradeCreateRequest: {
+            /** 同一订单重试沿用此键；改变参数须使用新键。 */
+            idempotency_key: string;
             /** Account Id */
             account_id: number;
             /**

@@ -22,6 +22,7 @@ from app.api.v1.api import api_router
 from app.api.v1.chatbot import agent
 from app.core.cache import cache_service
 from app.core.config import settings
+from app.core.database import async_engine
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.core.metrics import setup_metrics
@@ -101,6 +102,7 @@ async def lifespan(app: FastAPI):
     if agent._connection_pool:
         await agent._connection_pool.close()
         logger.info("connection_pool_closed")
+    await async_engine.dispose()
     logger.info("application_shutdown")
 
 

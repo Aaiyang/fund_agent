@@ -48,7 +48,7 @@ def dump_messages(messages: list[Message]) -> list[dict]:
     Returns:
         list[dict]: 转换后的字典列表。
     """
-    return [message.model_dump() for message in messages]
+    return [message.model_dump(include={"role", "content"}) for message in messages]
 
 
 def extract_text_content(content: str | list) -> str:

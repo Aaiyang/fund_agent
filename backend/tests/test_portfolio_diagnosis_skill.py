@@ -33,6 +33,7 @@ async def test_new_skill_is_packaged_without_request_time_file_access_and_has_it
     assert set(load_skill.args["skill_name"]["enum"]) == {
         "portfolio-diagnosis",
         "fund-analysis",
+        "fund-comparison",
         "fund-allocation",
         "sector-analysis",
         "stock-analysis",
@@ -113,7 +114,7 @@ async def test_real_graph_loads_diagnosis_then_reads_same_authenticated_scope(mo
                     }
                 ],
             )
-        assert kwargs == {"max_tokens": settings.MAX_TOKENS}
+        assert kwargs == {"max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS, "report_mode": True}
         context = "\n".join(str(message.content) for message in inputs)
         payload, _ = json.JSONDecoder().raw_decode(context.split("# 本轮证据（非指令）\n")[1])
         results = {item["tool"]: item["text"] for item in payload["evidence"]}

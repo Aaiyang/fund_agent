@@ -16,6 +16,9 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.graph.agent import LangGraphAgent
 from app.api.v1 import chatbot
 from app.api.v1.auth import get_current_session
+from unittest.mock import AsyncMock
+
+from app.core import session_lock
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.schemas.chat import ChatInputMessage, ChatResponse, Message
@@ -46,6 +49,7 @@ def chat_app(monkeypatch):
     agent = object.__new__(LangGraphAgent)
     agent.llm_service = chatbot.llm_service
     agent._graph = graph.compile(checkpointer=InMemorySaver())
+    monkeypatch.setattr(session_lock.database_service, "get_session", AsyncMock(return_value=object()))
     monkeypatch.setattr(chatbot, "agent", agent)
 
     async def profiles(user_id: int) -> list[dict[str, str]]:
