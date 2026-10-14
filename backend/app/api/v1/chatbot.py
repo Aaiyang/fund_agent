@@ -25,7 +25,7 @@ from app.core.config import settings
 from app.core.cache import cache_key, cache_service
 from app.agent.graph.agent import LangGraphAgent
 from app.agent.graph.research_followup import ResearchFollowupError
-from app.schemas.multi_role_research import ResearchProgress
+from app.schemas.multi_role_research import ResearchActivity, ResearchProgress
 from app.agent.context.models import ContextInvariantError
 from app.core.limiter import limiter
 from app.core.logging import logger
@@ -212,7 +212,9 @@ async def _continue_agent_run(session: Session, payload: AgentContinueRequest) -
         await asyncio.shield(cache_service.release_lock(lease))
 
 
-async def _stream_events(chunks: AsyncGenerator[str | ResearchProgress, None]) -> AsyncGenerator[str, None]:
+async def _stream_events(
+    chunks: AsyncGenerator[str | ResearchProgress | ResearchActivity, None],
+) -> AsyncGenerator[str, None]:
     """所有正文流共用分帧与心跳，等待推理/取证时连接也保持活跃."""
     pending = None
     try:
@@ -224,11 +226,12 @@ async def _stream_events(chunks: AsyncGenerator[str | ResearchProgress, None]) -
                 chunk = pending.result()
             except StopAsyncIteration:
                 return
-            response = (
-                StreamResponse(research_progress=chunk)
-                if isinstance(chunk, ResearchProgress)
-                else StreamResponse(content=chunk)
-            )
+            if isinstance(chunk, ResearchProgress):
+                response = StreamResponse(research_progress=chunk)
+            elif isinstance(chunk, ResearchActivity):
+                response = StreamResponse(research_activity=chunk)
+            else:
+                response = StreamResponse(content=chunk)
             yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
     finally:
         if pending is not None and not pending.done():

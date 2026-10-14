@@ -16,8 +16,13 @@ import { queryKeys } from '@/api/queries';
 import { ensureSessionToken, fetchAgentMessages, useAgentMessages } from '@/hooks/useAgent';
 import type { ChatPendingAction } from '@/hooks/useChatImport';
 import type { ChatMessage } from '@/hooks/useAgent';
-import type { ChatResearchProgress } from '@/api/chatStream';
-import { describeResearchProgress, mergeResearchProgress } from '@/utils/researchProgress';
+import type { ChatResearchProgress, ChatResearchActivity } from '@/api/chatStream';
+import {
+  describeResearchActivity,
+  describeResearchProgress,
+  mergeResearchProgress,
+  roleOutcomesFromProgress,
+} from '@/utils/researchProgress';
 
 export type ChatTurn = ChatMessage & {
   /** 仅本地这一轮有值；完整历史接管后撤掉。 */
@@ -25,6 +30,8 @@ export type ChatTurn = ChatMessage & {
   /** state 为 failed 时给界面显示的失败原因。 */
   error?: string;
   researchProgress?: string;
+  /** 多角色研究进行中的一行思考摘要（服务端已截尾压平）。 */
+  researchActivity?: string;
 };
 
 type Overlay = {
@@ -42,6 +49,7 @@ type Overlay = {
   research?: ClientResearch;
   resumeAction?: AgentResumeAction;
   progress: ChatResearchProgress[];
+  activity: string;
 };
 
 export function useAgentChat(input: {
@@ -78,7 +86,7 @@ export function useAgentChat(input: {
         throw error;
       }
       const baseCount = sessionId === active ? (history.data?.messages ?? []).filter((message) => message.role !== 'system').length : 0;
-      setOverlay({ runId, baseCount, sessionId: active, question: content, answer: '', state: 'streaming', importIds, researchFollowupId, research, resumeAction, progress: [] });
+      setOverlay({ runId, baseCount, sessionId: active, question: content, answer: '', state: 'streaming', importIds, researchFollowupId, research, resumeAction, progress: [], activity: '' });
 
       let failed: string | null = null;
       let stopped = false;
@@ -101,6 +109,11 @@ export function useAgentChat(input: {
           onResearchProgress: (progress: ChatResearchProgress) => setOverlay((prev) => (
             receiving && prev?.runId === runId && !abort.signal.aborted
               ? { ...prev, progress: mergeResearchProgress(prev.progress, progress) }
+              : prev
+          )),
+          onResearchActivity: (activity: ChatResearchActivity) => setOverlay((prev) => (
+            receiving && prev?.runId === runId && !abort.signal.aborted
+              ? { ...prev, activity: describeResearchActivity(activity) }
               : prev
           )),
         };
@@ -174,7 +187,7 @@ export function useAgentChat(input: {
     ...(current && !savedCurrent
       ? [
           ...(current.question ? [{ role: 'user' as const, content: current.question }] : []),
-          { role: 'assistant' as const, content: current.answer, state: current.state, error: current.error, researchProgress: describeResearchProgress(current.progress) },
+          { role: 'assistant' as const, content: current.answer, state: current.state, error: current.error, researchProgress: describeResearchProgress(current.progress), researchActivity: current.activity || undefined },
         ]
       : []),
   ];
@@ -182,6 +195,8 @@ export function useAgentChat(input: {
   return {
     turns,
     sending: current?.state === 'streaming',
+    /** 本轮多角色研究的实际结局，界面拿它算"N 个角色里 M 个失败"的徽标。 */
+    researchOutcomes: roleOutcomesFromProgress(current?.progress ?? []),
     canRetry: current?.state === 'failed' && !current.resumeAction,
     lastFailed: current?.state === 'failed' ? current.error : undefined,
     // 没有会话时历史查询是 disabled，而 react-query v5 里 disabled 的查询

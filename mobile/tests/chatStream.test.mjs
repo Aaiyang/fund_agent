@@ -63,6 +63,19 @@ test('research follow-up uses a report reference and progress never becomes answ
   assert.equal(progress[0].stage, 'review');
 });
 
+test('the one-line role activity arrives on its own channel and never as answer text', async () => {
+  const h = harness();
+  const activity = [];
+  const pending = h.start({ onResearchActivity: (event) => activity.push(event) });
+  h.requests[0].append(frame({ content: '', research_activity: { kind: 'research_activity', run_id: 'run', stage: 'analysis', role: 'risk', text: '先核净值 再算回撤' } }));
+  h.requests[0].append(frame({ content: '', done: true }));
+  h.requests[0].onload();
+  await pending;
+  assert.equal(activity.length, 1);
+  assert.equal(activity[0].role, 'risk');
+  assert.deepEqual(h.deltas, []);
+});
+
 test('fund picker sends codes plus the cost tier, not only prose', async () => {
   const h = harness();
   const pending = h.start({ researchFundCodes: ['022287', '000001'], researchStrategy: 'multi_role' });

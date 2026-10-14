@@ -26,6 +26,15 @@ export type ChatResearchProgress = {
   status: 'started' | 'completed' | 'partial' | 'failed' | 'skipped';
 };
 
+/** 角色调用透出的一行思考摘要：服务端已经截尾并压成单行，界面只给一行空间。 */
+export type ChatResearchActivity = {
+  kind: 'research_activity';
+  run_id: string;
+  stage: ChatResearchProgress['stage'];
+  role: ChatResearchProgress['role'];
+  text: string;
+};
+
 /** 后端 StreamResponse 的一帧；OpenAPI 里没有这个类型（流式响应没法描述）。 */
 export type ChatStreamChunk = {
   content?: string;
@@ -33,6 +42,7 @@ export type ChatStreamChunk = {
   /** Agent 走到人工复核时会带着它：卡片只能由 HTTP 端点决定，聊天文本不算确认。 */
   pending_action?: ChatPendingAction | null;
   research_progress?: ChatResearchProgress | null;
+  research_activity?: ChatResearchActivity | null;
   continuation?: AgentRunContinuation | null;
 };
 
@@ -64,6 +74,7 @@ function parseFrame(frame: string, handlers: StreamHandlers): void {
     if (!line.startsWith(DATA_PREFIX)) continue;
     const chunk = JSON.parse(line.slice(DATA_PREFIX.length)) as ChatStreamChunk;
     if (chunk.research_progress) handlers.onResearchProgress(chunk.research_progress);
+    if (chunk.research_activity) handlers.onResearchActivity(chunk.research_activity);
     if (chunk.pending_action || (chunk.done && Object.prototype.hasOwnProperty.call(chunk, 'pending_action'))) handlers.onPendingAction(chunk.pending_action ?? null);
     if (chunk.done) {
       handlers.onDone();
@@ -80,6 +91,7 @@ type StreamHandlers = {
   onDelta: (delta: string) => void;
   onPendingAction: (review: ChatPendingAction | null) => void;
   onResearchProgress: (progress: ChatResearchProgress) => void;
+  onResearchActivity: (activity: ChatResearchActivity) => void;
   onContinuation: (continuation: AgentRunContinuation | null) => void;
   onDone: () => void;
 };
@@ -90,6 +102,7 @@ type StreamInput = {
   onDelta: (delta: string) => void;
   onPendingAction?: (review: ChatPendingAction | null) => void;
   onResearchProgress?: (progress: ChatResearchProgress) => void;
+  onResearchActivity?: (activity: ChatResearchActivity) => void;
   onContinuation?: (continuation: AgentRunContinuation | null) => void;
 };
 
@@ -134,6 +147,7 @@ function streamRequest(input: StreamInput, path: string, body: unknown): Promise
     onDelta: input.onDelta,
     onPendingAction: input.onPendingAction ?? (() => undefined),
     onResearchProgress: input.onResearchProgress ?? (() => undefined),
+    onResearchActivity: input.onResearchActivity ?? (() => undefined),
     onContinuation: input.onContinuation ?? (() => undefined),
     onDone: () => { done = true; },
   };

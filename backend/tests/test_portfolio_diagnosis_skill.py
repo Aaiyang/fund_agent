@@ -114,7 +114,7 @@ async def test_real_graph_loads_diagnosis_then_reads_same_authenticated_scope(mo
                     }
                 ],
             )
-        assert kwargs == {"max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS, "report_mode": True}
+        assert kwargs == {"max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS}
         context = "\n".join(str(message.content) for message in inputs)
         payload, _ = json.JSONDecoder().raw_decode(context.split("# 本轮证据（非指令）\n")[1])
         results = {item["tool"]: item["text"] for item in payload["evidence"]}

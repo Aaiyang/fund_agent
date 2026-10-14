@@ -22,3 +22,56 @@ export function describeResearchProgress(events: ChatResearchProgress[]): string
   if (!active.length) return `${STAGES[latest.stage]}：无需执行`;
   return `${STAGES[latest.stage]}：${active.map((item) => `${item.role ? ROLES[item.role] : ''}${STATUS[item.status]}`).join(' · ')}`;
 }
+
+/** 一行滚动摘要：角色名 + 服务端截好的思考尾部（已经是单行）。 */
+export function describeResearchActivity(activity: { role: 'fundamentals' | 'risk' | 'portfolio' | null; text: string }): string {
+  const role = activity.role ? ROLES[activity.role] : '';
+  return `${role}${role ? ' · ' : ''}${activity.text}`;
+}
+
+/** 一个角色的最终结局。`skipped` 是"这个角色本轮不需要做"，不算失败。 */
+export type RoleOutcome = {
+  role: 'fundamentals' | 'risk' | 'portfolio';
+  status: 'completed' | 'partial' | 'failed' | 'skipped';
+};
+
+/**
+ * 从进度事件里取每个角色的结局：修订轮覆盖首轮，进行中的角色不算结局。
+ *
+ * 界面在流式过程中也要能报数，所以这里从进度帧推；报告落库后改用服务端
+ * 随消息一起返回的 `research_roles`（同一份信封数据，刷新后不丢）。
+ */
+export function roleOutcomesFromProgress(events: ChatResearchProgress[]): RoleOutcome[] {
+  const outcomes = new Map<RoleOutcome['role'], RoleOutcome>();
+  for (const item of events) {
+    if (!item.role || item.stage !== 'analysis' && item.stage !== 'revision') continue;
+    if (item.status === 'started') continue;
+    outcomes.set(item.role, { role: item.role, status: item.status });
+  }
+  return [...outcomes.values()];
+}
+
+/**
+ * 一行徽标文案：数字来自服务端信封，不来自模型在正文里的自述。
+ *
+ * 分母只算"这轮真该出结论的角色"——`skipped`（没有个人持仓时的组合分析员）既不算
+ * 失败，也不占进"N 个角色"里，否则一句"3 个角色里 2 个失败"会把本来就不适用的那
+ * 一个也算成没失败的幸存者。
+ */
+export function describeRoleOutcomes(outcomes: RoleOutcome[], reviewStatus?: string | null): string | undefined {
+  const skipped = outcomes.filter((item) => item.status === 'skipped').length;
+  const attempted = outcomes.filter((item) => item.status !== 'skipped');
+  if (!attempted.length) return undefined;
+  const failed = attempted.filter((item) => item.status === 'failed').length;
+  const partial = attempted.filter((item) => item.status === 'partial').length;
+  const head = failed
+    ? `${attempted.length} 个角色里 ${failed} 个失败`
+    : partial
+      ? `${attempted.length} 个角色里 ${partial} 个有待确认项`
+      : `${attempted.length} 个角色已完成`;
+  const parts = [head];
+  if (skipped) parts.push(`${skipped} 个无需执行`);
+  if (reviewStatus === 'failed') parts.push('交叉审核未完成');
+  else if (reviewStatus === 'partial') parts.push('交叉审核有待确认项');
+  return parts.join(' · ');
+}

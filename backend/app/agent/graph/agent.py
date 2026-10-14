@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from contextlib import aclosing
 from dataclasses import replace
 from typing import (
@@ -77,7 +78,7 @@ from app.schemas.agent_resume import AgentContinueRequest, AgentRunContinuation
 from app.schemas.fund_selection import FundSelectionAction, FundSelectionDecision
 from app.schemas.human_question import HumanQuestionAction
 from app.schemas.research import ResearchGraphState, ResearchTask
-from app.schemas.multi_role_research import ResearchProgress
+from app.schemas.multi_role_research import ResearchActivity, ResearchProgress
 from app.services.agent_holding_import_service import agent_holding_import_service
 from app.utils.clock import business_now, trading_session_label
 from app.utils.task_routing import client_research_request
@@ -717,7 +718,12 @@ class LangGraphAgent:
         return Command(update={**(command.update or {}), "memory_write_status": status}, goto=command.goto)
 
     async def _research_agent_call(
-        self, prompt: str, data: str, schema: type[BaseModel], config: RunnableConfig
+        self,
+        prompt: str,
+        data: str,
+        schema: type[BaseModel],
+        config: RunnableConfig,
+        on_text: Callable[[str], None] | None = None,
     ) -> BaseModel:
         """Structured one-off calls inherit graph callbacks and never mutate shared tool bindings."""
         if config.get("metadata", {}).get("langgraph_node") in {"portfolio_analysis", "portfolio_revision"}:
@@ -732,6 +738,7 @@ class LangGraphAgent:
             result = await self.llm_service.call(
                 [SystemMessage(content=prompt), HumanMessage(content=data)],
                 response_format=schema,
+                on_text=on_text,
                 max_tokens=settings.MULTI_ROLE_RESEARCH_MAX_TOKENS,
             )
         return schema.model_validate(result)
@@ -1060,7 +1067,7 @@ class LangGraphAgent:
         research_fund_codes: list[str] | None = None,
         research_strategy: Literal["single", "multi_role"] = "single",
         resume: FundSelectionDecision | AgentContinueRequest | None = None,
-    ) -> AsyncGenerator[str | ResearchProgress, None]:
+    ) -> AsyncGenerator[str | ResearchProgress | ResearchActivity, None]:
         """以流式方式从 LLM 获取响应.
 
         Args:
@@ -1165,6 +1172,8 @@ class LangGraphAgent:
                     if mode == "custom":
                         if isinstance(event, dict) and event.get("kind") == "research_progress":
                             yield ResearchProgress.model_validate(event)
+                        elif isinstance(event, dict) and event.get("kind") == "research_activity":
+                            yield ResearchActivity.model_validate(event)
                         continue
                     token, metadata = event
                     if isinstance(metadata, dict) and metadata.get("research_internal"):
@@ -1293,6 +1302,10 @@ class LangGraphAgent:
         }
         for original in messages:
             source = research_source(original)
+            outcomes = original.additional_kwargs.get("research_roles") if isinstance(original, AIMessage) else None
+            review_status = (
+                original.additional_kwargs.get("research_review_status") if isinstance(original, AIMessage) else None
+            )
             for message in convert_to_openai_messages([original]):
                 if message["role"] in ["assistant", "user"] and message["content"]:
                     result.append(
@@ -1300,6 +1313,8 @@ class LangGraphAgent:
                             role=message["role"],
                             content=str(message["content"]),
                             research_id=source.turn_id if source and source.turn_id not in completed_sources else None,
+                            research_roles=outcomes,
+                            research_review_status=review_status,
                         )
                     )
         return result

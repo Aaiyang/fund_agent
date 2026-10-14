@@ -32,7 +32,7 @@ async def test_length_truncation_continues_same_report_and_preserves_evidence():
     followup = call.call_args_list[1].args[0]
     assert followup[0] is messages[0] and followup[1].content == first.content
     assert "请勿重复" in followup[-1].content
-    assert call.call_args_list[0].kwargs["report_mode"] is True
+    assert call.call_args_list[0].kwargs["max_tokens"] == settings.RESEARCH_REPORT_MAX_TOKENS
 
 
 async def test_reasoning_only_length_response_can_be_followed_by_a_complete_report():
@@ -73,13 +73,14 @@ async def test_total_deadline_covers_all_continuations(monkeypatch):
 
 
 @pytest.mark.parametrize("model", ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"])
-def test_glm_report_uses_supported_low_effort_without_disabling_thinking(model):
-    report = _new_chat_model(model, "fixture", "https://fixture.invalid/v1", report_mode=True, max_tokens=16384)
-    default = _new_chat_model(model, "fixture", "https://fixture.invalid/v1")
-    assert report.extra_body == {"max_tokens": 16384, "reasoning_effort": "low"}
-    assert "reasoning_effort" not in default.extra_body
+def test_glm_calls_get_the_configured_reasoning_effort_without_disabling_thinking(model):
+    # 思考 token 计入 max_tokens，所以每一类调用都要压档位：只压报告会让角色调用被截成空正文。
+    report = _new_chat_model(model, "fixture", "https://fixture.invalid/v1", max_tokens=16384)
+    plain = _new_chat_model(model, "fixture", "https://fixture.invalid/v1")
+    assert report.extra_body == {"max_tokens": 16384, "reasoning_effort": settings.LLM_REASONING_EFFORT}
+    assert plain.extra_body == {"max_tokens": settings.MAX_TOKENS, "reasoning_effort": settings.LLM_REASONING_EFFORT}
 
 
 def test_unknown_report_provider_does_not_receive_glm_options():
-    report = _new_chat_model("another-model", "fixture", "https://fixture.invalid/v1", report_mode=True)
+    report = _new_chat_model("another-model", "fixture", "https://fixture.invalid/v1")
     assert report.extra_body == {"max_tokens": settings.MAX_TOKENS}

@@ -3299,6 +3299,14 @@ export interface components {
             content: string;
             /** Server-issued reference for an eligible source research report. */
             research_id?: string | null;
+            /** 多角色报告里每个角色的实际结局；单档位报告为 None */
+            research_roles?: components["schemas"]["ResearchRoleOutcome"][] | null;
+            /**
+             * Research Review Status
+             * @description 多角色报告的交叉审核结局
+             * @enum {string}
+             */
+            research_review_status?: "completed" | "partial" | "failed" | "skipped" | null;
         };
         /**
          * MinuteExternalPoint
@@ -3724,6 +3732,24 @@ export interface components {
          * SectorBoardItem
          * @description 一个板块的当日快照；缺数就是 None，不补成 0 也不猜涨跌方向.
          */
+        /**
+         * ResearchRoleOutcome
+         * @description 一份多角色报告里每个角色的实际结局，界面据此显示"N 个角色里 M 个失败".
+         *
+         *     这些数字来自服务端信封（``AgentReport.status``），不是模型在正文里的自述。
+         */
+        ResearchRoleOutcome: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "fundamentals" | "risk" | "portfolio";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "partial" | "failed" | "skipped";
+        };
         SectorBoardItem: {
             /** Code */
             code: string;

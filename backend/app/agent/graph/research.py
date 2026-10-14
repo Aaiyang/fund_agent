@@ -491,6 +491,23 @@ def build_research_subgraph(
             extra = dict(message.additional_kwargs)
             if task.request.strategy == "single" and intent not in {"sector_research", "stock_research"}:
                 extra["research_source"] = task.model_dump(mode="json")
+            if task.request.strategy == "multi_role":
+                # 徽标要的是服务端信封里的实际结局。修订轮一般覆盖首轮，但"因为上一轮
+                # 失败所以这轮跳过"不能被读成"这个角色没事"——失败结局必须留下来。
+                outcomes: dict[str, str] = {}
+                for envelope in sorted(
+                    (item for item in state.agent_reports if item.run_id == state.turn_id),
+                    key=lambda item: item.round,
+                ):
+                    previous = outcomes.get(envelope.role)
+                    if previous == "failed" and envelope.status == "skipped":
+                        continue
+                    outcomes[envelope.role] = envelope.status
+                extra["research_roles"] = [
+                    {"role": role, "status": role_status} for role, role_status in outcomes.items()
+                ]
+                if state.agent_review_status:
+                    extra["research_review_status"] = state.agent_review_status
             if task.source_research_id:
                 extra["research_followup_source"] = task.source_research_id
             message = message.model_copy(update={"additional_kwargs": extra})

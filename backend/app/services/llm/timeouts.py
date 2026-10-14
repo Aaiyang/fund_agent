@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any, override
 
@@ -39,9 +40,14 @@ class LLMCallProgress(BaseCallbackHandler):
 
     run_inline = True
 
-    def __init__(self, idle_timeout: float) -> None:
-        """记录进度及耗时，不保存任何回答正文."""
+    def __init__(self, idle_timeout: float, on_text: Callable[[str], None] | None = None) -> None:
+        """记录进度及耗时，不保存任何回答正文.
+
+        ``on_text`` 存在实例属性 ``text_observer`` 上而不是 ``on_text``：后者是
+        ``BaseCallbackHandler`` 自己的回调方法名，同名会盖掉继承来的签名。
+        """
         self.idle_timeout = idle_timeout
+        self.text_observer = on_text
         self.started_at = time.monotonic()
         self.first_progress_at: float | None = None
         self.last_progress_at: float | None = None
@@ -65,6 +71,11 @@ class LLMCallProgress(BaseCallbackHandler):
         )
         if not progress:
             return
+        if self.text_observer is not None:
+            # 思考片段优先：正文在结构化输出里是零散的 JSON，界面要看的正是"想到哪了"。
+            fragment = additional.get("reasoning_content") or (token if isinstance(token, str) else "")
+            if fragment:
+                self.text_observer(fragment)
         now = time.monotonic()
         self.first_progress_at = self.first_progress_at or now
         self.last_progress_at = now

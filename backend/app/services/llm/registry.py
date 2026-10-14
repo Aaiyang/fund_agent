@@ -28,7 +28,7 @@ from app.services.llm.chat_model import ProgressChatOpenAI
 _PROFILE_FIELDS = ("name", "model", "base_url", "api_key")
 
 
-def _new_chat_model(model: str, api_key: str, base_url: str, *, report_mode: bool = False, **kwargs) -> ChatOpenAI:
+def _new_chat_model(model: str, api_key: str, base_url: str, **kwargs) -> ChatOpenAI:
     """用应用级的公共默认参数构造一个 ChatOpenAI.
 
     调用方显式传入的 kwargs 优先于默认值；``max_tokens`` 一律放进
@@ -47,10 +47,11 @@ def _new_chat_model(model: str, api_key: str, base_url: str, *, report_mode: boo
     max_tokens = kwargs.pop("max_tokens", None)
     extra_body = dict(kwargs.pop("extra_body", None) or {})
     extra_body["max_tokens"] = max_tokens or settings.MAX_TOKENS
-    if report_mode and model.lower().startswith("glm-5.3"):
-        # GLM-5.3 强制推理，默认 max 易耗尽报告正文额度；取证/角色研究保持原配置。
+    if model.lower().startswith("glm-5.3"):
+        # GLM-5.3 关不掉思考，思考 token 又计进 max_tokens：不压档位时正文会被
+        # finish_reason=length 截成空（角色调用实测 1587 个分块、0 字正文）。
         # https://docs.z.ai/guides/capabilities/thinking
-        extra_body.setdefault("reasoning_effort", "low")
+        extra_body.setdefault("reasoning_effort", settings.LLM_REASONING_EFFORT)
     params.update(kwargs)
     return ProgressChatOpenAI(
         model=model,

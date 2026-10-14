@@ -122,4 +122,27 @@ class ResearchProgress(BaseModel):
     status: Literal["started", "completed", "partial", "failed", "skipped"]
 
 
+class ResearchActivity(BaseModel):
+    """One-line live ticker for a running role: the tail of its reasoning, never the answer.
+
+    只给一行空间的展示文本，所以长度有硬上限；正文与结构化结果仍走各自的通道。
+    """
+
+    kind: Literal["research_activity"] = "research_activity"
+    run_id: str
+    stage: ResearchStage
+    role: ResearchRole | None = None
+    text: str = Field(default="", max_length=200)
+
+
+class ResearchRoleOutcome(BaseModel):
+    """一份多角色报告里每个角色的实际结局，界面据此显示"N 个角色里 M 个失败".
+
+    这些数字来自服务端信封（``AgentReport.status``），不是模型在正文里的自述。
+    """
+
+    role: ResearchRole
+    status: Literal["completed", "partial", "failed", "skipped"]
+
+
 AgentReports = Annotated[list[AgentReport], merge_agent_reports]

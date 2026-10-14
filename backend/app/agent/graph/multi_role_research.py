@@ -6,7 +6,7 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -27,6 +27,7 @@ from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
     AgentReports,
+    ResearchActivity,
     ResearchAssignment,
     ResearchProgress,
     ResearchReview,
@@ -36,7 +37,25 @@ from app.schemas.multi_role_research import (
 from app.schemas.research import ResearchEvidence, ResearchGraphState
 from app.utils.clock import utc_now
 
-AgentCall = Callable[[str, str, type[BaseModel], RunnableConfig], Awaitable[BaseModel]]
+
+class AgentCall(Protocol):
+    """一次结构化角色调用的协议.
+
+    ``on_text`` 是可选的一行进度观察器，只用于把思考尾部透出给界面，不影响返回值。
+    """
+
+    async def __call__(
+        self,
+        prompt: str,
+        data: str,
+        schema: type[BaseModel],
+        config: RunnableConfig,
+        on_text: Callable[[str], None] | None = None,
+    ) -> BaseModel:
+        """执行一次调用并返回校验前的结构化结果."""
+        ...
+
+
 EvidenceView = Callable[[ResearchGraphState], tuple[list[dict], list[str]]]
 FetchEvidence = Callable[[ResearchGraphState, RunnableConfig, str, dict], Awaitable[ResearchEvidence]]
 _ROLES: tuple[ResearchRole, ...] = ("fundamentals", "risk", "portfolio")
@@ -97,6 +116,41 @@ def publish_progress(
     """Emit public progress into the custom stream; internal findings stay in checkpoints."""
     event = ResearchProgress(run_id=state.turn_id, stage=stage, role=role, status=status)
     get_stream_writer()(event.model_dump(mode="json"))
+
+
+_ACTIVITY_INTERVAL_SECONDS = 0.4
+_ACTIVITY_TAIL_CHARS = 80
+
+
+def activity_streamer(
+    state: ResearchGraphState, stage: ResearchStage, role: ResearchRole | None
+) -> Callable[[str], None]:
+    """把角色调用的思考尾部转成一行滚动摘要：限速、截尾、单行，且不影响这次调用.
+
+    界面只给一行空间，所以发的是"最新一段尾部"而不是全文；正文与结构化结果仍走
+    各自的通道，观察器抛错一律吞掉——它坏了最多是那一行不动，不能连研究一起拖死。
+    """
+    tail = ""
+    last = 0.0
+
+    def emit(fragment: str) -> None:
+        nonlocal tail, last
+        tail = (tail + fragment)[-_ACTIVITY_TAIL_CHARS:]
+        now = time.monotonic()
+        if now - last < _ACTIVITY_INTERVAL_SECONDS:
+            return
+        last = now
+        text = " ".join(tail.split())
+        try:
+            # 取 writer 也放在兜底里：非流式调用（例如检查点续跑走 ainvoke）时它可能不可用，
+            # 那一行不动就够了，不能把研究本身弄失败。
+            get_stream_writer()(
+                ResearchActivity(run_id=state.turn_id, stage=stage, role=role, text=text).model_dump(mode="json")
+            )
+        except Exception:
+            logger.debug("research_activity_dropped", turn_id=state.turn_id, stage=stage, role=role)
+
+    return emit
 
 
 def latest_reports(state: ResearchGraphState, round_number: int) -> list[AgentReport]:
@@ -210,7 +264,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                     "在addressed_issue_indices逐项确认本次回应的required_issue_indices。"
                 )
             async with asyncio.timeout(min(settings.MULTI_ROLE_RESEARCH_CALL_TIMEOUT, remaining_budget(state))):
-                result = await call(prompt, data, AgentAnalysis, config)
+                result = await call(prompt, data, AgentAnalysis, config, on_text=activity_streamer(state, stage, role))
             indices = [
                 index
                 for index, issue in enumerate(state.agent_review.issues if state.agent_review else [])
@@ -279,6 +333,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                     data,
                     ResearchReview,
                     config,
+                    on_text=activity_streamer(state, "review", None),
                 )
             checked = ResearchReview.model_validate(result)
             valid_issues = [

@@ -145,7 +145,6 @@ async def test_public_research_single_report_no_private_tools_and_no_orphan_mess
     assert result(saved).status == "completed"
     assert len(workflow.llm_calls) == 1 and workflow.llm_calls[0][1] == {
         "max_tokens": settings.RESEARCH_REPORT_MAX_TOKENS,
-        "report_mode": True,
     }
     assert not {"get_portfolio", "get_positions"}.intersection(name for name, *_ in workflow.calls)
     assert all(user == 42 and thread == "research" for _, _, user, thread in workflow.calls)
@@ -227,8 +226,8 @@ async def test_real_sdk_truncated_report_stream_and_checkpoint_both_include_the_
     assert saved.values["messages"][-1].response_metadata["report_continuations"] == 1
     assert len(requests) == 2 and all(item["stream"] for item in requests)
     assert all(item["max_tokens"] == settings.RESEARCH_REPORT_MAX_TOKENS for item in requests)
-    assert all(item["reasoning_effort"] == "low" for item in requests)
-    assert all("tools" not in item and "report_mode" not in item for item in requests)
+    assert all(item["reasoning_effort"] == settings.LLM_REASONING_EFFORT for item in requests)
+    assert all("tools" not in item for item in requests)
     assert requests[1]["messages"][-2]["content"] == first
     assert "private reasoning" not in output and all(wire.closed for wire in wires)
     assert len(workflow.calls) == len({(name, str(args)) for name, args, *_ in workflow.calls})

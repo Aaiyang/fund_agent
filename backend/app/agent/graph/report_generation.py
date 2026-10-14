@@ -23,9 +23,7 @@ async def generate_research_report(
     try:
         async with deadline:
             for continuation in range(settings.RESEARCH_REPORT_MAX_CONTINUATIONS + 1):
-                response = process_llm_response(
-                    await call(requests, max_tokens=settings.RESEARCH_REPORT_MAX_TOKENS, report_mode=True)
-                )
+                response = process_llm_response(await call(requests, max_tokens=settings.RESEARCH_REPORT_MAX_TOKENS))
                 if not isinstance(response, AIMessage) or response.tool_calls:
                     raise ValueError("research report requires assistant text without tools")
                 content += extract_text_content(response.content)

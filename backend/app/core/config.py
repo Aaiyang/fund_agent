@@ -190,6 +190,11 @@ class Settings:
             os.getenv("FUND_LLM_TEMPERATURE", os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         )
         self.MAX_TOKENS = int(os.getenv("FUND_LLM_MAX_TOKENS", os.getenv("MAX_TOKENS", "2000")))
+        # "始终思考"的模型（智谱 GLM-5.3）把思考 token 计进 max_tokens，档位只有
+        # low/high/max 三种：传 medium 会被 400 code=1210 拒（实测）。默认取中档 high，
+        # 既压住"思考吃光输出预算"的截断，又不像 low 那样牺牲推理深度。
+        effort = os.getenv("FUND_LLM_REASONING_EFFORT", "high")
+        self.LLM_REASONING_EFFORT = effort if effort in {"low", "high", "max"} else "high"
         # 报告正文与厂商隐藏推理共享输出额度，不能沿用普通短回答的预算。
         self.RESEARCH_REPORT_MAX_TOKENS = max(
             1024, min(65536, int(os.getenv("FUND_RESEARCH_REPORT_MAX_TOKENS", "16384")))
@@ -201,8 +206,10 @@ class Settings:
         self.MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT = max(
             1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT", "180"))
         )
+        # 角色调用是结构化输出，思考预算算在这里：1600 会被 GLM 的思考 token 吃满，
+        # 正文一个字没出就 finish_reason=length（实测 LengthFinishReasonError）。
         self.MULTI_ROLE_RESEARCH_MAX_TOKENS = max(
-            256, min(2400, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS", "1600")))
+            1024, min(65536, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS", "32768")))
         )
         # 上下文组装（历史 + 工具结果）的修剪预算，独立于回复输出上限：
         # 调大窗口不会同时放大回复长度。

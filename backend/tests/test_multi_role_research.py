@@ -29,6 +29,7 @@ from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
     EvidenceFinding,
+    ResearchActivity,
     ResearchProgress,
     ResearchReview,
     ReviewIssue,
@@ -120,6 +121,10 @@ def multi_workflow(monkeypatch):
         if state.stream:
             # Real nested LLM callbacks produce tokens; none may reach the public answer.
             await FakeListChatModel(responses=["PRIVATE_AGENT_OUTPUT"]).ainvoke(messages)
+        if state.stream and kwargs.get("on_text") is not None:
+            # 思考片段只进观察器：换行用来验证界面那一行会被压成单行。
+            kwargs["on_text"]("先核净值\n再算回撤")
+            kwargs["on_text"]("区间")
         if schema is ResearchReview:
             assert len([item for item in state.analysis if not item[1]]) == (3 if state.personal else 2)
             assert len(data["peer_reports"]) == 3
@@ -314,6 +319,48 @@ async def test_real_nested_model_tokens_are_private_and_progress_is_public(multi
     assert max(i for i, item in enumerate(progress) if item.stage == "analysis") < min(
         i for i, item in enumerate(progress) if item.stage == "review"
     )
+
+
+async def test_role_thinking_surfaces_as_one_line_activity_without_leaking_output(multi_workflow):
+    state = multi_workflow
+    reference = await basic_report(state)
+    state.stream = True
+    events = [
+        item
+        async for item in state.agent.get_stream_response(
+            [Message(role="user", content="进一步研究")],
+            "research-a",
+            user_id="42",
+            research_followup_id=reference,
+        )
+    ]
+    activity = [item for item in events if isinstance(item, ResearchActivity)]
+    pairs = {(item.role, item.stage) for item in activity}
+    # 没有个人持仓时 portfolio 角色是跳过的，所以首轮只有两个角色 + 审核。
+    assert {("fundamentals", "analysis"), ("risk", "analysis"), (None, "review")} <= pairs
+    assert all(item.text and "\n" not in item.text for item in activity)
+    assert all(item.run_id for item in activity)
+    assert "PRIVATE_AGENT_OUTPUT" not in " ".join(item.text for item in activity)
+
+
+async def test_report_message_carries_server_side_role_outcomes_for_the_badge(multi_workflow):
+    state = multi_workflow
+    state.failures.add("risk")
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="进一步研究")], "research-a", user_id="42", research_followup_id=reference
+    )
+    report = (await state.agent.get_chat_history("research-a"))[-1]
+    # 徽标读的是服务端信封，不是模型在正文里的自述。
+    assert {item.role: item.status for item in report.research_roles} == {
+        "fundamentals": "completed",
+        "risk": "failed",
+        "portfolio": "skipped",
+    }
+    assert report.research_review_status == "partial"
+    history = await state.agent.get_chat_history("research-a")
+    # 徽标只属于多角色那份报告；单档位报告一个数字都不该带。
+    assert all(message.research_roles is None for message in history[:-1])
 
 
 async def test_explicit_multi_role_text_routes_directly_and_ordinary_deep_stays_single(multi_workflow):

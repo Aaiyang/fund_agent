@@ -10,6 +10,7 @@ import json
 
 import pytest
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.llm import LLMRegistry, LLMService
@@ -113,3 +114,27 @@ def test_service_activate_model_switches_at_runtime(monkeypatch):
 
     with pytest.raises(ValueError, match="not found in registry"):
         service.activate_model("no-such-provider")
+
+
+def test_structured_output_binds_through_function_calling_not_json_mode():
+    """GLM-5.3 在 json_mode 下会思考完再回空正文.
+
+    实测报错：ValueError: expected value at line 1 column 1。
+
+    工具调用那条路径主对话已经在用，所以结构化输出必须显式走 function_calling，
+    否则多角色研究的三个角色与审核会整批失败。
+    """
+    from app.services.llm.service import _with_schema
+
+    class Recorder:
+        def with_structured_output(self, schema, **kwargs):
+            self.called = (schema, kwargs)
+            return self
+
+    class Schema(BaseModel):
+        answer: str = ""
+
+    model = Recorder()
+    assert _with_schema(model, None) is model
+    assert _with_schema(model, Schema) is model
+    assert model.called == (Schema, {"method": "function_calling"})

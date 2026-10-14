@@ -60,6 +60,17 @@ def _retryable_llm_error(error: BaseException) -> bool:
     return isinstance(error, (RateLimitError, APITimeoutError, APIError)) and not isinstance(error, LLMStartTimeout)
 
 
+def _with_schema(model: Any, response_format: Optional[Type[BaseModel]]) -> Any:
+    """按工具调用方式绑定结构化输出，不用 json_mode.
+
+    实测（智谱 GLM-5.3-flash，同一角色 prompt）：默认解析出的 ``json_mode`` 会在思考
+    之后回一段空正文，LangChain 聚合时对空串做 JSON 解析直接 ``ValueError: expected
+    value at line 1 column 1``，三个研究角色与审核全挂；换成 ``function_calling``
+    同一个请求能拿到完整对象。工具调用这条路径主对话早就在用，厂商兼容性已被验证。
+    """
+    return model.with_structured_output(response_format, method="function_calling") if response_format else model
+
+
 class LLMService:
     """Service for managing LLM calls with retries and circular fallback.
 
@@ -129,6 +140,7 @@ class LLMService:
         messages: LanguageModelInput,
         model_name: Optional[str] = None,
         response_format: Optional[Type[BaseModel]] = None,
+        on_text: Optional[Callable[[str], None]] = None,
         **model_kwargs: Any,
     ) -> Union[BaseMessage, BaseModel]:
         """Call the LLM with retries and circular fallback.
@@ -137,9 +149,12 @@ class LLMService:
             messages: Conversation messages to send.
             model_name: Override the model. ``None`` uses the current default.
             response_format: Pydantic schema for structured output. When
-                provided the call chains ``.with_structured_output(schema)``
-                and returns a validated instance of that schema instead of a
-                raw ``BaseMessage``.
+                provided the call chains ``.with_structured_output(schema,
+                method="function_calling")`` and returns a validated instance
+                of that schema instead of a raw ``BaseMessage``.
+            on_text: Optional observer receiving each streamed fragment
+                (reasoning first, then answer text) for a live one-line progress
+                display. It never changes what the call returns.
             **model_kwargs: Extra kwargs forwarded to ``LLMRegistry.get`` when
                 constructing a one-off model instance (e.g. ``temperature``,
                 ``max_tokens``, ``reasoning``).
@@ -152,7 +167,7 @@ class LLMService:
             RuntimeError: When all models fail after retries or the total
                 timeout budget is exceeded.
         """
-        progress = LLMCallProgress(settings.LLM_STREAM_IDLE_TIMEOUT)
+        progress = LLMCallProgress(settings.LLM_STREAM_IDLE_TIMEOUT, on_text=on_text)
         progress_token = call_progress.set(progress)
         total_deadline = asyncio.timeout(settings.LLM_TOTAL_TIMEOUT)
         try:
@@ -401,7 +416,7 @@ class LLMService:
 
         def _override_target(idx: int) -> Any:
             base = LLMRegistry.get(LLMRegistry.LLMS[idx]["name"], **model_kwargs)
-            return base.with_structured_output(response_format) if response_format else base
+            return _with_schema(base, response_format)
 
         def _default_target(_: int) -> Any:
             return self._llm
@@ -456,7 +471,7 @@ class LLMService:
                 else scoped.models[index]
             )
             if response_format:
-                model = model.with_structured_output(response_format)
+                model = _with_schema(model, response_format)
             elif not one_off and self._bound_tools:
                 model = model.bind_tools(self._bound_tools)
             try:

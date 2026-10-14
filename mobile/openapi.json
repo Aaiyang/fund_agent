@@ -8347,6 +8347,39 @@
             "minLength": 1,
             "title": "Content",
             "description": "The complete content of the message"
+          },
+          "research_roles": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResearchRoleOutcome"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Roles",
+            "description": "多角色报告里每个角色的实际结局；单档位报告为 None"
+          },
+          "research_review_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "completed",
+                  "partial",
+                  "failed",
+                  "skipped"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Review Status",
+            "description": "多角色报告的交叉审核结局"
           }
         },
         "type": "object",
@@ -9450,6 +9483,36 @@
         ],
         "title": "RelatedSectorsResponse",
         "description": "GET /funds/{fund_code}/related-sectors 响应（占位实现）."
+      },
+      "ResearchRoleOutcome": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "fundamentals",
+              "risk",
+              "portfolio"
+            ],
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "partial",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "status"
+        ],
+        "title": "ResearchRoleOutcome",
+        "description": "一份多角色报告里每个角色的实际结局，界面据此显示\"N 个角色里 M 个失败\".\n\n这些数字来自服务端信封（``AgentReport.status``），不是模型在正文里的自述。"
       },
       "ScreenshotImportAccepted": {
         "properties": {

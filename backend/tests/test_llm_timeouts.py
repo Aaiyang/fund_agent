@@ -69,13 +69,29 @@ class ChatState(TypedDict):
 
 
 class VendorReasoningStream(httpx.AsyncByteStream):
-    def __init__(self, answer: str = "answer") -> None:
+    def __init__(self, answer: str = "answer", tool: str | None = None) -> None:
         self.closed = False
         self.answer = answer
+        # 结构化输出走 function_calling 时，正文不在 content 里，而是工具调用的 arguments。
+        self.tool = tool
 
     async def __aiter__(self):
         """模拟供应商通过 SSE 先返回推理，再返回最终正文."""
-        deltas = [{"reasoning_content": "hidden reasoning"}] * 7 + [{"content": self.answer}]
+        final = (
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "fixture-call",
+                        "type": "function",
+                        "function": {"name": self.tool, "arguments": self.answer},
+                    }
+                ]
+            }
+            if self.tool
+            else {"content": self.answer}
+        )
+        deltas = [{"reasoning_content": "hidden reasoning"}] * 7 + [final]
         for index, delta in enumerate(deltas):
             await asyncio.sleep(0.045)
             event = {
@@ -87,7 +103,7 @@ class VendorReasoningStream(httpx.AsyncByteStream):
                     {
                         "index": 0,
                         "delta": {"role": "assistant", **delta} if index == 0 else delta,
-                        "finish_reason": "stop" if index == len(deltas) - 1 else None,
+                        "finish_reason": ("tool_calls" if self.tool else "stop") if index == len(deltas) - 1 else None,
                     }
                 ],
             }
@@ -323,7 +339,9 @@ class StructuredAnswer(BaseModel):
 @pytest.mark.parametrize("structured", [False, True])
 async def test_vendor_reasoning_progress_survives_actual_sdk_and_adapter(service_factory, monkeypatch, structured):
     service, profiles = service_factory({"fixture": stream(["unused"], [0.005])})
-    wire_stream = VendorReasoningStream('{"answer":"answer"}' if structured else "answer")
+    wire_stream = VendorReasoningStream(
+        '{"answer":"answer"}' if structured else "answer", tool="StructuredAnswer" if structured else None
+    )
     requests = []
 
     async def handle(request: httpx.Request) -> httpx.Response:

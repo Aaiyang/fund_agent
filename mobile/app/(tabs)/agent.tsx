@@ -33,6 +33,7 @@ import { useLlmProfiles } from '@/hooks/useLlmProfiles';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
 import { composeResearchQuestion, type PickerFund, type ResearchTier } from '@/utils/fundPicker';
+import { describeRoleOutcomes } from '@/utils/researchProgress';
 
 /** 选完只留在本地，随问题发送附件；识别由后端子图启动。 */
 type Attachment = { key: string; images: PickedImage[] };
@@ -103,7 +104,7 @@ function ChatSkeleton({ label }: { label: string }) {
  * 一条消息。借 DeepSeek 的排版：助手的回答不套气泡，直接铺在页面上，
  * 只有用户那一句是右侧一块浅色——长回答读起来不像在被逐条"回话"。
  */
-function Message({ role, content, streaming, failed, onRetry, label, onResearch, researchDisabled, researchProgress }: {
+function Message({ role, content, streaming, failed, onRetry, label, onResearch, researchDisabled, researchProgress, researchActivity, researchBadge }: {
   role: string;
   content: string;
   streaming?: boolean;
@@ -113,6 +114,8 @@ function Message({ role, content, streaming, failed, onRetry, label, onResearch,
   onResearch?: () => void;
   researchDisabled?: boolean;
   researchProgress?: string;
+  researchActivity?: string;
+  researchBadge?: string;
 }) {
   if (role === 'user') {
     return (
@@ -137,8 +140,16 @@ function Message({ role, content, streaming, failed, onRetry, label, onResearch,
     <View style={{ marginBottom: 20 }}>
       {label ? <Text style={{ fontSize: 12, color: theme.textFaint, marginBottom: 6 }}>{label}</Text> : null}
       {content ? <MarkdownText content={content} /> : null}
-      {streaming && researchProgress ? (
-        <Text accessibilityLiveRegion="polite" style={{ fontSize: 13, color: theme.textMuted, marginTop: 8 }}>{researchProgress}</Text>
+      {streaming && (researchActivity || researchProgress) ? (
+        // 一行空间：有思考摘要时优先它，否则退回阶段进度。服务端已截尾压平，这里不再折行。
+        <Text accessibilityLiveRegion="polite" numberOfLines={1} style={{ fontSize: 13, color: theme.textMuted, marginTop: 8 }}>
+          {researchActivity ?? researchProgress}
+        </Text>
+      ) : null}
+      {researchBadge ? (
+        <Text numberOfLines={1} style={{ fontSize: 13, color: researchBadge.includes('失败') || researchBadge.includes('未完成') ? theme.danger : theme.textMuted, marginTop: 8 }}>
+          {researchBadge}
+        </Text>
       ) : null}
       {streaming && !content ? (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -522,6 +533,10 @@ export default function AgentScreen() {
                 onRetry={chat.retry}
                 label={turn.role === 'assistant' ? assistantLabel : undefined}
                 researchProgress={turn.researchProgress}
+                researchActivity={turn.researchActivity}
+                researchBadge={turn.role === 'assistant'
+                  ? describeRoleOutcomes(turn.research_roles ?? (turn.state === 'streaming' ? chat.researchOutcomes : []), turn.research_review_status)
+                  : undefined}
                 researchDisabled={chat.sending || uploading || Boolean(review) || Boolean(pending.data?.continuation)}
                 onResearch={turn.role === 'assistant' && turn.research_id ? () => {
                   void chat.send('请对这份报告进行多角色深度研究', [], turn.research_id ?? undefined)
