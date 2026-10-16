@@ -35,9 +35,10 @@ def test_contract_lists_every_schema_field_and_its_enum_tokens():
         for name in _field_names(model):
             assert f"- {name}（" in text, f"{model.__name__}.{name} 没进契约"
     assert "fact | inference | conditional" in AGENT_ANALYSIS_CONTRACT
-    assert "completed | blocked" in AGENT_ANALYSIS_CONTRACT
-    assert "fundamentals | risk | portfolio" in RESEARCH_REVIEW_CONTRACT
-    assert "最多 8" in AGENT_ANALYSIS_CONTRACT  # coverage 上限与 assignment 数量同量级
+    # 覆盖表不再是模型要填的字段：它由服务端从实际引用推导（0/31 completed 的成因）。
+    assert "coverage" not in AGENT_ANALYSIS_CONTRACT
+    assert "performance | risk | holdings | manager | disclosure | portfolio" in RESEARCH_REVIEW_CONTRACT
+    assert "最多 6" in AGENT_ANALYSIS_CONTRACT  # findings 上限随角色维度放宽
 
 
 def test_describe_schema_rejects_an_empty_model():
@@ -48,11 +49,11 @@ def test_describe_schema_rejects_an_empty_model():
 def test_role_and_review_prompts_carry_the_contract_and_only_their_own_rules():
     first = role_prompt("risk", revision=False)
     # addressed_issue_indices 本来就在契约里；修订轮要区分的是那句规则本身。
-    assert "风险分析员" in first and "本轮收到审核反馈" not in first
+    assert "风险分析师" in first and "本轮收到审核反馈" not in first
     assert "addressed_issue_indices" in first
     assert "本轮收到审核反馈" in role_prompt("risk", revision=True)
-    assert "- role（必填，只能是 fundamentals | risk | portfolio）" in review_prompt()
-    assert "风险分析员" not in review_prompt()
+    assert "- role（必填，只能是 performance | risk | holdings | manager | disclosure | portfolio）" in review_prompt()
+    assert "风险分析师" not in review_prompt()
 
 
 def test_unknown_role_fails_loudly_instead_of_dropping_its_brief():

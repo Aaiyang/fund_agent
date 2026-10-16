@@ -49,6 +49,7 @@ _ROLE_EVIDENCE_CAP = 4
 _ROLE_TOOL_ARGS: dict[str, dict] = {
     "get_fund_managers": {"limit": 10},
     "get_fund_announcements": {"category": "all", "limit": 5},
+    "get_fund_benchmark": {"range_key": "3y"},
     "get_fund_sectors": {"limit": 2},
     "get_market_events": {"limit": 5, "lookback_hours": 72},
     "get_sector_market": {"limit": 3},
@@ -550,8 +551,8 @@ def _build(
     async def role_evidence(state: ResearchGraphState, config: RunnableConfig) -> dict:
         """按角色的任务清单各自补一次证据；工具集合仍然由代码给，模型不能加.
 
-        这是"多智能体会调查"与"三次并行摘要"的分界：单档位只有一份共用证据包，
-        这里让每个角色按 ``required_tool_groups`` 补自己缺的那几项（已取到的不重复问），
+        这是"多智能体会调查"与"六次并行摘要"的分界：单档位只有一份共用证据包，
+        这里让每个角色按 ``required_evidence`` 补自己缺的那几项（已取到的不重复问），
         并且总量有界——每角色最多 ``_ROLE_EVIDENCE_CAP`` 次新调用。
         """
         have = {(call.name, _args_key(call.args)) for call in state.tool_plan}
@@ -559,16 +560,20 @@ def _build(
         missing: dict[str, int] = {}
         calls: list[tuple[str, dict]] = []
         for assignment in build_assignments(state):
-            for group in assignment.required_tool_groups:
-                for name in group:
-                    args = _role_tool_args(name, assignment.fund_code, state)
-                    if args is None or (name, _args_key(args)) in have:
-                        continue
-                    if missing.get(assignment.role, 0) >= _ROLE_EVIDENCE_CAP:
-                        continue
-                    have.add((name, _args_key(args)))
-                    missing[assignment.role] = missing.get(assignment.role, 0) + 1
-                    calls.append((name, args))
+            for requirement in assignment.required_evidence:
+                codes: list[str | None] = (
+                    list(state.fund_codes) if requirement.scope == "per_fund" and state.fund_codes else [None]
+                )
+                for name in requirement.tools:
+                    for code in codes:
+                        args = _role_tool_args(name, code, state)
+                        if args is None or (name, _args_key(args)) in have:
+                            continue
+                        if missing.get(assignment.role, 0) >= _ROLE_EVIDENCE_CAP:
+                            continue
+                        have.add((name, _args_key(args)))
+                        missing[assignment.role] = missing.get(assignment.role, 0) + 1
+                        calls.append((name, args))
         if not calls:
             return {}
         obtained = await batch(state, config, calls)

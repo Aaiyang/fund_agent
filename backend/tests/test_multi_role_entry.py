@@ -143,7 +143,7 @@ def test_unresolved_review_issues_stay_unresolved_in_the_divergence_list() -> No
                 status="completed",
                 analysis=AgentAnalysis(addressed_issue_indices=[0]),
             ),
-            AgentReport(run_id="t", role="fundamentals", round=1, status="completed", analysis=AgentAnalysis()),
+            AgentReport(run_id="t", role="manager", round=1, status="completed", analysis=AgentAnalysis()),
         ],
     )
     listed = divergences(state)

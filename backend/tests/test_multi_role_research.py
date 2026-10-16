@@ -17,6 +17,7 @@ from app.agent.graph import fund_selection as selection_module
 from app.agent.context import dump_messages
 from app.agent.graph.agent import LangGraphAgent
 from app.agent.graph.agent import user_persona_service
+from app.agent.graph.multi_role_research import _ROLES
 from app.agent.graph.research_followup import ResearchFollowupError
 from app.agent.tools.result import ToolResult
 from app.core.config import settings
@@ -34,7 +35,6 @@ from app.schemas.multi_role_research import (
     ResearchReview,
     ReviewIssue,
     SupplementRequest,
-    TaskCoverage,
     merge_agent_reports,
 )
 
@@ -57,10 +57,10 @@ def multi_workflow(monkeypatch):
         clean_review=False,
         supplement_only=False,
         fail_revision=set(),
-        omit_coverage=False,
         two_supplements=False,
         degraded_evidence=None,
         forged_revision=False,
+        forge_roles=("risk",),
     )
     agent = LangGraphAgent()
     agent._graph = agent._build_graph(InMemorySaver())
@@ -118,7 +118,6 @@ def multi_workflow(monkeypatch):
             state.reports.append(messages)
             return AIMessage(content="综合报告：已核验依据、分歧与适用条件。")
         data = json.loads(messages[-1].content)
-        prompt = messages[0].content
         if state.stream:
             # Real nested LLM callbacks produce tokens; none may reach the public answer.
             await FakeListChatModel(responses=["PRIVATE_AGENT_OUTPUT"]).ainvoke(messages)
@@ -127,8 +126,8 @@ def multi_workflow(monkeypatch):
             kwargs["on_text"]("先核净值\n再算回撤")
             kwargs["on_text"]("区间")
         if schema is ResearchReview:
-            assert len([item for item in state.analysis if not item[1]]) == (3 if state.personal else 2)
-            assert len(data["peer_reports"]) == 3
+            assert len([item for item in state.analysis if not item[1]]) == len(_ROLES) - (0 if state.personal else 1)
+            assert len(data["peer_reports"]) == len(_ROLES)  # 含 skipped 信封：每个维度都要有结局
             state.reviews.append(data)
             if state.fail_review:
                 raise RuntimeError("fake review failure")
@@ -137,7 +136,7 @@ def multi_workflow(monkeypatch):
             if state.supplement_only:
                 return ResearchReview(supplements=[SupplementRequest(kind="market_events", reason="核验更多市场事件")])
             return ResearchReview(
-                issues=[ReviewIssue(role="fundamentals", finding_index=0, reason="说明假设差异")],
+                issues=[ReviewIssue(role="manager", finding_index=0, reason="说明假设差异")],
                 supplements=[
                     SupplementRequest(kind="announcements", fund_code="000001", reason="核验更多公告"),
                     SupplementRequest(
@@ -147,71 +146,64 @@ def multi_workflow(monkeypatch):
                     ),
                 ],
             )
-        role = "fundamentals" if "基金研究员" in prompt else "portfolio" if "组合分析员" in prompt else "risk"
+        # 载荷里的 assignments 已按角色过滤，取第一条就是本次的角色；比嗅提示词稳。
+        role = data["assignments"][0]["role"]
         feedback = "peer_reports" in data
         state.analysis.append((role, feedback, data))
         if not feedback:
             assert "peer_reports" not in data
-            if len([item for item in state.analysis if not item[1]]) == (3 if state.personal else 2):
+            if len([item for item in state.analysis if not item[1]]) == len(_ROLES) - (0 if state.personal else 1):
                 barrier.set()
             await asyncio.wait_for(barrier.wait(), timeout=2)
         else:
-            assert len(data["peer_reports"]) == 3
+            assert len(data["peer_reports"]) == len(_ROLES)  # 含 skipped 信封：每个维度都要有结局
             if not state.fail_review and not state.supplement_only:
-                assert data["review"]["issues"][0]["role"] == "fundamentals"
+                assert data["review"]["issues"][0]["role"] == "manager"
             assert all(item["fund_code"] != "999999" for item in data["review"]["supplements"])
         if role in state.failures or (feedback and role in state.fail_revision):
             raise RuntimeError("fake role failure")
         findings = []
-        coverage = []
         for assignment in data["assignments"]:
             refs = []
-            for group in assignment["required_tool_groups"]:
-                match = next(
-                    (
-                        entry
-                        for entry in data["evidence"]
-                        if entry["tool"] in group
-                        and (
-                            not assignment["fund_code"]
-                            or entry["args"].get("fund_code") == assignment["fund_code"]
-                            or assignment["fund_code"] in entry["args"].get("fund_codes", [])
-                        )
-                    ),
-                    None,
-                )
-                if match:
-                    refs.append(match["evidence_id"])
+            for requirement in assignment["required_evidence"]:
+                # per_fund 要求每个确认对象都被引到一次；global 只要引到就算。
+                targets = data["fund_codes"] if requirement["scope"] == "per_fund" else [None]
+                for code in targets:
+                    match = next(
+                        (
+                            entry
+                            for entry in data["evidence"]
+                            if entry["tool"] in requirement["tools"]
+                            and (
+                                code is None
+                                or entry["args"].get("fund_code") == code
+                                or code in entry["args"].get("fund_codes", [])
+                            )
+                        ),
+                        None,
+                    )
+                    if match:
+                        refs.append(match["evidence_id"])
             if not refs:
                 refs = [data["evidence"][0]["evidence_id"]]
-            if role == "risk" and (state.forged or (feedback and state.forged_revision)):
+            if role in state.forge_roles and (state.forged or (feedback and state.forged_revision)):
                 refs = ["ev_forged"]
-            index = len(findings)
             findings.append(
                 EvidenceFinding(
                     claim=role + ("已回应审核反馈" if feedback else "独立发现"),
                     kind="inference",
-                    evidence_ids=list(dict.fromkeys(refs)),
+                    evidence_ids=list(dict.fromkeys(refs))[:6],
                     limitation="历史披露，不能保证未来表现",
                 )
             )
-            coverage.append(
-                TaskCoverage(
-                    task_id=assignment["task_id"],
-                    status="completed",
-                    finding_indices=[index],
-                    evidence_ids=list(dict.fromkeys(refs)),
-                    explanation="模拟核验该研究项",
-                )
-            )
-        return AgentAnalysis(
-            findings=findings,
-            coverage=[] if state.omit_coverage else coverage,
-            addressed_issue_indices=data.get("required_issue_indices", []),
-        )
+        return AgentAnalysis(findings=findings, addressed_issue_indices=data.get("required_issue_indices", []))
 
     agent.llm_service = SimpleNamespace(get_llm=lambda: None, call=respond)
     return state
+
+
+# 首轮实际会调模型的专业维度；portfolio 只在有已核验持仓时才设立任务。
+ROUND_ONE_ROLES = ("performance", "risk", "holdings", "manager", "disclosure")
 
 
 async def basic_report(state, session="research-a"):
@@ -228,7 +220,7 @@ async def saved_state(state, session="research-a"):
 
 def test_parallel_reducer_is_order_independent_replay_safe_and_rejects_conflicts():
     a = AgentReport(run_id="task", role="risk", round=1, status="completed")
-    b = AgentReport(run_id="task", role="fundamentals", round=1, status="completed")
+    b = AgentReport(run_id="task", role="manager", round=1, status="completed")
     assert merge_agent_reports([a], [b, a]) == merge_agent_reports([b], [a])
     with pytest.raises(ValueError, match="conflicting"):
         merge_agent_reports([a], [a.model_copy(update={"status": "failed"})])
@@ -252,7 +244,9 @@ async def test_button_reuses_confirmed_scope_and_agents_exchange_reviewed_feedba
     assert saved.values["research_task"].request.mode == "deep"
     assert saved.values["research_result"].strategy == "multi_role"
     assert saved.values["research_result"].status == "partial"  # rejected reviewer target is disclosed
-    assert len(state.analysis) == 4 and len(state.reviews) == 1
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
+    assert any(item[1] for item in state.analysis)  # 审核反馈确实触发了修订轮
+    assert len(state.reviews) == 1
     assert len(state.reports) == 3  # basic report, intervening chat, one final synthesis
     assert not {"agent_reports", "agent_review", "evidence"}.intersection(saved.values)
     assert not any(args.get("fund_code") == "999999" for _, args in state.calls)
@@ -297,7 +291,7 @@ async def test_role_failure_and_forged_citations_produce_partial_report(multi_wo
     assert saved.values["research_result"].status == "partial"
     context = "\n".join(str(message.content) for message in state.reports[-1])
     assert "ev_forged" not in context
-    assert "risk" in str(saved.values["research_result"].gaps)
+    assert "风险与回撤" in str(saved.values["research_result"].gaps)
 
 
 async def test_real_nested_model_tokens_are_private_and_progress_is_public(multi_workflow):
@@ -339,8 +333,8 @@ async def test_role_thinking_surfaces_as_one_line_activity_without_leaking_outpu
     ]
     activity = [item for item in events if isinstance(item, ResearchActivity)]
     pairs = {(item.role, item.stage) for item in activity}
-    # 没有个人持仓时 portfolio 角色是跳过的，所以首轮只有两个角色 + 审核。
-    assert {("fundamentals", "analysis"), ("risk", "analysis"), (None, "review")} <= pairs
+    # 没有个人持仓时 portfolio 维度不设立，所以首轮是五个专业维度 + 审核。
+    assert {("manager", "analysis"), ("risk", "analysis"), (None, "review")} <= pairs
     assert all(item.text and "\n" not in item.text for item in activity)
     assert all(item.run_id for item in activity)
     assert "PRIVATE_AGENT_OUTPUT" not in " ".join(item.text for item in activity)
@@ -356,8 +350,11 @@ async def test_report_message_carries_server_side_role_outcomes_for_the_badge(mu
     report = (await state.agent.get_chat_history("research-a"))[-1]
     # 徽标读的是服务端信封，不是模型在正文里的自述。
     assert {item.role: item.status for item in report.research_roles} == {
-        "fundamentals": "completed",
+        "manager": "completed",
         "risk": "failed",
+        "performance": "completed",
+        "holdings": "completed",
+        "disclosure": "completed",
         "portfolio": "skipped",
     }
     assert report.research_review_status == "partial"
@@ -371,7 +368,7 @@ async def test_explicit_multi_role_text_routes_directly_and_ordinary_deep_stays_
     await state.agent.get_response([Message(role="user", content="深入分析000001")], "single", user_id="42")
     assert not state.analysis
     await state.agent.get_response([Message(role="user", content="多角色研究000001")], "research-a", user_id="42")
-    assert len(state.analysis) == 4
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
 
 
 def test_followup_cannot_mix_attachment_or_account_scope():
@@ -401,9 +398,10 @@ async def test_portfolio_role_receives_verified_positions_and_the_same_feedback(
         user_id="42",
         research_followup_id=output[-1].research_id,
     )
-    assert len(state.analysis) == 6
+    assert len([item for item in state.analysis if not item[1]]) == len(_ROLES)
     portfolio = [data for role, _, data in state.analysis if role == "portfolio"]
-    assert len(portfolio) == 2
+    # 补证取的是公告与经理资料，都不在组合适配的数据切片里，所以它不参与修订。
+    assert len(portfolio) == 1
     assert all(any(item["tool"] == "get_positions" for item in data["evidence"]) for data in portfolio)
 
 
@@ -440,7 +438,8 @@ async def test_review_failure_is_disclosed_without_fabricating_a_completed_revie
     )
     outcome = (await saved_state(state)).values["research_result"]
     assert outcome.status == "partial" and any("审核失败" in gap for gap in outcome.gaps)
-    assert len(state.analysis) == 2  # failed review cannot justify another entire analysis round
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)  # 审核失败不再另起一整轮分析
+    assert not any(item[1] for item in state.analysis)
 
 
 async def test_clean_review_reuses_complete_first_round_without_revision_calls(multi_workflow):
@@ -454,12 +453,13 @@ async def test_clean_review_reuses_complete_first_round_without_revision_calls(m
         user_id="42",
         research_followup_id=reference,
     )
-    assert len(state.analysis) == 2 and len(state.reviews) == 1
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
+    assert len(state.reviews) == 1
     assert not any(feedback for _, feedback, _ in state.analysis)
     assert all(name != "get_portfolio_snapshot" for name, _ in state.calls)
     result = (await saved_state(state)).values["research_result"]
     assert result.status == "completed" and not result.gaps
-    assert '"completed_count": 3' in "\n".join(str(message.content) for message in state.reports[-1])
+    assert '"completed_count": 5' in "\n".join(str(message.content) for message in state.reports[-1])
 
 
 async def test_market_supplement_revises_only_the_role_that_receives_new_evidence(multi_workflow):
@@ -472,9 +472,9 @@ async def test_market_supplement_revises_only_the_role_that_receives_new_evidenc
         user_id="42",
         research_followup_id=reference,
     )
-    assert [role for role, feedback, _ in state.analysis if feedback] == ["risk"]
+    assert [role for role, feedback, _ in state.analysis if feedback] == ["disclosure"]
     for role, _, data in state.analysis:
-        if role == "fundamentals":
+        if role == "manager":
             assert all(item["tool"] not in {"get_market_events", "get_positions"} for item in data["evidence"])
 
 
@@ -521,10 +521,13 @@ async def test_portfolio_role_receives_confirmed_profile_and_keeps_it_separate_f
     assert all("confirmed_user_profile" not in data for role, _, data in state.analysis if role != "portfolio")
 
 
-async def test_missing_task_coverage_is_partial_even_when_model_produces_findings(multi_workflow):
+async def test_unmet_evidence_requirement_is_derived_and_named(multi_workflow):
+    """基准取不到时，缺哪块数据由服务端从引用算出来并写进附注；模型既不申报也不掩盖."""
     state = multi_workflow
     state.clean_review = True
-    state.omit_coverage = True
+    state.agent.tools_by_name["get_fund_benchmark"] = SimpleNamespace(
+        ainvoke=AsyncMock(return_value="[TOOL_ERROR] 基准暂不可用")
+    )
     reference = await basic_report(state)
     await state.agent.get_response(
         [Message(role="user", content="多角色深度研究")],
@@ -533,11 +536,12 @@ async def test_missing_task_coverage_is_partial_even_when_model_produces_finding
         research_followup_id=reference,
     )
     result = (await saved_state(state)).values["research_result"]
-    assert result.status == "partial" and any("未报告" in gap for gap in result.gaps)
-    assert len(state.analysis) == 4  # bounded repair of the omitted completion contract
-    # The substitute synthesizer intentionally omits all coverage details; the server preserves them.
+    assert result.status == "partial" and any("业绩比较基准" in gap for gap in result.gaps)
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
+    # 附注由服务端生成：成文模型不写覆盖，覆盖结论也照样在报告里。
     answer = (await state.agent.get_chat_history("research-a"))[-1].content
-    assert "研究对象：000001" in answer and "已覆盖 0/" in answer and "待完成" in answer
+    assert "研究对象：000001" in answer and "业绩与基准契合：缺少 业绩比较基准" in answer
+    assert "待完成" not in answer
 
 
 @pytest.mark.parametrize("quality", ["partial", "stale"])
@@ -561,7 +565,7 @@ async def test_source_quality_cannot_be_hidden_by_agents_claiming_all_tasks_comp
 
 async def test_revision_failure_keeps_first_round_work_and_discloses_unresolved_feedback(multi_workflow):
     state = multi_workflow
-    state.fail_revision.add("fundamentals")
+    state.fail_revision.add("manager")
     reference = await basic_report(state)
     await state.agent.get_response(
         [Message(role="user", content="多角色深度研究")],
@@ -570,15 +574,17 @@ async def test_revision_failure_keeps_first_round_work_and_discloses_unresolved_
         research_followup_id=reference,
     )
     result = (await saved_state(state)).values["research_result"]
-    assert result.status == "partial" and any("fundamentals修订未完成" in gap for gap in result.gaps)
+    assert result.status == "partial" and any("基金经理与团队修订未完成" in gap for gap in result.gaps)
     context = "\n".join(str(message.content) for message in state.reports[-1])
     assert "独立发现" in context
-    assert '"completed_count": 3' in context  # useful work is retained, overall review is partial
+    assert '"completed_count": 5' in context  # useful work is retained, overall review is partial
 
 
 async def test_forged_revision_cannot_erase_valid_first_round_or_mark_review_resolved(multi_workflow):
     state = multi_workflow
     state.forged_revision = True
+    # 审核反馈现在指向 manager；要伪造哪条结论，就得让那个角色进入修订轮。
+    state.forge_roles = ("manager",)
     reference = await basic_report(state)
     await state.agent.get_response(
         [Message(role="user", content="多角色深度研究")],
@@ -587,9 +593,11 @@ async def test_forged_revision_cannot_erase_valid_first_round_or_mark_review_res
         research_followup_id=reference,
     )
     outcome = (await saved_state(state)).values["research_result"]
-    assert outcome.status == "partial" and any("risk修订未完成" in gap for gap in outcome.gaps)
+    assert outcome.status == "partial" and any("基金经理与团队修订未完成" in gap for gap in outcome.gaps)
     context = "\n".join(str(message.content) for message in state.reports[-1])
-    assert "ev_forged" not in context and '"completed_count": 3' in context
+    # 伪造的修订轮结论被整条丢弃，selected_reports 仍取首轮：好产出不会被坏修订抹掉。
+    assert "ev_forged" not in context
+    assert '"completed_count": 5' in context
 
 
 async def test_two_supplements_are_parallel_and_return_in_stable_request_order(multi_workflow):
@@ -646,7 +654,8 @@ async def test_role_timeout_finishes_with_blocked_coverage_without_running_an_em
     )
     result = (await saved_state(state)).values["research_result"]
     assert result.status == "partial" and not state.reviews
-    assert any("没有有效覆盖" in gap for gap in result.gaps)
+    # 超时的维度被明确列为没做完，而不是静默消失。
+    assert any("未完成有效分析" in gap or "没有可核验的发现" in gap for gap in result.gaps)
 
 
 async def test_cancel_during_role_analysis_resumes_the_same_scope_without_recollecting(multi_workflow):

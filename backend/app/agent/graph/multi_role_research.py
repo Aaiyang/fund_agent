@@ -18,11 +18,12 @@ from app.agent.prompts.graph import review_prompt, role_prompt
 from app.core.config import settings
 from app.core.logging import logger
 from app.agent.graph.research_contract import (
+    ROLE_LABELS,
     build_assignments,
     completion_manifest,
+    derive_coverage,
     role_evidence,
     selected_reports,
-    verify_agent_analysis,
 )
 from app.schemas.multi_role_research import (
     AgentAnalysis,
@@ -59,7 +60,7 @@ class AgentCall(Protocol):
 
 EvidenceView = Callable[[ResearchGraphState], tuple[list[dict], list[str]]]
 FetchEvidence = Callable[[ResearchGraphState, RunnableConfig, str, dict], Awaitable[ResearchEvidence]]
-_ROLES: tuple[ResearchRole, ...] = ("fundamentals", "risk", "portfolio")
+_ROLES: tuple[ResearchRole, ...] = ("performance", "risk", "holdings", "manager", "disclosure", "portfolio")
 
 
 class MultiRoleGraphState(ResearchGraphState):
@@ -208,13 +209,15 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         state: MultiRoleGraphState, config: RunnableConfig, role: ResearchRole, round_number: Literal[1, 2]
     ) -> dict:
         stage: ResearchStage = "analysis" if round_number == 1 else "revision"
-        assignments = [item for item in (state.agent_assignments or build_assignments(state)) if item.role == role]
+        assignment = next(
+            (item for item in (state.agent_assignments or build_assignments(state)) if item.role == role), None
+        )
         personal = any(item.tool == "get_positions" and item.success for item in state.evidence)
         previous = next((item for item in latest_reports(state, 1) if item.role == role), None)
         skip_reason: (
             Literal["not_applicable", "no_verified_positions", "not_required", "previous_failed", "budget"] | None
         ) = None
-        if not assignments:
+        if assignment is None:
             skip_reason = "not_applicable"
         elif role == "portfolio" and not personal:
             skip_reason = "no_verified_positions"
@@ -238,6 +241,9 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         started = time.monotonic()
         input_chars = 0
         try:
+            if assignment is None:
+                # 上面已经按 not_applicable 跳过；走到这里说明跳过判定和任务清单不一致。
+                raise ValueError("research assignment missing for role")
             data = payload(state, feedback=round_number == 2, role=role)
             input_chars = len(data)
             packet = packet_for(state, role)
@@ -251,23 +257,34 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 for index, issue in enumerate(state.agent_review.issues if state.agent_review else [])
                 if round_number == 2 and issue.role == role
             ]
-            analysis, gaps = verify_agent_analysis(AgentAnalysis.model_validate(result), packet, assignments, indices)
-            if any(item.task_id == "portfolio:scenario" for item in assignments) and not state.scenario.get(
-                "available"
+            analysis, coverage, gaps = derive_coverage(
+                AgentAnalysis.model_validate(result), packet, assignment, list(state.fund_codes), indices
+            )
+            task = state.research_task
+            if (
+                role == "portfolio"
+                and task is not None
+                and task.request.intent == "allocation_analysis"
+                and not state.scenario.get("available")
             ):
-                analysis = analysis.model_copy(
-                    update={
-                        "coverage": [
-                            item.model_copy(update={"status": "blocked", "explanation": "代码配置情景不可用"})
-                            if item.task_id == "portfolio:scenario"
-                            else item
-                            for item in analysis.coverage
-                        ]
-                    }
-                )
-                gaps.append("代码配置情景不可用")
-            status = "failed" if not analysis.findings else "partial" if gaps else "completed"
-            report = AgentReport(run_id=state.turn_id, role=role, round=round_number, status=status, analysis=analysis)
+                note = "代码配置情景不可用，只给条件方案"
+                gaps = [*gaps, note]
+                analysis = analysis.model_copy(update={"gaps": list(dict.fromkeys([*analysis.gaps, note]))[:4]})
+            status = (
+                "failed"
+                if not analysis.findings
+                else "completed"
+                if coverage.status == "completed" and not gaps
+                else "partial"
+            )
+            report = AgentReport(
+                run_id=state.turn_id,
+                role=role,
+                round=round_number,
+                status=status,
+                analysis=analysis,
+                coverage=coverage,
+            )
         except Exception:
             logger.exception("research_agent_failed", turn_id=state.turn_id, role=role, round=round_number)
             report = AgentReport(
@@ -288,7 +305,9 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
             gap_count=len(report.analysis.gaps),
             elapsed_seconds=round(time.monotonic() - started, 3),
             input_chars=input_chars,
-            covered_count=sum(item.status == "completed" for item in report.analysis.coverage),
+            coverage_status=report.coverage.status if report.coverage is not None else None,
+            met_count=len(report.coverage.met) if report.coverage is not None else 0,
+            missing_count=len(report.coverage.missing) if report.coverage is not None else 0,
         )
         return {"agent_reports": [report]}
 
@@ -393,7 +412,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 visible = role_evidence(packet, role)
                 if any(item["evidence_id"] not in state.agent_initial_evidence_ids for item in visible):
                     revision_roles.add(role)
-                if any(item.explanation == "未报告该研究项的覆盖情况" for item in report.analysis.coverage):
+                if report.coverage is not None and report.coverage.status != "completed":
                     revision_roles.add(role)
         if calls:
             publish_progress(
@@ -417,15 +436,17 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         gaps = list(state.gaps)
         manifest = completion_manifest(state)
         for item in manifest["tasks"]:
+            # 未运行也是一个要披露的结局：用户要求"结合我的持仓"而持仓没取到时，
+            # 报告不能装作这一维度分析过了。
             if item["status"] != "completed":
-                gaps.append(item["task_id"] + "：" + item["explanation"])
+                gaps.append(ROLE_LABELS.get(item["role"], item["role"]) + "：" + item["explanation"])
         for report in selected_reports(state).values():
             if report.status != "skipped":
-                gaps.extend(report.role + "：" + gap for gap in report.analysis.gaps)
+                gaps.extend(ROLE_LABELS.get(report.role, report.role) + "：" + gap for gap in report.analysis.gaps)
         revisions = {item.role: item for item in latest_reports(state, 2)}
         for role in state.agent_revision_roles:
             if role not in revisions or revisions[role].status in {"failed", "skipped"}:
-                gaps.append(role + "修订未完成，保留首轮发现但审核反馈尚未解决")
+                gaps.append(ROLE_LABELS.get(role, role) + "修订未完成，保留首轮发现但审核反馈尚未解决")
         if remaining_budget(state) <= 0:
             gaps.append("多角色分析达到总时限；未完成项不能视为通过")
         logger.info(
