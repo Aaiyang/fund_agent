@@ -26,62 +26,92 @@ repeated request for a completed follow-up returns its saved report without new 
 or tool calls. The entry is an underlined text link. Old reports without server metadata have no link; users can explicitly
 request a new multi-role study with their targets.
 
+## Roles
+
+Roles follow professional fund-evaluation dimensions, and a dimension only exists when
+the system can actually fetch data for it. Rates/fee schedules, peer rankings and
+percentiles, turnover, full holdings beyond the disclosed top ten, and prospectus
+investment scope are **not** available, so no role is assigned to them; asking a model
+to analyse unavailable data produces confident filler, which is what this feature kept
+doing.
+
+| role | dimension | evidence visible to it |
+| --- | --- | --- |
+| `performance` | 业绩与基准契合 | snapshot period returns, `get_fund_benchmark` (benchmark text, parsed weights, excess return / beta / alpha / tracking error when every component index resolves), common-window comparison, market context |
+| `risk` | 风险与回撤 | NAV metrics including max drawdown **with peak/trough dates**, annualised volatility, Sharpe and Sortino (both `_rf0`: zero risk-free rate), comparison risk fields |
+| `holdings` | 持仓与行业风格 | disclosed top-10 with prior-quarter weights, weight changes, new entries, industry allocation, linked sectors and board quotes |
+| `manager` | 基金经理与团队 | manager periods, merged tenures, and the source page's 任职回报 column as raw text |
+| `disclosure` | 披露与来源质量 | announcement index (titles, dates, major-change hints only — never body text), market events |
+| `portfolio` | 组合适配 | positions and portfolio ledger, event-position links, code-computed allocation scenarios. Created **only** when a position read was attempted, and it runs only when that read succeeded |
+
+Slices are deliberately disjoint. A supplement therefore revises only the role whose own
+data changed — for example new announcements reach `disclosure`, not `portfolio`.
+
 ## Communication protocol
 
-The existing intent-specific research graph embeds `multi_role_agents` after its
-deterministic evidence and scenario nodes:
+The intent-specific deep chain embeds `multi_role_agents` after its deterministic evidence
+and scenario nodes:
 
-1. Code assigns up to four object-scoped tasks per role and persists a bounded evidence
-   packet and stage start time. Fundamentals and risk analyze role-relevant sources in
-   parallel. Portfolio runs only with successful position evidence. Public research
-   skips private ledger reads; fundamentals receives no private positions or unrelated
-   market prose.
-2. A join barrier waits for all roles, including explicit skipped/failed envelopes.
-3. The reviewer receives original evidence and all first-round reports. Its feedback
-   points to a role and finding index. Unknown claim targets, evidence IDs and funds
-   are rejected and disclosed as gaps.
-4. At most two independent supplement requests execute in parallel, from a fixed read-only whitelist:
-   announcements (10), managers (20), or market events (10 within 168 hours). Arguments
-   are constructed by the server and identical calls are deduplicated.
-5. Only roles targeted by valid issues, relevant new evidence or omitted coverage records
-   revise once. Review failure does not trigger a full rewrite. Unnecessary revisions
-   reuse reviewed first-round work. Failed revisions preserve useful first-round findings
-   while explicitly disclosing unresolved feedback.
-6. One synthesis receives a machine-checked completion matrix, produces the final answer and preserves meaningful disagreement,
-   limitations and missing evidence. Agent consensus is not independent factual support.
+1. Code builds **one assignment per role** (never fund × role) listing the evidence that
+   role must cite, persists the bounded evidence packet and the stage start time, and lets
+   each role top up at most four missing calls from a fixed argument map. Assignments do
+   not grow with the number of funds, because the output caps cannot absorb a task count
+   that scales with them.
+2. Roles run in parallel. Each returns findings that cite server-issued `evidence_id`s
+   only. A join barrier waits for every envelope, including explicit skipped or failed ones.
+3. The reviewer receives each role's findings, the server-derived coverage, and
+   `cited_evidence` — bounded excerpts of only the evidence entries some finding actually
+   cites. It no longer re-reads the whole packet: its job is to judge whether a claim is
+   supported by what it cites, not to re-ingest the sources. Feedback points at a role and
+   finding index; unknown claim targets, evidence IDs and fund codes are rejected and
+   disclosed.
+4. At most two independent supplement requests execute in parallel, from a fixed read-only
+   whitelist: announcements (10), managers (20), or market events (10 within 168 hours).
+   Arguments are constructed by the server and identical calls are deduplicated.
+5. Only roles targeted by valid issues, roles whose own slice gained new evidence, or roles
+   whose derived coverage is incomplete revise once. Review failure does not trigger a full
+   rewrite. Unnecessary revisions reuse reviewed first-round work. A failed revision keeps
+   the useful first-round findings while disclosing the unresolved feedback.
+6. One synthesis receives the machine-checked completion matrix and must include a
+   角色分歧与未解决项 section transcribing every server-computed divergence with its
+   resolved-or-not status. Agent consensus is not independent factual support.
 
 The server assigns each envelope's task ID, sender and round. The reducer merges by
 `(run_id, role, round)`, sorts deterministically, accepts identical replay, and rejects
-conflicting writes or mixed runs. Evidence IDs hash the task ID and exact bounded
+conflicting writes or mixed runs. Evidence IDs hash the turn ID and the exact bounded
 evidence content. Claims referencing unavailable IDs are dropped, not repaired by
 guessing. Existence checks do not prove semantic support: the reviewer performs that
 assessment, and model judgments still require quality evaluation.
 
 ## Completion contract
 
-`research_contract.py` derives assignments from the original intent and every confirmed
-fund, without an additional planner model. Product/risk tasks cover each fund; comparison
-adds a shared-window task; personal scope adds ledger/fit tasks; allocation adds a code
-scenario task. Role output includes `coverage` pointing to task IDs, finding indices
-and sources used by those findings. Validation checks visible references, object codes,
-required sources and actual findings, then remaps indices after rejected findings.
-Missing coverage, unknown tasks or evidence for another share class cannot count as
-completed. An unavailable code scenario cannot be completed using ledger references.
+Coverage is **derived by code from the citations**, not self-reported by the model.
+`derive_coverage` first drops any finding citing an evidence ID that does not exist or is
+outside that role's slice, then checks each `EvidenceRequirement` — `{label, tools, scope}`
+where `scope="per_fund"` requires a matching citation for every confirmed object — against
+the surviving findings' citations. A dimension is `completed` only when every requirement
+is met; `partial` when some are missing; `blocked` when no finding survives.
 
-Revisions acknowledge their assigned feedback via `addressed_issue_indices`. This
-checks presence and ownership, not semantic adequacy. The first reviewer and final
-synthesizer still make model judgments; no extra post-revision review loop is added.
-Any blocked task, failed review, required failed revision or disclosed evidence gap
-makes the overall result partial. Scope stays at the existing maximum of three funds.
-The server appends a compact scope/coverage note so the synthesizer cannot silently
-omit confirmed objects or blocked tasks. Sources flagged partial or stale keep the
-overall result partial and their limitations remain in the published note.
+This replaced a contract that asked the model to fill a coverage table with cross-checked
+finding indices and per-tool-group object matching. Measured over 12 runs: 0 of 31 role
+outputs reached `completed`, every partial had exactly the cap of 4 findings and 4 gaps,
+11 of 11 final results were `partial`, and 8 of 12 reviews failed — four of them instantly
+with nothing verified to review. The model is good at citing and bad at bookkeeping, so
+the bookkeeping moved to code.
+
+Revision feedback acknowledgement still checks presence and ownership through
+`addressed_issue_indices`; out-of-range acknowledgements are dropped and reported. The
+server appends a scope/coverage note using Chinese dimension labels, stating what **was**
+covered and listing only the unmet items, so the synthesizer cannot silently omit
+confirmed objects. Roles that never ran are excluded from the completion denominator.
+Sources flagged partial or stale keep the overall result partial. Scope stays at the
+existing maximum of three funds.
 
 Follow-up memory retrieval uses the original research question. The portfolio role
 receives confirmed constraints from the existing persona service and, separately,
 up to 2000 characters of relevant historical statements. Truncated or unconfirmed
-memory does not override the current request or confirmed profile. Product analysis
-receives no private profile.
+memory does not override the current request or confirmed profile. Every other role
+receives no private profile and no private ledger.
 
 Agent outputs are private checkpoint state. The nested graph returns only evidence,
 gaps and communication results; it never returns the input chat messages. Only the
@@ -102,20 +132,28 @@ All role calls use the existing user-scoped LLM service, structured Pydantic out
 tenacity retry/fallback and inherited Langfuse callbacks. One-off structured calls do
 not change shared tool bindings or the user's active-model index. Configure:
 
-- `FUND_MULTI_ROLE_RESEARCH_CALL_TIMEOUT=90`: deadline for each analysis/review/revision.
+- `FUND_MULTI_ROLE_RESEARCH_CALL_TIMEOUT=60`: deadline for each analysis/review/revision.
 - `FUND_MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT=180`: total communication budget including
   supplements, persisted across resume. Initial evidence and final synthesis retain
   their existing separate deadlines. Expiry preserves available work with explicit gaps.
-- `FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS=1600`: output budget, bounded to 256–2400.
+- `FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS=8192`: output budget, bounded to 1024–65536.
+  Measured over 21 role/review calls the largest output was 4262 tokens and
+  `finish_reason=length` never fired, so the previous 32768 was idle headroom; this keeps
+  roughly 2× because GLM counts hidden reasoning into the same budget.
+- `FUND_MULTI_ROLE_RESEARCH_REASONING_EFFORT=low`: applied only to GLM-5.3 models.
+  At `high` each role call took 45–85s and 27 of 77 completed calls returned
+  `output_chars=0` — the whole budget went to reasoning that the interface never shows.
 
-There are at most seven structured calls plus one synthesis (three analysis roles,
-one reviewer, three revisions). A clean review without supplements reduces public
-research from five structured calls to three, or from seven to four with portfolio.
+There are at most eleven structured calls: six role analyses, one reviewer, six revisions
+(six in practice only when every dimension is revised; a public run without verified
+positions has five). Supplements add at most two tool calls, not model calls. Target after
+the latency work below is roughly a single-mode run plus one review round; it has not been
+re-measured against a live provider yet, so treat it as a budget, not a result.
 Progress merging does not regress after late callbacks. Logs record role/review duration,
-input characters, completed task counts and supplement counts. The current
-implementation runs within the chat request, with explicit progress, cancellation and
-checkpoint continuation. It does not introduce a detached Taskiq research worker or
-independent conversations for each role. Providers must support the LLM service's
+input characters, per-role coverage status with met/missing counts and supplement counts.
+The current implementation runs within the chat request, with explicit progress,
+cancellation and checkpoint continuation. It does not introduce a detached Taskiq research
+worker or independent conversations for each role. Providers must support the LLM service's
 structured-output path. Automated tests use model/tool substitutes; actual research
 quality, provider compatibility, latency and costs must be measured with live evals.
 
@@ -128,8 +166,11 @@ Known research dimensions use deterministic assignment, parallel independent rol
 and feedback-based revisions with the existing checkpoint nodes.
 
 Tests cover clean reviews, targeted revisions, parallel supplements, failed position
-reads, cross-fund citations, index remapping, omitted tasks, invalid feedback,
-timeouts, cancellation/resume, synthesis failure and late progress.
+reads, cross-object citations, dropped forged references, derived coverage states,
+invalid feedback, timeouts, cancellation/resume, synthesis failure and late progress.
+Live-eval metrics under `backend/evals/metrics/prompts/` score the published report on
+`multi_role_dimension_coverage`, `multi_role_incremental_value` (does it say anything a
+single pass over the same evidence would not) and `multi_role_verifiability`.
 Run `python -m scripts.benchmark_multi_role --delay-ms 100 --runs 5` for the controlled
 communication-stage benchmark. The five-run median was 327.25ms for a fixed two-round
 reference scheduler and 226.02ms for the optimized graph. It uses a model substitute
