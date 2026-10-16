@@ -1,8 +1,10 @@
 """Coverage cannot cross objects, conceal omitted tasks or invent reviewed completion."""
 
 import json
+from collections import Counter
 from datetime import timedelta
 
+from annotated_types import MaxLen
 from pydantic import BaseModel
 
 from app.agent.graph.multi_role_research import build_multi_role_subgraph, remaining_budget
@@ -129,7 +131,7 @@ def test_restored_budget_does_not_restart_the_stage_clock():
 async def test_failed_positions_skip_portfolio_model_but_keep_its_tasks_blocked():
     calls = []
 
-    async def call(prompt, data, schema, config) -> BaseModel:
+    async def call(prompt, data, schema, config, on_text=None) -> BaseModel:
         calls.append(prompt)
         packet = json.loads(data)
         if schema is ResearchReview:
@@ -163,3 +165,38 @@ async def test_failed_positions_skip_portfolio_model_but_keep_its_tasks_blocked(
         == "no_verified_positions"
     )
     assert any("个人持仓没有成功取得" in gap for gap in result["gaps"])
+
+
+def test_coverage_capacity_fits_the_largest_assignment_load():
+    """Coverage 的上限必须容得下 build_assignments 给单个角色的最多任务数.
+
+    卡在小数字上等于在结构上规定"这个角色必然 partial"——三基金对比时 portfolio
+    会拿到每基金一条再加 scope/fit/scenario 三条。
+    """
+    codes = ["000001", "000002", "000003"]
+    state = ResearchGraphState(
+        turn_id="t",
+        fund_codes=codes,
+        research_task=ResearchTask(
+            turn_id="t",
+            request=ResearchRequest(intent="fund_comparison", fund_queries=codes, strategy="multi_role"),
+            instruction="比较这三只",
+        ),
+    )
+    per_role = Counter(item.role for item in build_assignments(state))
+    limit = next(arg.max_length for arg in AgentAnalysis.model_fields["coverage"].metadata if isinstance(arg, MaxLen))
+    assert max(per_role.values()) <= limit, f"角色任务数 {dict(per_role)} 超过 coverage 上限 {limit}"
+
+
+def test_skipped_revision_never_erases_a_first_round_verdict():
+    """徽标按轮次取后者，但 skipped 只能填空、不能覆盖已出的结论."""
+    from app.agent.graph.research import _role_outcomes
+
+    envelopes = [
+        AgentReport(run_id="t", role="risk", round=1, status="completed"),
+        AgentReport(run_id="t", role="risk", round=2, status="skipped", skip_reason="not_required"),
+        AgentReport(run_id="t", role="fundamentals", round=1, status="failed"),
+        AgentReport(run_id="t", role="fundamentals", round=2, status="skipped", skip_reason="previous_failed"),
+        AgentReport(run_id="t", role="portfolio", round=1, status="skipped", skip_reason="no_verified_positions"),
+    ]
+    assert _role_outcomes("t", envelopes) == {"risk": "completed", "fundamentals": "failed", "portfolio": "skipped"}

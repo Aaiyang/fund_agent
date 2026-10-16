@@ -19,6 +19,7 @@ from app.schemas.base import BaseResponse
 from app.schemas.agent_import import AgentPendingAction, ImportId
 from app.schemas.agent_resume import AgentRunContinuation
 from app.schemas.multi_role_research import ResearchActivity, ResearchProgress, ResearchRoleOutcome
+from app.schemas.research import ResearchIntent
 
 # 客户端研究入口的对象只能是六位代码，不接受名称（名称要经解析节点确认）
 ResearchFundCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
@@ -38,6 +39,9 @@ class Message(BaseModel):
     # 模型输出长度由生成 token 预算控制；历史必须能原样返回已保存的正文。
     content: str = Field(..., description="The complete content of the message", min_length=1)
     research_id: str | None = Field(default=None, description="服务端签发的可进一步研究的报告标识")
+    research_intent: ResearchIntent | None = Field(
+        default=None, description="该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」"
+    )
     # 多角色报告的结局由服务端信封决定，界面用它做徽标；正文里模型自己怎么说都不算数。
     research_roles: list[ResearchRoleOutcome] | None = Field(
         default=None, description="多角色报告里每个角色的实际结局；单档位报告为 None"

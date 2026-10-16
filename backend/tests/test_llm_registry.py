@@ -137,4 +137,54 @@ def test_structured_output_binds_through_function_calling_not_json_mode():
     model = Recorder()
     assert _with_schema(model, None) is model
     assert _with_schema(model, Schema) is model
-    assert model.called == (Schema, {"method": "function_calling"})
+    assert model.called == (Schema, {"method": "function_calling", "include_raw": True})
+
+
+def test_structured_parsing_error_becomes_a_classified_contract_violation():
+    """模型回了话但字段不合：要报成契约问题，不能和"连接中断"混成一类."""
+    from pydantic import BaseModel as _BaseModel
+
+    from app.services.llm.service import _unwrap_structured
+    from app.services.llm.timeouts import LLMContractViolation
+
+    class Answer(_BaseModel):
+        text: str
+
+    assert _unwrap_structured(Answer(text="ok")) is not None
+    assert _unwrap_structured("非结构化响应") == "非结构化响应"
+    parsed = _unwrap_structured({"raw": None, "parsed": Answer(text="ok"), "parsing_error": None})
+    assert parsed.text == "ok"
+    with pytest.raises(LLMContractViolation) as error:
+        _unwrap_structured({"raw": None, "parsed": None, "parsing_error": "text: Field required"})
+    assert error.value.reason == "contract" and "Field required" in str(error.value)
+
+
+async def test_structured_call_reports_usage_from_the_raw_message(monkeypatch):
+    """include_raw 的价值之一：结构化调用的 token 不再是日志里的一串 None."""
+    from langchain_core.messages import AIMessage
+
+    from app.services.llm import service as service_module
+    from app.services.llm.timeouts import LLMCallProgress, call_progress
+
+    class Answer(BaseModel):
+        text: str
+
+    class RawLLM:
+        async def ainvoke(self, messages, config=None):
+            return {
+                "raw": AIMessage(
+                    content='{"text":"ok"}',
+                    usage_metadata={"input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
+                ),
+                "parsed": Answer(text="ok"),
+                "parsing_error": None,
+            }
+
+    progress = LLMCallProgress(idle_timeout=60)
+    token = call_progress.set(progress)
+    try:
+        result = await service_module.LLMService()._invoke_with_retry(RawLLM(), [])
+    finally:
+        call_progress.reset(token)
+    assert result.text == "ok"
+    assert progress.structured_usage["input_tokens"] == 7 and progress.structured_usage["output_tokens"] == 3

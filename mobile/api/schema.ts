@@ -3299,6 +3299,12 @@ export interface components {
             content: string;
             /** Server-issued reference for an eligible source research report. */
             research_id?: string | null;
+            /**
+             * Research Intent
+             * @description 该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」
+             * @enum {string}
+             */
+            research_intent?: "fund_research" | "fund_comparison" | "portfolio_diagnosis" | "allocation_analysis" | "sector_research" | "stock_research" | null;
             /** 多角色报告里每个角色的实际结局；单档位报告为 None */
             research_roles?: components["schemas"]["ResearchRoleOutcome"][] | null;
             /**

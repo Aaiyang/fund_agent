@@ -17,13 +17,19 @@ from langgraph.errors import GraphInterrupt
 from app.agent.context import extract_text_content
 from app.agent.skills import read_skill
 from app.agent.graph.multi_role_research import AgentCall, build_multi_role_subgraph, evidence_packet, publish_progress
-from app.agent.graph.research_contract import completion_manifest, completion_note
+from app.agent.graph.research_contract import (
+    build_assignments,
+    completion_manifest,
+    completion_note,
+    divergences,
+)
 from app.analytics.allocation import allocation_scenario, portfolio_scenario_inputs
 from app.core.logging import logger
 from app.schemas.graph import GraphState
 from app.schemas.research import ResearchEvidence, ResearchGraphState, ResearchIntent, ResearchResult, ResearchToolCall
 from app.schemas.agent_skill import SkillName
 from app.services.llm.timeouts import LLMResponseInterrupted
+from app.schemas.multi_role_research import AgentReport
 from app.schemas.research_card import (
     AllocationChartReference,
     SectorChartReference,
@@ -36,6 +42,43 @@ WriteReport = Callable[[ResearchGraphState, RunnableConfig, str], Awaitable[AIMe
 _ENCODER = tiktoken.get_encoding("cl100k_base")
 _TOOL_TIMEOUT = 25
 _EVIDENCE_TOKEN_BUDGET = 6500
+# 每角色在共用证据包之外还能补取的工具次数上限。没有这个上限，"角色各自取证"
+# 会变成按角色重复拉全市场数据，成本随角色数线性膨胀却不多一分判断力。
+_ROLE_EVIDENCE_CAP = 4
+# 与 plan_evidence 保持同一套入参形状，否则同一个工具会因为参数不同被当成两份证据重复取。
+_ROLE_TOOL_ARGS: dict[str, dict] = {
+    "get_fund_managers": {"limit": 10},
+    "get_fund_announcements": {"category": "all", "limit": 5},
+    "get_fund_sectors": {"limit": 2},
+    "get_market_events": {"limit": 5, "lookback_hours": 72},
+    "get_sector_market": {"limit": 3},
+}
+_CODE_FREE_TOOLS = frozenset({"get_portfolio", "get_positions", "get_market_context", "get_market_events"})
+
+
+def _args_key(args: dict) -> str:
+    """能稳定比较的入参指纹."""
+    return json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _role_tool_args(name: str, code: str | None, state: ResearchGraphState) -> dict | None:
+    """按工具名给出与主取证一致的入参；不认识的工具返回 None（宁可少取也不瞎猜）.
+
+    Raises:
+        不抛错：未知工具、缺代码、缺对比对象时返回 None，由调用方跳过。
+    """
+    extra = _ROLE_TOOL_ARGS.get(name, {})
+    if name in _CODE_FREE_TOOLS:
+        return dict(extra)
+    if name == "get_fund_comparison_data":
+        return {"fund_codes": list(state.fund_codes)} if len(state.fund_codes) > 1 else None
+    if name == "get_sector_market":
+        task = state.research_task
+        keyword = task.request.sector_query if task is not None else None
+        return {"keyword": keyword, **extra} if keyword else None
+    return {"fund_code": code, **extra} if code else None
+
+
 _SKILLS: dict[ResearchIntent, SkillName] = {
     "fund_research": "fund-analysis",
     "fund_comparison": "fund-comparison",
@@ -167,6 +210,7 @@ def report_context(state: ResearchGraphState) -> str:
         ]
         payload["agent_review"] = state.agent_review.model_dump(mode="json") if state.agent_review else None
         payload["completion"] = completion_manifest(state)
+        payload["divergences"] = divergences(state)
     return (
         "\n# 服务端研究工作流（开发者维护的内置流程）\n"
         + instructions
@@ -177,6 +221,9 @@ def report_context(state: ResearchGraphState) -> str:
             "未要求修订的角色沿用已审核的首轮结果；要求修订但未完成的角色必须披露。失败角色不能视为赞同。"
             "按completion逐项呈现覆盖和阻塞原因，不把有最终文本当作所有任务完成。"
             "角色意见不是原始证据，不能以多数票形成事实。报告需呈现结论、各角色主要发现、证据、分歧与适用条件。"
+            "必须包含「角色分歧与未解决项」一节，逐项转写 divergences（role、被质疑的发现、理由、"
+            "是否已由修订回应）；divergences 为空时也要写明本轮未发现跨角色冲突，"
+            "不能把未回应的分歧悄悄省略。"
             if task.request.strategy == "multi_role"
             else ""
         )
@@ -192,10 +239,44 @@ def report_context(state: ResearchGraphState) -> str:
     )
 
 
+def _role_outcomes(run_id: str, envelopes: list[AgentReport]) -> dict[str, str]:
+    """每个角色本轮的最终结局，供界面徽标使用.
+
+    修订轮一般覆盖首轮，但两种情况例外：首轮失败后的"这轮跳过"不能洗掉失败，
+    "这轮不需要修订"也不能把首轮已完成的结论抹成无需执行（实测踩过：三个角色首轮
+    都做完了，徽标却全是 skipped）。
+    """
+    outcomes: dict[str, str] = {}
+    for envelope in sorted((item for item in envelopes if item.run_id == run_id), key=lambda item: item.round):
+        if envelope.status == "skipped" and envelope.role in outcomes:
+            continue
+        outcomes[envelope.role] = envelope.status
+    return outcomes
+
+
 def build_research_subgraph(
-    intent: ResearchIntent, execute_tools: ExecuteTools, write_report: WriteReport, agent_call: AgentCall | None = None
+    intent: ResearchIntent, execute_tools: ExecuteTools, write_report: WriteReport
 ) -> CompiledStateGraph:
-    """研究类型共享节点实现，各自编译为独立主图节点，无额外多模型讨论循环."""
+    """单档位研究链：快照→skill→取证→相关证据→成文，不含任何多模型讨论."""
+    return _build(intent, execute_tools, write_report, None, deep=False)
+
+
+def build_deep_research_subgraph(
+    intent: ResearchIntent, execute_tools: ExecuteTools, write_report: WriteReport, agent_call: AgentCall
+) -> CompiledStateGraph:
+    """多智能体独立链路：角色各自取证、独立成文，与单档位只在入口处分岔."""
+    return _build(intent, execute_tools, write_report, agent_call, deep=True)
+
+
+def _build(
+    intent: ResearchIntent,
+    execute_tools: ExecuteTools,
+    write_report: WriteReport,
+    agent_call: AgentCall | None,
+    *,
+    deep: bool,
+) -> CompiledStateGraph:
+    """两条链共用一份节点实现，装配不同；工具计划始终由代码控制."""
 
     async def fetch(state: ResearchGraphState, config: RunnableConfig, name: str, args: dict) -> ResearchEvidence:
         users = [message for message in state.messages if isinstance(message, HumanMessage)]
@@ -228,9 +309,9 @@ def build_research_subgraph(
         task = state.research_task
         if task is None or task.turn_id != state.turn_id or task.request.intent != intent:
             raise ValueError("research task scope mismatch")
-        if task.request.strategy == "multi_role" and agent_call is None:
+        if deep and agent_call is None:
             raise ValueError("multi-role research requires an agent caller")
-        if task.request.strategy == "multi_role":
+        if deep:
             publish_progress(state, "evidence", "started")
         evidence: list[ResearchEvidence] = []
         gaps: list[str] = []
@@ -464,6 +545,41 @@ def build_research_subgraph(
             publish_progress(state, "evidence", "partial" if gaps else "completed")
         return {"evidence": [*state.evidence, *obtained], "gaps": list(dict.fromkeys(gaps)), "scenario": scenario}
 
+    async def role_evidence(state: ResearchGraphState, config: RunnableConfig) -> dict:
+        """按角色的任务清单各自补一次证据；工具集合仍然由代码给，模型不能加.
+
+        这是"多智能体会调查"与"三次并行摘要"的分界：单档位只有一份共用证据包，
+        这里让每个角色按 ``required_tool_groups`` 补自己缺的那几项（已取到的不重复问），
+        并且总量有界——每角色最多 ``_ROLE_EVIDENCE_CAP`` 次新调用。
+        """
+        have = {(call.name, _args_key(call.args)) for call in state.tool_plan}
+        have |= {(item.tool, _args_key(item.args)) for item in state.evidence}
+        missing: dict[str, int] = {}
+        calls: list[tuple[str, dict]] = []
+        for assignment in build_assignments(state):
+            for group in assignment.required_tool_groups:
+                for name in group:
+                    args = _role_tool_args(name, assignment.fund_code, state)
+                    if args is None or (name, _args_key(args)) in have:
+                        continue
+                    if missing.get(assignment.role, 0) >= _ROLE_EVIDENCE_CAP:
+                        continue
+                    have.add((name, _args_key(args)))
+                    missing[assignment.role] = missing.get(assignment.role, 0) + 1
+                    calls.append((name, args))
+        if not calls:
+            return {}
+        obtained = await batch(state, config, calls)
+        gaps = [*state.gaps, *(item.tool + "查询失败" for item in obtained if not item.success)]
+        logger.info(
+            "research_role_evidence_completed",
+            turn_id=state.turn_id,
+            requested=len(calls),
+            succeeded=sum(1 for item in obtained if item.success),
+            roles=len(missing),
+        )
+        return {"evidence": [*state.evidence, *obtained], "gaps": list(dict.fromkeys(gaps))}
+
     async def finish(state: ResearchGraphState, config: RunnableConfig) -> dict:
         task = state.research_task
         assert task is not None
@@ -492,19 +608,9 @@ def build_research_subgraph(
             if task.request.strategy == "single" and intent not in {"sector_research", "stock_research"}:
                 extra["research_source"] = task.model_dump(mode="json")
             if task.request.strategy == "multi_role":
-                # 徽标要的是服务端信封里的实际结局。修订轮一般覆盖首轮，但"因为上一轮
-                # 失败所以这轮跳过"不能被读成"这个角色没事"——失败结局必须留下来。
-                outcomes: dict[str, str] = {}
-                for envelope in sorted(
-                    (item for item in state.agent_reports if item.run_id == state.turn_id),
-                    key=lambda item: item.round,
-                ):
-                    previous = outcomes.get(envelope.role)
-                    if previous == "failed" and envelope.status == "skipped":
-                        continue
-                    outcomes[envelope.role] = envelope.status
                 extra["research_roles"] = [
-                    {"role": role, "status": role_status} for role, role_status in outcomes.items()
+                    {"role": role, "status": status}
+                    for role, status in _role_outcomes(state.turn_id, state.agent_reports).items()
                 ]
                 if state.agent_review_status:
                     extra["research_review_status"] = state.agent_review_status
@@ -550,16 +656,15 @@ def build_research_subgraph(
     graph.add_conditional_edges(
         "collect_evidence", lambda state: "write_report" if state.clarification else "related_evidence_and_scenario"
     )
-    if agent_call is not None:
+    if deep and agent_call is not None:
+        # 多智能体独立链路：角色先按任务补取证，再进讨论子图，最后由同一个成文节点写
+        # 但要它列出分歧。单档位图里这些节点根本不存在，不是"走岔路跳过"。
+        graph.add_node("role_evidence", role_evidence)
         graph.add_node("multi_role_agents", build_multi_role_subgraph(agent_call, report_evidence, fetch))
-        graph.add_conditional_edges(
-            "related_evidence_and_scenario",
-            lambda state: "multi_role_agents"
-            if state.research_task.request.strategy == "multi_role"
-            else "write_report",
-        )
+        graph.add_edge("related_evidence_and_scenario", "role_evidence")
+        graph.add_edge("role_evidence", "multi_role_agents")
         graph.add_edge("multi_role_agents", "write_report")
     else:
         graph.add_edge("related_evidence_and_scenario", "write_report")
     graph.add_edge("write_report", END)
-    return graph.compile(name=intent)
+    return graph.compile(name=f"deep_{intent}" if deep else intent)

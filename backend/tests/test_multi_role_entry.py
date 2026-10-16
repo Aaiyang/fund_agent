@@ -6,13 +6,21 @@
 """
 
 import pytest
-from typing import Literal
+from typing import Literal, cast
+
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
 from app.agent.graph.task_router import route_task
 from app.schemas.chat import ChatInputMessage, ChatRequest
 from app.schemas.graph import GraphState
-from app.schemas.research import ResearchRequest, ResearchTask
+from app.schemas.multi_role_research import (
+    AgentAnalysis,
+    AgentReport,
+    ResearchReview,
+    ReviewIssue,
+)
+from app.schemas.research import ResearchGraphState, ResearchIntent, ResearchRequest, ResearchTask
 from app.utils.task_routing import client_research_request
 
 
@@ -80,3 +88,64 @@ def test_followup_task_still_uses_the_same_seam() -> None:
 def test_model_proposed_task_still_needs_provenance_checks() -> None:
     # 默认 requested_by=model：预置任务不能绕过逐项原文取证
     assert route_task(_state("model")).goto == "chat"
+
+
+def test_multi_role_routes_to_its_own_chain_node() -> None:
+    """策略在路由那一刻就决定走哪条链，不再进共用子图后中途分岔."""
+    from app.agent.graph.task_router import _chain_node
+
+    def node(strategy: Literal["single", "multi_role"], intent: ResearchIntent, codes: list[str] | None = None) -> str:
+        task = ResearchTask(
+            turn_id="turn-1",
+            request=ResearchRequest(
+                intent=intent,
+                mode="deep",
+                strategy=strategy,
+                fund_queries=codes or ["022287"],
+            ),
+            instruction="研究它",
+        )
+        return _chain_node(task)
+
+    assert node("multi_role", "fund_research") == "deep_fund_research"
+    assert node("multi_role", "fund_comparison", ["022287", "000001"]) == "deep_fund_comparison"
+    assert node("single", "fund_research") == "fund_research"
+    # 板块/股票根本没有多智能体链路：schema 先拦住，路由不会遇到 deep_sector_research
+    with pytest.raises(ValidationError, match="多角色研究暂支持"):
+        ResearchRequest(intent="sector_research", mode="deep", strategy="multi_role", sector_query="半导体")
+
+
+def test_parent_graph_mounts_both_chains() -> None:
+    from app.agent.graph.agent import LangGraphAgent
+
+    graph = LangGraphAgent()._build_graph(None)
+    for intent in ("fund_research", "fund_comparison", "portfolio_diagnosis", "allocation_analysis"):
+        assert intent in graph.nodes and "deep_" + intent in graph.nodes
+    assert "deep_sector_research" not in graph.nodes
+    deep = cast("CompiledStateGraph", graph.nodes["deep_fund_research"].bound)
+    assert "role_evidence" in deep.nodes
+
+
+def test_unresolved_review_issues_stay_unresolved_in_the_divergence_list() -> None:
+    from app.agent.graph.research_contract import divergences
+
+    issue = ReviewIssue(role="risk", finding_index=0, reason="回撤口径未说明")
+    state = ResearchGraphState(
+        turn_id="t",
+        fund_codes=["000001"],
+        agent_review=ResearchReview(issues=[issue]),
+        agent_reports=[
+            AgentReport(run_id="t", role="risk", round=1, status="completed", analysis=AgentAnalysis()),
+            AgentReport(
+                run_id="t",
+                role="risk",
+                round=2,
+                status="completed",
+                analysis=AgentAnalysis(addressed_issue_indices=[0]),
+            ),
+            AgentReport(run_id="t", role="fundamentals", round=1, status="completed", analysis=AgentAnalysis()),
+        ],
+    )
+    listed = divergences(state)
+    assert listed == [{"role": "risk", "finding_index": 0, "reason": "回撤口径未说明", "resolved": True}]
+    assert divergences(state.model_copy(update={"agent_reports": []})) == [{**listed[0], "resolved": False}]

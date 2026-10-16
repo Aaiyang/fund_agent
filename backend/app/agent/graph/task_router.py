@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.agent.context import extract_text_content
 from app.agent.tools.result import ToolResult
 from app.schemas.graph import GraphState
-from app.schemas.research import ResearchRequest, ResearchResult, ResearchTask
+from app.schemas.research import DEEP_RESEARCH_INTENTS, ResearchRequest, ResearchResult, ResearchTask
 from app.utils.task_routing import (
     explicitly_supplied_operation_amount,
     explicit_multi_role_research,
@@ -189,7 +189,19 @@ def continue_research(state: GraphState) -> Command:
             ],
         )
         return Command(update={"research_task": task, "messages": [call]}, goto="fund_selection")
-    return Command(update={"research_task": task}, goto=task.request.intent)
+    return Command(update={"research_task": task}, goto=_chain_node(task))
+
+
+def _chain_node(task: ResearchTask) -> str:
+    """路由这一刻就决定走哪条研究链：单档走共用子图，多智能体走它自己的独立链路.
+
+    以前两条链共用一个子图，策略判断埋在取证之后，于是 skill/取证/报告模板全是共用的，
+    "多智能体"实际只剩同一份证据包上的三次并行摘要。板块与个股不支持该档位（schema 已拦），
+    这里再兜一次，避免路由到不存在的节点。
+    """
+    if task.request.strategy == "multi_role" and task.request.intent in DEEP_RESEARCH_INTENTS:
+        return "deep_" + task.request.intent
+    return task.request.intent
 
 
 def _research_after_selection(state: GraphState) -> ResearchTask | None:

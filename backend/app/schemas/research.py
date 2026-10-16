@@ -20,6 +20,20 @@ ResearchIntent = Literal[
 ]
 AllocationAction = Literal["build", "increase", "reduce", "exit", "compare"]
 
+# 与 ResearchIntent 一一对应；主图按它挂载节点，流式过滤按它认节点，避免两处各写一份。
+RESEARCH_INTENTS: tuple[ResearchIntent, ...] = (
+    "fund_research",
+    "fund_comparison",
+    "portfolio_diagnosis",
+    "allocation_analysis",
+    "sector_research",
+    "stock_research",
+)
+# 多智能体独立链路覆盖的意图：板块与个股只有单档位（ResearchRequest 的校验也这么规定）。
+DEEP_RESEARCH_INTENTS: frozenset[str] = frozenset(
+    {"fund_research", "fund_comparison", "portfolio_diagnosis", "allocation_analysis"}
+)
+
 
 class ResearchRequest(BaseModel):
     """只读研究请求；名称先解析，不接受模型指定的认证身份或交易授权."""

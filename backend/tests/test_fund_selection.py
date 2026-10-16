@@ -796,3 +796,54 @@ async def test_general_human_question_survives_refresh_and_completes_original_fl
         state = (await client.get("/chatbot/pending-action")).json()
         assert state["pending_action"] is None and state["continuation"] is None
         assert len(calls) == 2
+
+
+async def test_prior_report_is_not_restreamed_as_the_new_answer(scenario):
+    """挂载成父节点的子图会把整段历史当成自己的输出重发；上一轮报告不能变成本轮答案."""
+    phase = {"text": "OLD-REPORT-上一轮历史报告正文"}
+    calls = []
+
+    async def respond(messages, *args, **kwargs):
+        calls.append(messages)
+        if len(calls) == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "resolve_fund_for_analysis",
+                        "args": {"keyword": scenario.keyword},
+                        "id": "fund-resolve",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        return AIMessage(content=phase["text"])
+
+    scenario.agent.llm_service.call = respond
+    async with client_for(scenario) as client:
+        pending = await start(client)
+        decided = await client.post(
+            "/chatbot/fund-selection/decision",
+            json={"interrupt_id": pending["interrupt_id"], "decision": "select", "fund_code": "000002"},
+        )
+        assert decided.status_code == 200, decided.text
+
+    history = await scenario.agent.get_chat_history(scenario.identity.id)
+    assert any("OLD-REPORT" in message.content for message in history), "第一轮报告应已入库"
+
+    # 选基金面板必然经过 fund_selection 解析代码，这正是历史被重新发射的那个节点。
+    phase["text"] = "NEW-ANSWER-本轮新回答"
+    answer = "".join(
+        [
+            chunk
+            async for chunk in scenario.agent.get_stream_response(
+                [Message(role="user", content="请分析这只基金：000002")],
+                scenario.identity.id,
+                user_id="42",
+                research_fund_codes=["000002"],
+            )
+            if isinstance(chunk, str)
+        ]
+    )
+    assert "NEW-ANSWER" in answer
+    assert "OLD-REPORT" not in answer

@@ -8380,6 +8380,26 @@
             ],
             "title": "Research Review Status",
             "description": "多角色报告的交叉审核结局"
+          },
+          "research_intent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fund_research",
+                  "fund_comparison",
+                  "portfolio_diagnosis",
+                  "allocation_analysis",
+                  "sector_research",
+                  "stock_research"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Intent",
+            "description": "该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」"
           }
         },
         "type": "object",

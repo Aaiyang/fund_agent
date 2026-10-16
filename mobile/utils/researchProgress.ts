@@ -59,9 +59,14 @@ export function roleOutcomesFromProgress(events: ChatResearchProgress[]): RoleOu
  * 一个也算成没失败的幸存者。
  */
 export function describeRoleOutcomes(outcomes: RoleOutcome[], reviewStatus?: string | null): string | undefined {
+  if (!outcomes.length) return undefined;
   const skipped = outcomes.filter((item) => item.status === 'skipped').length;
   const attempted = outcomes.filter((item) => item.status !== 'skipped');
-  if (!attempted.length) return undefined;
+  const tail: string[] = [];
+  if (skipped) tail.push(attempted.length ? `${skipped} 个无需执行` : `${skipped} 个角色本轮无需执行`);
+  if (reviewStatus === 'failed') tail.push('交叉审核未完成');
+  else if (reviewStatus === 'partial') tail.push('交叉审核有待确认项');
+  if (!attempted.length) return tail.join(' · ');
   const failed = attempted.filter((item) => item.status === 'failed').length;
   const partial = attempted.filter((item) => item.status === 'partial').length;
   const head = failed
@@ -69,9 +74,5 @@ export function describeRoleOutcomes(outcomes: RoleOutcome[], reviewStatus?: str
     : partial
       ? `${attempted.length} 个角色里 ${partial} 个有待确认项`
       : `${attempted.length} 个角色已完成`;
-  const parts = [head];
-  if (skipped) parts.push(`${skipped} 个无需执行`);
-  if (reviewStatus === 'failed') parts.push('交叉审核未完成');
-  else if (reviewStatus === 'partial') parts.push('交叉审核有待确认项');
-  return parts.join(' · ');
+  return [head, ...tail].join(' · ');
 }

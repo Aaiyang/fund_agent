@@ -72,6 +72,28 @@ export function pickerHint(count: number): string {
 }
 
 /**
+ * 报告下方那个多角色入口的文案（也是发出去的指令原文）。
+ *
+ * 以前一律写"请对这份报告进行多角色深度研究"——措辞不对：服务端做的是把**这份报告的
+ * 研究对象**用多角色深跑一遍，报告本身既不是输入也不是被审对象。文案要说清对象是谁，
+ * 所以按 intent 分档；对比类必须写成"对比"，否则用户以为只研究了第一只。
+ */
+export function researchFollowupLabel(intent: string | null | undefined): string {
+  switch (intent) {
+    case 'fund_comparison':
+      return '对这几只基金做多角色深度对比';
+    case 'portfolio_diagnosis':
+      return '对我的组合做多角色深度诊断';
+    case 'allocation_analysis':
+      return '对这笔操作做多角色深度情景分析';
+    case 'fund_research':
+      return '对这只基金做多角色深度研究';
+    default:
+      return '做多角色深度研究';
+  }
+}
+
+/**
  * 正文只给人看，研究对象和成本档位走 `research_fund_codes` / `research_strategy`。
  *
  * 不能靠这句话被后端的文本规则猜回去：基金名里常带"股票/行业/主题"，

@@ -57,7 +57,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.agent.graph.fund_selection import FUND_SELECTION_TOOL, build_fund_selection_subgraph
 from app.agent.graph.holding_import import HOLDING_IMPORT_TOOL_NAMES, build_holding_import_subgraph
-from app.agent.graph.research import build_research_subgraph
+from app.agent.graph.research import build_deep_research_subgraph, build_research_subgraph
 from app.agent.graph.report_generation import generate_research_report
 from app.agent.graph.research_followup import completed_followup, research_source, validate_research_followup
 from app.agent.graph.task_router import continue_research, route_task
@@ -77,7 +77,7 @@ from app.schemas.agent_import import AgentPendingAction, HoldingImportAccountSel
 from app.schemas.agent_resume import AgentContinueRequest, AgentRunContinuation
 from app.schemas.fund_selection import FundSelectionAction, FundSelectionDecision
 from app.schemas.human_question import HumanQuestionAction
-from app.schemas.research import ResearchGraphState, ResearchTask
+from app.schemas.research import DEEP_RESEARCH_INTENTS, RESEARCH_INTENTS, ResearchGraphState, ResearchTask
 from app.schemas.multi_role_research import ResearchActivity, ResearchProgress
 from app.services.agent_holding_import_service import agent_holding_import_service
 from app.utils.clock import business_now, trading_session_label
@@ -90,6 +90,7 @@ from app.core.metrics import (
     llm_prompt_cache_miss_tokens,
 )
 from app.services.llm import llm_service
+from app.services.llm.timeouts import LLMContractViolation
 from app.services.memory import memory_service
 from app.services.user_persona_service import user_persona_service
 from app.agent.context import (
@@ -107,6 +108,9 @@ PostgresConnPool = AsyncConnectionPool[AsyncConnection[DictRow]]
 # 同一份预算，多角色深研究一步就吃掉十几步，所以运行时读取而不是写死常量。
 # 在工具内部调用 interrupt()、会让本超步写入全部作废的工具。它们不能与别的工具
 # 同批执行，否则 resume 会把同批调用重放一遍。
+# 结构化输出不合契约时，把字段错误回喂给模型的机会次数（含首次）。
+_RESEARCH_CONTRACT_ATTEMPTS = 2
+
 _INTERRUPTING_TOOLS = frozenset({"ask_human"})
 _HOLDING_ACTION = TypeAdapter(AgentPendingAction)
 
@@ -654,6 +658,10 @@ class LangGraphAgent:
                 "allocation_analysis",
                 "sector_research",
                 "stock_research",
+                "deep_fund_research",
+                "deep_fund_comparison",
+                "deep_portfolio_diagnosis",
+                "deep_allocation_analysis",
                 END,
             ),
         )
@@ -669,19 +677,22 @@ class LangGraphAgent:
         graph_builder.add_edge("holding_import", "chat")
         graph_builder.add_node("fund_selection", build_fund_selection_subgraph())
         graph_builder.add_edge("fund_selection", "continue_research")
-        for intent in (
-            "fund_research",
-            "fund_comparison",
-            "portfolio_diagnosis",
-            "allocation_analysis",
-            "sector_research",
-            "stock_research",
-        ):
+        for intent in RESEARCH_INTENTS:
             graph_builder.add_node(
                 intent,
-                build_research_subgraph(intent, self._tool_call, self._research_report, self._research_agent_call),
+                build_research_subgraph(intent, self._tool_call, self._research_report),
             )
             graph_builder.add_edge(intent, END)
+            if intent not in DEEP_RESEARCH_INTENTS:
+                continue
+            # 多智能体是一条独立链路，节点名与 continue_research 的 _chain_node 对应。
+            graph_builder.add_node(
+                "deep_" + intent,
+                build_deep_research_subgraph(
+                    intent, self._tool_call, self._research_report, self._research_agent_call
+                ),
+            )
+            graph_builder.add_edge("deep_" + intent, END)
         graph_builder.add_node(
             "tool_call",
             self._tool_call,
@@ -693,7 +704,9 @@ class LangGraphAgent:
 
         return graph_builder.compile(
             checkpointer=checkpointer,
-            name=f"{settings.PROJECT_NAME} Agent ({settings.ENVIRONMENT.value})",
+            # PROJECT_NAME 本身可能已含 "Agent"（本机 .env 就是 "Fund Agent"），
+            # 再拼一遍就成了 trace 面板上的 "Fund Agent Agent"。产品名与环境即可定位。
+            name=f"{settings.PROJECT_NAME} ({settings.ENVIRONMENT.value})",
         )
 
     async def _route_task(self, state: GraphState, config: RunnableConfig) -> Command:
@@ -708,7 +721,9 @@ class LangGraphAgent:
             )
             status = status or "queued"
         command = route_task(state)
-        task = (command.update or {}).get("research_task")
+        # 服务端授权的快路径不带 update，此时任务本来就在 state 里；
+        # 只看 command.update 会让日志一直报 intent=None（我前两轮就被它误导过）。
+        task = (command.update or {}).get("research_task") or state.research_task
         logger.info(
             "agent_task_routed",
             turn_id=state.turn_id,
@@ -734,14 +749,41 @@ class LangGraphAgent:
                 data = json.dumps(payload, ensure_ascii=False)
         current_llm = self.llm_service.get_llm()
         model_name = getattr(current_llm, "model_name", settings.DEFAULT_LLM_MODEL)
-        with llm_inference_duration_seconds.labels(model=model_name).time():
-            result = await self.llm_service.call(
-                [SystemMessage(content=prompt), HumanMessage(content=data)],
-                response_format=schema,
-                on_text=on_text,
-                max_tokens=settings.MULTI_ROLE_RESEARCH_MAX_TOKENS,
-            )
-        return schema.model_validate(result)
+        messages: list[Any] = [SystemMessage(content=prompt), HumanMessage(content=data)]
+        node = str(config.get("metadata", {}).get("langgraph_node") or "")
+        for attempt in range(_RESEARCH_CONTRACT_ATTEMPTS):
+            try:
+                with llm_inference_duration_seconds.labels(model=model_name).time():
+                    result = await self.llm_service.call(
+                        messages,
+                        response_format=schema,
+                        on_text=on_text,
+                        max_tokens=settings.MULTI_ROLE_RESEARCH_MAX_TOKENS,
+                    )
+                return schema.model_validate(result)
+            except LLMContractViolation as error:
+                if attempt + 1 >= _RESEARCH_CONTRACT_ATTEMPTS:
+                    # 回喂一次仍不合：报成契约违约，节点会记 failed。日志与"连接中断"
+                    # 分开，界面上才分得清"模型没做"和"做了但字段不合"。
+                    logger.warning(
+                        "research_contract_violation",
+                        node=node,
+                        model=error.model_name,
+                        schema=schema.__name__,
+                        field_errors=error.field_errors[:400],
+                    )
+                    raise
+                logger.info("research_contract_repaired", node=node, schema=schema.__name__, attempt=attempt + 1)
+                messages = [
+                    *messages,
+                    HumanMessage(
+                        content=(
+                            "上一次输出不符合结构契约，字段错误如下，请只修正这些字段后重新输出完整结果，"
+                            "不要改动其他内容：\n" + error.field_errors[:600]
+                        )
+                    ),
+                ]
+        raise RuntimeError("研究调用未产生结果")
 
     async def _research_report(self, state: ResearchGraphState, config: RunnableConfig, context: str) -> AIMessage:
         """子图只回传最终回答和紧凑结果，父图不再次改写或重复执行工具."""
@@ -871,7 +913,7 @@ class LangGraphAgent:
 
                 logger.info(
                     "graph_created",
-                    graph_name=f"{settings.PROJECT_NAME} Agent",
+                    graph_name=f"{settings.PROJECT_NAME} ({settings.ENVIRONMENT.value})",
                     environment=settings.ENVIRONMENT.value,
                     has_checkpointer=checkpointer is not None,
                 )
@@ -1103,6 +1145,12 @@ class LangGraphAgent:
 
         try:
             state = await graph.aget_state(config)
+            # 本轮开始前已经入库的消息 id。stream_mode="messages" 不只转发模型 token，
+            # 还会把节点输出里的消息全部转发；挂载成父节点的子图，其输出就是包含整段
+            # 历史的完整状态，于是上一轮报告会被当成本轮新产出重新发射。见下方过滤。
+            prior_message_ids = {
+                message.id for message in state.values.get("messages", []) if getattr(message, "id", None)
+            }
             if resume is not None:
                 graph_input = self._resume_input(state, resume)
                 if graph_input is None and not state.next:
@@ -1148,14 +1196,12 @@ class LangGraphAgent:
             first_token_at: float | None = None
             research_buffer = ""
             research_emitted = ""
+            # 两条链的节点名都要认：漏了 deep_ 前缀，父图转发的子图消息就不再被抑制，
+            # 报告正文会在流里出现两遍。
             research_nodes = {
                 "write_report",
-                "fund_research",
-                "fund_comparison",
-                "portfolio_diagnosis",
-                "allocation_analysis",
-                "sector_research",
-                "stock_research",
+                *RESEARCH_INTENTS,
+                *("deep_" + intent for intent in DEEP_RESEARCH_INTENTS),
             }
             async with aclosing(
                 cast(
@@ -1186,6 +1232,9 @@ class LangGraphAgent:
                         # The parent re-emits a child's saved message; only its original stream is public.
                         continue
                     if not isinstance(token, (AIMessage, AIMessageChunk)):
+                        continue
+                    if getattr(token, "id", None) in prior_message_ids:
+                        # 已入库的消息不是本轮新产出，不能当作正文发给客户端。
                         continue
 
                     text = extract_text_content(token.content)
@@ -1313,6 +1362,9 @@ class LangGraphAgent:
                             role=message["role"],
                             content=str(message["content"]),
                             research_id=source.turn_id if source and source.turn_id not in completed_sources else None,
+                            research_intent=source.request.intent
+                            if source and source.turn_id not in completed_sources
+                            else None,
                             research_roles=outcomes,
                             research_review_status=review_status,
                         )

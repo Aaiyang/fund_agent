@@ -10,7 +10,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const exported = {};
 compileFunction(compiled, ['exports'])(exported);
-const { MAX_PICKER_FUNDS, dedupePickerFunds, togglePickerFund, pickerRowDisabled, pickerActionLabel, pickerHint, summarizeHoldings, composeResearchQuestion } = exported;
+const { MAX_PICKER_FUNDS, dedupePickerFunds, togglePickerFund, pickerRowDisabled, pickerActionLabel, pickerHint, summarizeHoldings, composeResearchQuestion, researchFollowupLabel } = exported;
 
 const fund = (code) => ({ code, name: `基金${code}` });
 
@@ -78,4 +78,13 @@ test('question text reads naturally but carries both codes for the structured fi
   const two = composeResearchQuestion([fund('022287'), fund('000001')]);
   assert.match(two, /请对比这几只基金/);
   assert.ok(two.includes('022287') && two.includes('000001'));
+});
+
+test('the report follow-up label names the object it actually re-researches', () => {
+  // 文案不能写"对这份报告"：服务端研究的是这份报告的对象，报告本身不是输入。
+  assert.equal(researchFollowupLabel('fund_comparison'), '对这几只基金做多角色深度对比');
+  assert.equal(researchFollowupLabel('fund_research'), '对这只基金做多角色深度研究');
+  assert.equal(researchFollowupLabel('portfolio_diagnosis'), '对我的组合做多角色深度诊断');
+  assert.equal(researchFollowupLabel('allocation_analysis'), '对这笔操作做多角色深度情景分析');
+  assert.equal(researchFollowupLabel(null), '做多角色深度研究');
 });

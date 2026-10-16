@@ -20,7 +20,7 @@ from sqlmodel import (
 from app.core.database import get_async_session
 from app.core.logging import logger
 from app.core.metrics import session_names_generated_total
-from app.agent.prompts import SESSION_TITLE_PROMPT
+from app.agent.prompts import load_session_title_prompt
 from app.models.session import Session as ChatSession
 from app.schemas.chat import SessionTitle
 from app.services.database import database_service
@@ -56,7 +56,9 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
     try:
         result = await llm_service.call(
             [
-                SystemMessage(content=SESSION_TITLE_PROMPT),
+                # 模板末尾就是 {user_message} 占位符；以前这里直接把模板原文发出去，
+                # 模型收到的是字面量 "{user_message}"，标题全靠猜。
+                SystemMessage(content=load_session_title_prompt(user_message[:500])),
                 HumanMessage(content=user_message[:500]),
             ],
             response_format=SessionTitle,

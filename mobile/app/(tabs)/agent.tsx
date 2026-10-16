@@ -32,7 +32,7 @@ import { useFundDetail } from '@/hooks/useFunds';
 import { useLlmProfiles } from '@/hooks/useLlmProfiles';
 import { useUiStore } from '@/stores/ui';
 import type { PickedImage } from '@/hooks/useImports';
-import { composeResearchQuestion, type PickerFund, type ResearchTier } from '@/utils/fundPicker';
+import { composeResearchQuestion, researchFollowupLabel, type PickerFund, type ResearchTier } from '@/utils/fundPicker';
 import { describeRoleOutcomes } from '@/utils/researchProgress';
 
 /** 选完只留在本地，随问题发送附件；识别由后端子图启动。 */
@@ -104,7 +104,7 @@ function ChatSkeleton({ label }: { label: string }) {
  * 一条消息。借 DeepSeek 的排版：助手的回答不套气泡，直接铺在页面上，
  * 只有用户那一句是右侧一块浅色——长回答读起来不像在被逐条"回话"。
  */
-function Message({ role, content, streaming, failed, onRetry, label, onResearch, researchDisabled, researchProgress, researchActivity, researchBadge }: {
+function Message({ role, content, streaming, failed, onRetry, label, onResearch, researchDisabled, researchProgress, researchActivity, researchBadge, researchLabel }: {
   role: string;
   content: string;
   streaming?: boolean;
@@ -116,6 +116,7 @@ function Message({ role, content, streaming, failed, onRetry, label, onResearch,
   researchProgress?: string;
   researchActivity?: string;
   researchBadge?: string;
+  researchLabel: string;
 }) {
   if (role === 'user') {
     return (
@@ -171,7 +172,7 @@ function Message({ role, content, streaming, failed, onRetry, label, onResearch,
             textDecorationLine: 'underline',
           }}
         >
-          多角色深度研究
+          {researchLabel}
         </Text>
       ) : null}
       {failed ? (
@@ -538,8 +539,9 @@ export default function AgentScreen() {
                   ? describeRoleOutcomes(turn.research_roles ?? (turn.state === 'streaming' ? chat.researchOutcomes : []), turn.research_review_status)
                   : undefined}
                 researchDisabled={chat.sending || uploading || Boolean(review) || Boolean(pending.data?.continuation)}
+                researchLabel={researchFollowupLabel(turn.research_intent)}
                 onResearch={turn.role === 'assistant' && turn.research_id ? () => {
-                  void chat.send('请对这份报告进行多角色深度研究', [], turn.research_id ?? undefined)
+                  void chat.send(researchFollowupLabel(turn.research_intent), [], turn.research_id ?? undefined)
                     .catch((error: unknown) => setProblem(describeError(error)));
                 } : undefined}
               />

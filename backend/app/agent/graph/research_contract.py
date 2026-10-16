@@ -243,6 +243,34 @@ def completion_manifest(state: ResearchGraphState) -> dict:
     }
 
 
+def divergences(state: ResearchGraphState) -> list[dict]:
+    """服务端算出的跨角色分歧清单，供独立报告节点逐项落笔.
+
+    模型不该自己去"发现"分歧：审核给出的 issues 是结构化的（role + finding_index +
+    reason），而"这条有没有被修订回应"同样能从信封里查出来。算好再交给它，报告里的
+    分歧段才是可核对的，而不是它读完三段文本后的印象。
+    """
+    if state.agent_review is None:
+        return []
+    # 角色在修订轮里回应的是全局 issue 序号（payload 的 required_issue_indices 就是全局序号），
+    # 所以"已解决"只看该角色 round=2 且已完成的信封。
+    addressed = {
+        index
+        for report in state.agent_reports
+        if report.run_id == state.turn_id and report.round == 2 and report.status in {"completed", "partial"}
+        for index in report.analysis.addressed_issue_indices
+    }
+    return [
+        {
+            "role": issue.role,
+            "finding_index": issue.finding_index,
+            "reason": issue.reason,
+            "resolved": index in addressed,
+        }
+        for index, issue in enumerate(state.agent_review.issues)
+    ]
+
+
 def completion_note(state: ResearchGraphState) -> str:
     """Always publish confirmed scope and blocked tasks, even if synthesis omits them."""
     manifest = completion_manifest(state)

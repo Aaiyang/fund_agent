@@ -216,6 +216,8 @@ def multi_workflow(monkeypatch):
 async def basic_report(state, session="research-a"):
     answer = await state.agent.get_response([Message(role="user", content="分析000001")], session, user_id="42")
     assert answer[-1].research_id is not None
+    # 追问按钮的文案要说清研究对象（研究 vs 对比），靠服务端回传的这个字段，不是猜正文。
+    assert answer[-1].research_intent == "fund_research"
     return answer[-1].research_id
 
 
@@ -729,3 +731,38 @@ def test_api_validates_report_ownership_and_separates_progress_from_content(monk
         assert frames[0]["content"] == "" and frames[0]["research_progress"]["stage"] == "review"
         assert frames[1]["content"] == "最终研究报告" and frames[-1]["done"]
         assert validate.await_count == 2  # before HTTP streaming and inside the session lock
+
+
+async def test_contract_violation_gets_one_feedback_retry_then_fails_loudly(multi_workflow):
+    """字段不合先回喂一次；仍不合就报契约违约，而不是伪装成"模型没做"."""
+    from app.agent.graph.agent import LangGraphAgent
+    from app.services.llm.timeouts import LLMContractViolation
+
+    agent = LangGraphAgent()
+    seen: list[list] = []
+
+    async def flaky(messages, **kwargs):
+        seen.append(messages)
+        if len(seen) == 1:
+            raise LLMContractViolation("fixture", "issues.0.role: Field required")
+        return ResearchReview()
+
+    agent.llm_service = SimpleNamespace(get_llm=lambda: None, call=flaky)  # pyright: ignore[reportAttributeAccessIssue]
+    result = await agent._research_agent_call(
+        "角色提示", '{"evidence": []}', ResearchReview, {"metadata": {"langgraph_node": "review_agents"}}
+    )
+    assert isinstance(result, ResearchReview) and len(seen) == 2
+    assert "issues.0.role" in seen[-1][-1].content
+
+    seen.clear()
+
+    async def always_bad(messages, **kwargs):
+        seen.append(messages)
+        raise LLMContractViolation("fixture", "issues.0.role: Field required")
+
+    agent.llm_service = SimpleNamespace(get_llm=lambda: None, call=always_bad)  # pyright: ignore[reportAttributeAccessIssue]
+    with pytest.raises(LLMContractViolation):
+        await agent._research_agent_call(
+            "角色提示", '{"evidence": []}', ResearchReview, {"metadata": {"langgraph_node": "review_agents"}}
+        )
+    assert len(seen) == 2

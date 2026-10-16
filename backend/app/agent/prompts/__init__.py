@@ -1,6 +1,32 @@
 """Agent 的提示词模板加载器."""
 
-# 系统提示词版本：仅当身份/规则/工具使用原则变化时升级（KV Cache 前缀稳定性）
+import hashlib
+import os
+from typing import Optional
+
+from app.core.config import settings
+
+_PROMPTS_DIR = os.path.dirname(__file__)
+
+# 模块加载时一次性读入模板——请求期间零文件 IO
+with open(os.path.join(_PROMPTS_DIR, "system.md"), encoding="utf-8") as _f:
+    _SYSTEM_PROMPT_TEMPLATE = _f.read()
+
+with open(os.path.join(_PROMPTS_DIR, "session_title.md"), encoding="utf-8") as _f:
+    SESSION_TITLE_PROMPT = _f.read()
+
+from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后：graph → contract → schemas
+    AGENT_ANALYSIS_CONTRACT,
+    RESEARCH_REVIEW_CONTRACT,
+    REPORT_CONTINUATION,
+    REPORT_EMPTY_RETRY,
+    REVIEW_RULES,
+    ROLE_BRIEFS,
+    ROLE_REVISION_RULES,
+    ROLE_RULES,
+)
+
+# 系统提示词版本：身份/规则/工具使用原则变化时升级（KV Cache 前缀稳定性）
 # v2：agent_name 修正（去掉重复的 " Agent"）——身份变化
 # v4：节假日与调休查询必须使用日历工具，禁止联网搜索兜底
 # v5：图片持仓识别与结构化人工确认
@@ -24,21 +50,21 @@
 # v23：固定持仓快照、按任务加载skill与股票/板块/操作图表引用
 # v24：基金横向对比与共同净值窗口计算，保留数据不足及费用边界
 # v25：用户显式启动多角色研究与任务内证据通信边界
-SYSTEM_PROMPT_VERSION = "fund-agent-v25"
+# v26：图内内联提示词收进 prompts.graph，输出契约改由 schema 生成（单一来源）
+_GRAPH_PROMPT_KEYS = (
+    ROLE_RULES,
+    tuple(ROLE_BRIEFS.values()),
+    ROLE_REVISION_RULES,
+    REVIEW_RULES,
+    REPORT_CONTINUATION,
+    REPORT_EMPTY_RETRY,
+    AGENT_ANALYSIS_CONTRACT,
+    RESEARCH_REVIEW_CONTRACT,
+)
 
-import os
-from typing import Optional
-
-from app.core.config import settings
-
-_PROMPTS_DIR = os.path.dirname(__file__)
-
-# 模块加载时一次性读入模板——请求期间零文件 IO
-with open(os.path.join(_PROMPTS_DIR, "system.md"), encoding="utf-8") as _f:
-    _SYSTEM_PROMPT_TEMPLATE = _f.read()
-
-with open(os.path.join(_PROMPTS_DIR, "session_title.md"), encoding="utf-8") as _f:
-    SESSION_TITLE_PROMPT = _f.read()
+# 后缀是内联提示词与 schema 契约的内容指纹：改一个字就换指纹。以前只有 system.md
+# 记版本，图里那几段中文改了多少轮都没人账，KV 前缀失效只能靠手动升版本号。
+SYSTEM_PROMPT_VERSION = "fund-agent-v26+" + hashlib.sha256(repr(_GRAPH_PROMPT_KEYS).encode()).hexdigest()[:8]
 
 
 def load_prompt_file(filename: str) -> str:
@@ -57,3 +83,12 @@ def load_system_prompt(username: Optional[str] = None, **kwargs):
         user_context=user_context,
         **kwargs,
     )
+
+
+def load_session_title_prompt(user_message: str) -> str:
+    """会话标题模板：把用户首条消息填进占位符之后再发.
+
+    这个模板以前是整段原文直发给模型的，``{user_message}`` 从未被替换过——模型收到的
+    是一个字面量占位符。
+    """
+    return SESSION_TITLE_PROMPT.format(user_message=user_message)

@@ -35,6 +35,26 @@ class LLMResponseInterrupted(RuntimeError):
         super().__init__(message)
 
 
+class LLMContractViolation(RuntimeError):
+    """模型确实回话了，但内容不符合给定的结构化契约.
+
+    与"连接中断""达到长度上限"分开：那两类是传输问题，这一类是契约问题——以前它被
+    笼统算成失败原因、又被节点吞成"角色未完成"，于是界面上分不清"模型没做"和
+    "做了但字段不合"。带上 field_errors，调用方可以把它回喂给模型改一次。
+    """
+
+    def __init__(self, model_name: str, field_errors: str) -> None:
+        """记录契约所属模型与 pydantic 的字段级错误文本."""
+        self.model_name = model_name
+        self.field_errors = field_errors
+        super().__init__(f"{model_name} 的输出不符合结构契约：{field_errors}")
+
+    @property
+    def reason(self) -> str:
+        """与其它 LLM 异常保持一致的 reason 口径."""
+        return "contract"
+
+
 class LLMCallProgress(BaseCallbackHandler):
     """单次调用私有的同步回调，保留 LangGraph/Langfuse 的原有回调链."""
 
@@ -53,6 +73,10 @@ class LLMCallProgress(BaseCallbackHandler):
         self.last_progress_at: float | None = None
         self.progress_chunks = 0
         self.output_chars = 0
+        # 结构化输出（include_raw）的 token 与 finish_reason 只能从 raw 那份拿，
+        # 记在这里，成功日志才不会全是 None。
+        self.structured_usage: dict[str, Any] = {}
+        self.structured_finish_reason: str | None = None
         self.attempts = 0
         self.models_tried: list[str] = []
         self.deadline: asyncio.Timeout | None = None

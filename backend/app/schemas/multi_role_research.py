@@ -50,7 +50,9 @@ class AgentAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
     findings: list[EvidenceFinding] = Field(default_factory=list, max_length=4)
     gaps: list[GapText] = Field(default_factory=list, max_length=4)
-    coverage: list[TaskCoverage] = Field(default_factory=list, max_length=4)
+    # 上限必须容得下 build_assignments 给单个角色的最多任务数：portfolio 在三只基金对比时
+    # 会拿到 3（每基金一条）+ scope/fit/scenario 共 6 条，卡在 4 就等于规定这个角色必然 partial。
+    coverage: list[TaskCoverage] = Field(default_factory=list, max_length=8)
     addressed_issue_indices: list[Annotated[int, Field(ge=0, le=5, strict=True)]] = Field(
         default_factory=list, max_length=6
     )

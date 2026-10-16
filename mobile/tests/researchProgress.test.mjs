@@ -50,7 +50,12 @@ test('role outcomes count failures without reading a skipped role as one', () =>
     '1 个角色里 1 个有待确认项 · 1 个无需执行 · 交叉审核有待确认项',
   );
   assert.equal(exports.describeRoleOutcomes([{ role: 'risk', status: 'completed' }]), '1 个角色已完成');
-  assert.equal(exports.describeRoleOutcomes([{ role: 'risk', status: 'skipped' }]), undefined);
+  // 全跳过不是"没有信息"，恰恰是要说出口的一句实话。
+  assert.equal(exports.describeRoleOutcomes([{ role: 'risk', status: 'skipped' }]), '1 个角色本轮无需执行');
+  assert.equal(
+    exports.describeRoleOutcomes([{ role: 'risk', status: 'skipped' }], 'failed'),
+    '1 个角色本轮无需执行 · 交叉审核未完成',
+  );
   assert.equal(exports.describeRoleOutcomes([]), undefined);
 });
 

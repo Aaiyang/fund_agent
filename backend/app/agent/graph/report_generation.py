@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 
 from app.agent.context import extract_text_content, process_llm_response
+from app.agent.prompts.graph import REPORT_CONTINUATION, REPORT_EMPTY_RETRY
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.llm.timeouts import LLMResponseInterrupted
@@ -48,16 +49,7 @@ async def generate_research_report(
                 requests = [
                     *messages,
                     *([AIMessage(content=content)] if content else []),
-                    HumanMessage(
-                        content=(
-                            "上一次报告因输出长度上限而中断。严格沿用上述研究要求、数据与来源，"
-                            "从已输出正文的断点接着写，直到完成所有剩余部分。"
-                            "已输出内容已展示，请勿重复、改写、重新开头或说明续写过程；"
-                            "若断点位于句子、表格或代码围栏内，请直接接续原格式。"
-                            if content
-                            else "上一次调用耗尽输出额度且没有报告正文。请直接按上述证据与要求输出完整报告。"
-                        )
-                    ),
+                    HumanMessage(content=(REPORT_CONTINUATION if content else REPORT_EMPTY_RETRY)),
                 ]
     except TimeoutError:
         if not deadline.expired():

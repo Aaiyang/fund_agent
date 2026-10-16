@@ -38,7 +38,13 @@ from tenacity import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.llm.registry import LLMRegistry, _build_chat_model
-from app.services.llm.timeouts import LLMCallProgress, LLMResponseInterrupted, LLMStartTimeout, call_progress
+from app.services.llm.timeouts import (
+    LLMCallProgress,
+    LLMContractViolation,
+    LLMResponseInterrupted,
+    LLMStartTimeout,
+    call_progress,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -61,14 +67,35 @@ def _retryable_llm_error(error: BaseException) -> bool:
 
 
 def _with_schema(model: Any, response_format: Optional[Type[BaseModel]]) -> Any:
-    """按工具调用方式绑定结构化输出，不用 json_mode.
+    """按工具调用方式绑定结构化输出，并保留原始响应.
 
-    实测（智谱 GLM-5.3-flash，同一角色 prompt）：默认解析出的 ``json_mode`` 会在思考
-    之后回一段空正文，LangChain 聚合时对空串做 JSON 解析直接 ``ValueError: expected
-    value at line 1 column 1``，三个研究角色与审核全挂；换成 ``function_calling``
-    同一个请求能拿到完整对象。工具调用这条路径主对话早就在用，厂商兼容性已被验证。
+    两个都必须显式指定：
+    * ``method="function_calling"``——实测 GLM-5.3 在默认解析出的 json_mode 下会思考完
+      再回空正文，LangChain 对空串做 JSON 解析直接 ValueError，角色与审核整批挂。
+    * ``include_raw=True``——不然拿不到 ``usage_metadata``，多角色那几次调用的 token
+      成本在日志里全是 None；同时解析错误变成可读的字段清单，交给上层判断。
     """
-    return model.with_structured_output(response_format, method="function_calling") if response_format else model
+    return (
+        model.with_structured_output(response_format, method="function_calling", include_raw=True)
+        if response_format
+        else model
+    )
+
+
+def _unwrap_structured(response: Any) -> Any:
+    """取出结构化结果；解析失败时抛可分类、可回喂的契约异常.
+
+    Raises:
+        LLMContractViolation: 模型回了话但不符合 schema（缺字段、枚举值不对等）。
+    """
+    if not isinstance(response, dict) or "parsed" not in response:
+        return response
+    error = response.get("parsing_error")
+    if error is not None:
+        raw = response.get("raw")
+        model_name = getattr(getattr(raw, "response_metadata", {}), "get", lambda *_: None)("model_name") or "unknown"
+        raise LLMContractViolation(str(model_name), str(error))
+    return response["parsed"]
 
 
 class LLMService:
@@ -174,10 +201,11 @@ class LLMService:
             async with total_deadline:
                 result = await self._call_with_fallback(messages, model_name, response_format, model_kwargs)
             metadata = result.response_metadata if isinstance(result, BaseMessage) else {}
-            usage = getattr(result, "usage_metadata", None) or {}
+            # 结构化调用的 usage 与 finish_reason 只存在于 raw 那份消息里。
+            usage = getattr(result, "usage_metadata", None) or progress.structured_usage
             logger.info(
                 "llm_call_completed",
-                finish_reason=metadata.get("finish_reason"),
+                finish_reason=metadata.get("finish_reason") or progress.structured_finish_reason,
                 input_tokens=usage.get("input_tokens"),
                 output_tokens=usage.get("output_tokens"),
                 **progress.diagnostics(),
@@ -340,7 +368,14 @@ class LLMService:
                         raise LLMResponseInterrupted("idle")
                     raise LLMStartTimeout()
             logger.debug("llm_call_successful")
-            return response
+            if progress is not None and isinstance(response, dict):
+                # 结构化结果只剩 pydantic 对象，token 与 finish_reason 得从 raw 那份取；
+                # 不然多角色那几次调用的成本在日志里永远是 None。
+                raw = response.get("raw")
+                if isinstance(raw, BaseMessage):
+                    progress.structured_usage = getattr(raw, "usage_metadata", None) or {}
+                    progress.structured_finish_reason = (raw.response_metadata or {}).get("finish_reason")
+            return _unwrap_structured(response)
         except (RateLimitError, APITimeoutError, APIError) as e:
             if progress and progress.progress_chunks > chunks_before:
                 raise LLMResponseInterrupted("upstream") from e
