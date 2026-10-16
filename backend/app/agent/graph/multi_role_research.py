@@ -108,6 +108,8 @@ def publish_progress(
 
 _ACTIVITY_INTERVAL_SECONDS = 0.4
 _ACTIVITY_TAIL_CHARS = 80
+# 审核拿到的每条被引用证据只带这么长的原文摘录：够判断支持关系，不至于重喂整包。
+_REVIEW_EXCERPT_CHARS = 240
 
 
 def activity_streamer(
@@ -311,10 +313,58 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         )
         return {"agent_reports": [report]}
 
+    def review_payload(state: MultiRoleGraphState) -> str:
+        """审核读结论 + 被真正引用到的那几条证据摘录，不再重读整包原文.
+
+        这条是整链里最慢最贵的一次调用（实测 47-90 秒、~21k 字符输入，两次正好撞在
+        90 秒超时上）。它要判断的是「这条结论有没有被它引用的证据支持」，所以留有界
+        摘录就够了；把整包原始数据再喂一遍只是把成本搬到最没有产出的一环。
+        """
+        packet = packet_for(state)
+        cited = {
+            evidence_id
+            for report in latest_reports(state, 1)
+            for finding in report.analysis.findings
+            for evidence_id in finding.evidence_ids
+        }
+        index = {
+            item["evidence_id"]: {
+                "tool": item["tool"],
+                "args": item.get("args") or {},
+                "excerpt": (item.get("text") or "")[:_REVIEW_EXCERPT_CHARS],
+            }
+            for item in packet
+            if item["evidence_id"] in cited
+        }
+        task = state.research_task
+        return json.dumps(
+            {
+                "task": task.model_dump(mode="json") if task is not None else None,
+                "fund_codes": state.fund_codes,
+                "assignments": [
+                    item.model_dump(mode="json") for item in (state.agent_assignments or build_assignments(state))
+                ],
+                "peer_reports": [
+                    {
+                        "role": item.role,
+                        "status": item.status,
+                        "findings": [finding.model_dump(mode="json") for finding in item.analysis.findings],
+                        "gaps": item.analysis.gaps,
+                        "coverage": item.coverage.model_dump(mode="json") if item.coverage else None,
+                    }
+                    for item in latest_reports(state, 1)
+                ],
+                "cited_evidence": index,
+                "gaps": state.gaps,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
     async def review(state: MultiRoleGraphState, config: RunnableConfig) -> dict:
         publish_progress(state, "review", "started")
         started = time.monotonic()
-        data = payload(state, feedback=True)
+        data = review_payload(state)
         ids = {item["evidence_id"] for item in packet_for(state)}
         reports = {item.role: item for item in latest_reports(state, 1)}
         if set(reports) != set(_ROLES):

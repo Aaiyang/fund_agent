@@ -247,6 +247,8 @@ async def test_button_reuses_confirmed_scope_and_agents_exchange_reviewed_feedba
     assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
     assert any(item[1] for item in state.analysis)  # 审核反馈确实触发了修订轮
     assert len(state.reviews) == 1
+    # 审核不再重读整包原文：只拿被真正引用到的证据摘录。
+    assert "cited_evidence" in state.reviews[0] and "evidence" not in state.reviews[0]
     assert len(state.reports) == 3  # basic report, intervening chat, one final synthesis
     assert not {"agent_reports", "agent_review", "evidence"}.intersection(saved.values)
     assert not any(args.get("fund_code") == "999999" for _, args in state.calls)

@@ -202,15 +202,21 @@ class Settings:
         self.RESEARCH_REPORT_MAX_CONTINUATIONS = max(
             0, min(2, int(os.getenv("FUND_RESEARCH_REPORT_MAX_CONTINUATIONS", "2")))
         )
-        self.MULTI_ROLE_RESEARCH_CALL_TIMEOUT = max(1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_CALL_TIMEOUT", "90")))
+        self.MULTI_ROLE_RESEARCH_CALL_TIMEOUT = max(1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_CALL_TIMEOUT", "60")))
         self.MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT = max(
             1, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_TOTAL_TIMEOUT", "180"))
         )
         # 角色调用是结构化输出，思考预算算在这里：1600 会被 GLM 的思考 token 吃满，
         # 正文一个字没出就 finish_reason=length（实测 LengthFinishReasonError）。
+        # 实测两天 21 次角色/审核调用最大 output 4262、length 零次，32768 是空转的
+        # 上限；压到 8192 仍留约 2× 余量，配合下面的 low 档避免截断。
         self.MULTI_ROLE_RESEARCH_MAX_TOKENS = max(
-            1024, min(65536, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS", "32768")))
+            1024, min(65536, int(os.getenv("FUND_MULTI_ROLE_RESEARCH_MAX_TOKENS", "8192")))
         )
+        # 角色与审核是「读一份定长数据包、按 schema 填字段」的活，不需要高推理档。
+        # 实测 high 档每次角色调用 45-85 秒且 output_chars=0，时间全花在隐藏推理上。
+        effort = os.getenv("FUND_MULTI_ROLE_RESEARCH_REASONING_EFFORT", "low")
+        self.MULTI_ROLE_RESEARCH_REASONING_EFFORT = effort if effort in {"low", "high", "max"} else "low"
         # 上下文组装（历史 + 工具结果）的修剪预算，独立于回复输出上限：
         # 调大窗口不会同时放大回复长度。
         self.CONTEXT_TOKEN_BUDGET = int(

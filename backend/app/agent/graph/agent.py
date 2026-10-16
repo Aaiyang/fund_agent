@@ -748,7 +748,13 @@ class LangGraphAgent:
                 payload["confirmed_user_profile"] = persona
                 data = json.dumps(payload, ensure_ascii=False)
         current_llm = self.llm_service.get_llm()
-        model_name = getattr(current_llm, "model_name", settings.DEFAULT_LLM_MODEL)
+        model_name = str(getattr(current_llm, "model_name", settings.DEFAULT_LLM_MODEL) or "")
+        # 只有 GLM-5.3 系列认 reasoning_effort；其他厂商传了就当没传，别把请求弄失败。
+        effort: dict[str, Any] = (
+            {"extra_body": {"reasoning_effort": settings.MULTI_ROLE_RESEARCH_REASONING_EFFORT}}
+            if model_name.lower().startswith("glm-5.3")
+            else {}
+        )
         messages: list[Any] = [SystemMessage(content=prompt), HumanMessage(content=data)]
         node = str(config.get("metadata", {}).get("langgraph_node") or "")
         for attempt in range(_RESEARCH_CONTRACT_ATTEMPTS):
@@ -759,6 +765,7 @@ class LangGraphAgent:
                         response_format=schema,
                         on_text=on_text,
                         max_tokens=settings.MULTI_ROLE_RESEARCH_MAX_TOKENS,
+                        **effort,
                     )
                 return schema.model_validate(result)
             except LLMContractViolation as error:
