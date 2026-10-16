@@ -9509,8 +9509,11 @@
           "role": {
             "type": "string",
             "enum": [
-              "fundamentals",
+              "performance",
               "risk",
+              "holdings",
+              "manager",
+              "disclosure",
               "portfolio"
             ],
             "title": "Role"

@@ -3749,7 +3749,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "fundamentals" | "risk" | "portfolio";
+            role: "performance" | "risk" | "holdings" | "manager" | "disclosure" | "portfolio";
             /**
              * Status
              * @enum {string}

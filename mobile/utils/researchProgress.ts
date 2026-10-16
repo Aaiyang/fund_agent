@@ -1,8 +1,20 @@
 import type { ChatResearchProgress } from '@/api/chatStream';
 
 const STAGES = { evidence: '收集研究证据', analysis: '独立分析', review: '交叉审核', supplement: '补充证据', revision: '反馈修订', report: '综合报告' };
-const ROLES = { fundamentals: '基金研究员', risk: '风险分析员', portfolio: '组合分析员' };
+// 与后端 research_contract.ROLE_LABELS 同源：六个专业评价维度各一条。
+// 用 Record 而不是收窄的联合类型，是为了让后端新增维度时界面退化成显示原始 key，
+// 而不是渲染出 undefined。
+const ROLES: Record<string, string> = {
+  performance: '业绩与基准契合',
+  risk: '风险与回撤',
+  holdings: '持仓与行业风格',
+  manager: '基金经理与团队',
+  disclosure: '披露与来源质量',
+  portfolio: '组合适配',
+};
 const STATUS = { started: '进行中', completed: '已完成', partial: '有待确认项', failed: '未完成', skipped: '无需执行' };
+/** 后端加了新维度而这里还没配中文名时，退化成显示原始 key，而不是渲染出 undefined。 */
+const roleLabel = (role: string) => ROLES[role] ?? role;
 const STAGE_ORDER = ['evidence', 'analysis', 'review', 'supplement', 'revision', 'report'];
 
 /** Stage callbacks can arrive in any role order; retain each role without mixing runs. */
@@ -20,18 +32,18 @@ export function describeResearchProgress(events: ChatResearchProgress[]): string
   if (!latest) return undefined;
   const active = events.filter((item) => item.stage === latest.stage && item.status !== 'skipped');
   if (!active.length) return `${STAGES[latest.stage]}：无需执行`;
-  return `${STAGES[latest.stage]}：${active.map((item) => `${item.role ? ROLES[item.role] : ''}${STATUS[item.status]}`).join(' · ')}`;
+  return `${STAGES[latest.stage]}：${active.map((item) => `${item.role ? roleLabel(item.role) : ''}${STATUS[item.status]}`).join(' · ')}`;
 }
 
 /** 一行滚动摘要：角色名 + 服务端截好的思考尾部（已经是单行）。 */
-export function describeResearchActivity(activity: { role: 'fundamentals' | 'risk' | 'portfolio' | null; text: string }): string {
-  const role = activity.role ? ROLES[activity.role] : '';
+export function describeResearchActivity(activity: { role: string | null; text: string }): string {
+  const role = activity.role ? roleLabel(activity.role) : '';
   return `${role}${role ? ' · ' : ''}${activity.text}`;
 }
 
 /** 一个角色的最终结局。`skipped` 是"这个角色本轮不需要做"，不算失败。 */
 export type RoleOutcome = {
-  role: 'fundamentals' | 'risk' | 'portfolio';
+  role: string;
   status: 'completed' | 'partial' | 'failed' | 'skipped';
 };
 
@@ -54,7 +66,7 @@ export function roleOutcomesFromProgress(events: ChatResearchProgress[]): RoleOu
 /**
  * 一行徽标文案：数字来自服务端信封，不来自模型在正文里的自述。
  *
- * 分母只算"这轮真该出结论的角色"——`skipped`（没有个人持仓时的组合分析员）既不算
+ * 分母只算"这轮真该出结论的角色"——`skipped`（没有个人持仓时的组合适配）既不算
  * 失败，也不占进"N 个角色"里，否则一句"3 个角色里 2 个失败"会把本来就不适用的那
  * 一个也算成没失败的幸存者。
  */

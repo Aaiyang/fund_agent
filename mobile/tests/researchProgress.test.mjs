@@ -13,17 +13,17 @@ const event = (role, status, run_id = 'run') => ({ kind: 'research_progress', ru
 
 test('parallel role progress merges in either completion order and isolates runs', () => {
   let progress = exports.mergeResearchProgress([], event('risk', 'started'));
-  progress = exports.mergeResearchProgress(progress, event('fundamentals', 'started'));
+  progress = exports.mergeResearchProgress(progress, event('manager', 'started'));
   progress = exports.mergeResearchProgress(progress, event('risk', 'completed'));
   assert.equal(progress.length, 2);
-  assert.match(exports.describeResearchProgress(progress), /基金研究员进行中/);
-  assert.match(exports.describeResearchProgress(progress), /风险分析员已完成/);
+  assert.match(exports.describeResearchProgress(progress), /基金经理与团队进行中/);
+  assert.match(exports.describeResearchProgress(progress), /风险与回撤已完成/);
   assert.equal(exports.mergeResearchProgress(progress, event('risk', 'failed', 'another')), progress);
 });
 
 test('review and revision display their public stage without hiding partial failures', () => {
   let progress = exports.mergeResearchProgress([], event('risk', 'failed'));
-  assert.match(exports.describeResearchProgress(progress), /风险分析员未完成/);
+  assert.match(exports.describeResearchProgress(progress), /风险与回撤未完成/);
   progress = exports.mergeResearchProgress(progress, { ...event(null, 'started'), stage: 'review' });
   assert.equal(exports.describeResearchProgress(progress), '交叉审核：进行中');
 });
@@ -32,13 +32,13 @@ test('late callbacks cannot restart a completed role or move the displayed stage
   let progress = exports.mergeResearchProgress([], event('risk', 'completed'));
   assert.equal(exports.mergeResearchProgress(progress, event('risk', 'started')), progress);
   progress = exports.mergeResearchProgress(progress, { ...event(null, 'started'), stage: 'review' });
-  progress = exports.mergeResearchProgress(progress, event('fundamentals', 'completed'));
+  progress = exports.mergeResearchProgress(progress, event('manager', 'completed'));
   assert.equal(exports.describeResearchProgress(progress), '交叉审核：进行中');
 });
 
 test('role outcomes count failures without reading a skipped role as one', () => {
   const outcomes = [
-    { role: 'fundamentals', status: 'failed' },
+    { role: 'manager', status: 'failed' },
     { role: 'risk', status: 'failed' },
     { role: 'portfolio', status: 'skipped' },
   ];
@@ -63,7 +63,7 @@ test('live outcomes come from the last round per role and ignore in-flight roles
   const revision = (role, status) => ({ kind: 'research_progress', run_id: 'run', stage: 'revision', role, status });
   let progress = exports.mergeResearchProgress([], event('risk', 'started'));
   progress = exports.mergeResearchProgress(progress, event('risk', 'completed'));
-  progress = exports.mergeResearchProgress(progress, event('fundamentals', 'started'));
+  progress = exports.mergeResearchProgress(progress, event('manager', 'started'));
   // 对象是在 vm 上下文里造的，deepEqual 会比原型，这里只比内容。
   assert.equal(JSON.stringify(exports.roleOutcomesFromProgress(progress)), '[{"role":"risk","status":"completed"}]');
   progress = exports.mergeResearchProgress(progress, revision('risk', 'partial'));
@@ -71,6 +71,16 @@ test('live outcomes come from the last round per role and ignore in-flight roles
 });
 
 test('the activity line is prefixed with the role and stays single-line', () => {
-  assert.equal(exports.describeResearchActivity({ role: 'risk', text: '先核净值 再算回撤' }), '风险分析员 · 先核净值 再算回撤');
+  assert.equal(exports.describeResearchActivity({ role: 'risk', text: '先核净值 再算回撤' }), '风险与回撤 · 先核净值 再算回撤');
   assert.equal(exports.describeResearchActivity({ role: null, text: '比对三份发现' }), '比对三份发现');
+});
+
+// 后端新增维度而界面还没配中文名时，退化成显示原始 key，不能渲染出 undefined。
+test('an unmapped role degrades to its raw key instead of undefined', () => {
+  const progress = exports.mergeResearchProgress([], event('sentiment', 'completed'));
+  assert.equal(exports.describeResearchProgress(progress), '独立分析：sentiment已完成');
+  assert.equal(
+    exports.describeResearchActivity({ role: 'sentiment', text: '看资金流' }),
+    'sentiment · 看资金流'
+  );
 });
