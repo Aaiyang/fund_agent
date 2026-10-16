@@ -73,8 +73,14 @@ class FundAnalysisService:
         if max_gap is not None and max_gap > 14:
             warnings.append("相邻净值间隔超过14个自然日，存在历史缺口，未推定缺口期间走势。")
         metrics = nav_metrics(points, daily_quality=daily_quality)
+        if metrics.sharpe_ratio_rf0 is not None:
+            warnings.append("夏普与索提诺按无风险利率 0 计算（字段名以 _rf0 标明），不是用真实无风险利率算出的。")
+        if metrics.max_drawdown_peak_date is not None:
+            warnings.append("回撤峰谷日期只描述观察样本内的这一段，不代表完整历史的最差区间。")
         if metrics.annualized_nav_volatility_ratio is None:
-            warnings.append("日点不足120或存在质量问题，未提供年化净值波动率；不以周采样计算年化风险。")
+            warnings.append(
+                "日点不足120或存在质量问题，未提供年化波动率、夏普、索提诺与下行波动；不以周采样计算年化风险。"
+            )
         chart = None
         if len(points) >= 2:
             chart = FundNavChart(

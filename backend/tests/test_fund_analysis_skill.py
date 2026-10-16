@@ -290,7 +290,7 @@ async def test_private_cost_is_runtime_scoped_and_quote_fields_are_preserved(mon
 
 
 def test_registry_and_schemas_scope():
-    assert TOOLS_VERSION == "v19"
+    assert TOOLS_VERSION == "v20"
     assert get_fund_analysis_data in FUND_TOOLS and load_skill in SYSTEM_TOOLS
     assert load_skill in DEFAULT_AGENT_TOOLS and set(get_fund_analysis_data.args) == {"fund_code"}
     assert set(load_skill.args) == {"skill_name", "section"}

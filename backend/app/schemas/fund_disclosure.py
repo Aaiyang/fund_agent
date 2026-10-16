@@ -23,6 +23,9 @@ class FundManagerPeriod(BaseModel):
     end_date: date | None = None
     is_current: bool = False
     source_duration: str | None = None
+    # 数据源原文（如 "45.67%"、"--"），整个团队区间的合计回报，不拆到个人；
+    # 保留字符串而不是解析成数字：上游用占位符表示「暂无」，解析成 0 就成了假数。
+    tenure_return: str | None = None
 
 
 class FundManagerHistoryData(BaseModel):

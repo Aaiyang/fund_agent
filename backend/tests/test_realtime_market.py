@@ -226,7 +226,7 @@ async def test_empty_tool_returns_safe_error(market, monkeypatch):
 
 def test_registry_and_schema_keep_public_query_bounded():
     assert get_realtime_market in MARKET_TOOLS and get_realtime_market in DEFAULT_AGENT_TOOLS
-    assert TOOLS_VERSION == "v19" and set(get_realtime_market.args) == {"index_codes", "refresh"}
+    assert TOOLS_VERSION == "v20" and set(get_realtime_market.args) == {"index_codes", "refresh"}
 
 
 @pytest.mark.parametrize("stream", [False, True])

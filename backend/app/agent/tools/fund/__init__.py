@@ -8,12 +8,14 @@ from .get_sector_market import get_sector_market
 from .get_fund_managers import get_fund_managers
 from .get_fund_announcements import get_fund_announcements
 from .get_fund_analysis_data import get_fund_analysis_data
+from .get_fund_benchmark import get_fund_benchmark
 from .get_fund_comparison_data import get_fund_comparison_data
 from .search_funds import search_funds
 from .resolve_fund_for_analysis import resolve_fund_for_analysis
 
 __all__ = [
     "get_fund_analysis_data",
+    "get_fund_benchmark",
     "get_fund_comparison_data",
     "get_fund_managers",
     "get_fund_announcements",

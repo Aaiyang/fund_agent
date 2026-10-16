@@ -96,6 +96,7 @@ def multi_workflow(monkeypatch):
         "get_portfolio_snapshot",
         "get_fund_snapshot",
         "get_fund_analysis_data",
+        "get_fund_benchmark",
         "get_fund_comparison_data",
         "get_fund_holdings",
         "get_fund_managers",

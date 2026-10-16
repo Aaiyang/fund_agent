@@ -244,6 +244,10 @@ class ValuationService:
         )
         return ValuationEstimatesResponse(items=items, total=len(items), generated_at=utc_now())
 
+    async def benchmark_text(self, fund_code: str) -> str | None:
+        """单只基金的业绩比较基准原文；库里没有就补抓一次，取不到返回 None."""
+        return (await self._benchmarks([fund_code], {})).get(fund_code)
+
     async def _benchmarks(self, codes: Sequence[str], funds: Mapping[str, Fund]) -> dict[str, str]:
         """基准原文优先读库；没读过的一起并发补一次档案，读到的存下来.
 

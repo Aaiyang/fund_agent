@@ -17,12 +17,14 @@ async def get_fund_managers(
     limit: Annotated[int, Field(ge=1, le=100, description="原始区间和个人任职段各最多返回此数量，默认50")] = 50,
     refresh: Annotated[bool, Field(description="true强制在线更新，false允许一小时内成功缓存")] = False,
 ) -> ToolResult:
-    """按基金代码查询历任基金经理、任职起止日期、来源任职期间及现任标记.
+    """按基金代码查询历任基金经理、任职起止日期、来源任职期间、区间回报及现任标记.
 
     periods是原始团队区间，多人共同管理保留多经理；tenures合并同一经理连续区间。
+    periods[].tenure_return是来源页面「任职回报」列的原文（如"5%"或占位符"--"），
+    它是该团队区间的合计回报，不能拆到个人，也不能当作该经理在其他基金的表现。
     离任后再任分别保留，end_date为空仅在is_current=true时表示来源标记至今。
     来源页面未给出业务更新时间；fetched_at为UTC获取时间，不能称为任职起始时间。
-    注意truncated和warnings，不把当前经理姓名当作全部历史，不推断个人任职回报。
+    注意truncated和warnings，不把当前经理姓名当作全部历史。
     """
     response = await fund_service.get_managers(validate_fund_code(fund_code), limit=limit, refresh=refresh)
     return ToolResult.ok(

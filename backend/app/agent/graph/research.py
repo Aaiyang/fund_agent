@@ -435,6 +435,8 @@ def _build(
                 calls.append(("get_fund_managers", {"fund_code": code, "limit": 10}))
             if task.request.mode == "deep":
                 calls.append(("get_fund_announcements", {"fund_code": code, "category": "all", "limit": 5}))
+                # 深度档才付这个成本：基准原文与相对指标要读档案页并合成指数序列。
+                calls.append(("get_fund_benchmark", {"fund_code": code, "range_key": "3y"}))
             if market_needed:
                 calls.append(("get_fund_sectors", {"fund_code": code, "limit": 2}))
         if market_needed:

@@ -64,7 +64,11 @@ class FundNavChart(BaseModel):
 
 
 class FundNavMetrics(BaseModel):
-    """均为比值0.1=10%，仅描述可用未复权单位净值样本，不是总回报."""
+    """均为比值0.1=10%，仅描述可用未复权单位净值样本，不是总回报.
+
+    夏普/索提诺的无风险利率按 0 计（字段名以 ``_rf0`` 标明），因为系统里没有可信的
+    无风险利率来源；样本不足 120 个有效日点或存在质量缺口时一律为 None。
+    """
 
     metric_basis: Literal["unadjusted_unit_nav"] = "unadjusted_unit_nav"
     first_nav: FiniteFloat | None = None
@@ -79,6 +83,11 @@ class FundNavMetrics(BaseModel):
     drawdown_from_observed_peak_ratio: FiniteFloat | None = None
     range_position_ratio: FiniteFloat | None = Field(default=None, ge=0, le=1)
     annualized_nav_volatility_ratio: FiniteFloat | None = None
+    max_drawdown_peak_date: date | None = None
+    max_drawdown_trough_date: date | None = None
+    sharpe_ratio_rf0: FiniteFloat | None = None
+    sortino_ratio_rf0: FiniteFloat | None = None
+    annualized_downside_deviation_ratio: FiniteFloat | None = None
 
 
 class FundHoldingsCardItem(BaseModel):

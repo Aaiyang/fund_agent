@@ -71,6 +71,16 @@ def test_manager_periods_retain_joint_names_and_ignore_other_funds():
     assert not any(period.start_date == date(2000, 1, 1) for period in result.periods)
 
 
+def test_period_return_column_is_kept_as_source_text():
+    """第 5 列是团队区间合计回报；占位符原样保留，不解析成 0 当假数."""
+    result = parse_manager_history(history_html(), "000001")
+    assert [period.tenure_return for period in result.periods] == ["5%", "3%", "2%"]
+    placeholder = parse_manager_history(history_html().replace("<td>5%</td>", "<td>--</td>"), "000001")
+    assert placeholder.periods[0].tenure_return == "--"
+    blank = parse_manager_history(history_html().replace("<td>5%</td>", "<td>  </td>"), "000001")
+    assert blank.periods[0].tenure_return is None
+
+
 def test_personal_tenures_merge_contiguous_management_but_preserve_reappointments():
     result = merge_manager_tenures(parse_manager_history(history_html(), "000001").periods)
     rows = [row for row in result if row.manager.manager_id == "111"]
@@ -293,7 +303,7 @@ async def test_tools_use_safe_errors_and_correct_dates(disclosures):
 
 
 def test_registry_and_request_scope():
-    assert TOOLS_VERSION == "v19"
+    assert TOOLS_VERSION == "v20"
     assert get_fund_managers in FUND_TOOLS and get_fund_announcements in DEFAULT_AGENT_TOOLS
     assert set(get_fund_managers.args) == {"fund_code", "limit", "refresh"}
     assert "user_id" not in get_fund_announcements.args and "url" not in get_fund_announcements.args

@@ -331,7 +331,7 @@ async def test_industry_cache_failure_preserves_name_evidence(monkeypatch):
 
 
 def test_registry_and_parameter_bounds():
-    assert TOOLS_VERSION == "v19" and get_fund_sectors in FUND_TOOLS and get_sector_market in FUND_TOOLS
+    assert TOOLS_VERSION == "v20" and get_fund_sectors in FUND_TOOLS and get_sector_market in FUND_TOOLS
     assert get_sector_market in DEFAULT_AGENT_TOOLS
     assert set(get_fund_sectors.args) == {"fund_code", "limit"}
     assert set(get_sector_market.args) == {"keyword", "sector_type", "limit", "refresh"}

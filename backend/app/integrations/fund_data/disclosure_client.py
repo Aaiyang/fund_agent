@@ -105,6 +105,8 @@ def parse_manager_history(html: str, code: str) -> FundManagerHistoryData:
             end_date=end,
             is_current=current,
             source_duration=cells[3].get_text(strip=True) or None,
+            # 表头已经校验过第 5 列就是「任职回报」；以前只取到第 4 列，这一列被读出来又丢掉。
+            tenure_return=cells[4].get_text(strip=True) or None,
         )
         if period not in periods:
             periods.append(period)

@@ -5,13 +5,47 @@
 
 from app.analytics.drawdown import max_drawdown
 from app.analytics.returns import disclosed_change, period_return, range_return, window_return
+from app.analytics.risk_metrics import (
+    AlignedSeries,
+    AnnualReturn,
+    DrawdownWindow,
+    align_series,
+    alpha,
+    annual_returns,
+    beta,
+    downside_deviation,
+    drawdown_window,
+    excess_return,
+    safe_metric,
+    sharpe,
+    sortino,
+    top10_concentration,
+    tracking_error,
+    weighted_benchmark_series,
+)
 from app.analytics.volatility import annualized_volatility
 
 __all__ = [
+    "AlignedSeries",
+    "AnnualReturn",
+    "DrawdownWindow",
+    "align_series",
+    "alpha",
+    "annual_returns",
     "annualized_volatility",
+    "beta",
     "disclosed_change",
+    "downside_deviation",
+    "drawdown_window",
+    "excess_return",
     "max_drawdown",
     "period_return",
     "range_return",
+    "safe_metric",
+    "sharpe",
+    "sortino",
+    "top10_concentration",
+    "tracking_error",
+    "weighted_benchmark_series",
     "window_return",
 ]

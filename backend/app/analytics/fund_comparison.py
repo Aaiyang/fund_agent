@@ -4,6 +4,7 @@ from datetime import date
 
 from app.analytics.drawdown import max_drawdown
 from app.analytics.returns import NavPoint
+from app.analytics.risk_metrics import drawdown_window, safe_metric, sharpe, sortino
 from app.analytics.volatility import annualized_volatility
 from app.schemas.fund_comparison import FundComparisonRow
 from app.utils.market_quote_policy import finite_number
@@ -34,11 +35,13 @@ def aligned_nav_metrics(
             row.gaps.append("日点质量或共同日期覆盖不足，不提供回撤和年化波动率比较")
             continue
         row.observed_max_drawdown_ratio = finite_number(max_drawdown(points))
+        window = drawdown_window(points)
+        row.max_drawdown_peak_date = window.peak_date if window else None
+        row.max_drawdown_trough_date = window.trough_date if window else None
         if len(points) >= 120:
-            try:
-                row.annualized_nav_volatility_ratio = finite_number(annualized_volatility(points))
-            except (OverflowError, ZeroDivisionError):
-                row.annualized_nav_volatility_ratio = None
+            row.annualized_nav_volatility_ratio = safe_metric(annualized_volatility, points)
+            row.sharpe_ratio_rf0 = safe_metric(sharpe, points)
+            row.sortino_ratio_rf0 = safe_metric(sortino, points)
         if row.annualized_nav_volatility_ratio is None:
-            row.gaps.append("有效共同日点不足120或计算不可用，未提供年化波动率")
+            row.gaps.append("有效共同日点不足120或计算不可用，未提供年化波动率与夏普/索提诺")
     return common, rows

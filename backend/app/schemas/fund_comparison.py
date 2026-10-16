@@ -25,7 +25,11 @@ class FundComparisonRequest(BaseModel):
 
 
 class FundComparisonRow(BaseModel):
-    """指标均在共同窗口计算；无可靠证据保留None."""
+    """指标均在共同窗口计算；无可靠证据保留None.
+
+    夏普/索提诺的无风险利率按 0 计（字段名以 ``_rf0`` 标明）：系统里没有可信的
+    无风险利率来源，这个口径必须跟着数字一起被读到。
+    """
 
     fund_code: str
     observed_from: date | None = None
@@ -34,7 +38,11 @@ class FundComparisonRow(BaseModel):
     aligned_count: int = 0
     window_change_ratio: FiniteFloat | None = None
     observed_max_drawdown_ratio: FiniteFloat | None = None
+    max_drawdown_peak_date: date | None = None
+    max_drawdown_trough_date: date | None = None
     annualized_nav_volatility_ratio: FiniteFloat | None = None
+    sharpe_ratio_rf0: FiniteFloat | None = None
+    sortino_ratio_rf0: FiniteFloat | None = None
     stale: bool = False
     gaps: list[str] = Field(default_factory=list)
     chart_code_block: str | None = None
