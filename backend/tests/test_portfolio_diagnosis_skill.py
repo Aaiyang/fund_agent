@@ -141,7 +141,9 @@ async def test_real_graph_loads_diagnosis_then_reads_same_authenticated_scope(mo
     )
     route_steps = ["route"] if account_id is not None else []
     if mode in {"normal", "truncated"}:
-        assert answer[-1].content == "已核验指定范围的诊断证据。"
+        # 正文由模型生成，尾注由代码追加（数据来源核对）；两者都要在。
+        assert answer[-1].content.startswith("已核验指定范围的诊断证据。")
+        assert "数据来源核对" in answer[-1].content
         assert seen == [*route_steps, "complete"]
     else:
         assert ("没有可分析" if mode == "empty" else "无法读取") in answer[-1].content

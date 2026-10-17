@@ -1,5 +1,7 @@
 """Deterministic per-role assignments; coverage is derived from real citations, not self-reported."""
 
+import json
+import re
 from typing import Literal, TypedDict
 
 from app.schemas.multi_role_research import (
@@ -79,7 +81,7 @@ _SKIP_LABELS = {
     "budget": "多角色分析总时限已用尽",
 }
 
-_GAP_LABELS = {
+SOURCE_LABELS = {
     "get_fund_analysis_data": "净值风险指标",
     "get_fund_benchmark": "业绩比较基准",
     "get_fund_comparison_data": "共同窗口数据",
@@ -87,9 +89,99 @@ _GAP_LABELS = {
     "get_fund_holdings": "披露持仓",
     "get_fund_managers": "经理资料",
     "get_fund_announcements": "基金公告",
+    "get_fund_sectors": "关联板块",
+    "get_sector_market": "板块行情",
     "get_market_events": "市场事件",
     "get_market_context": "市场概况",
+    "get_portfolio": "组合汇总",
+    "get_portfolio_snapshot": "组合快照",
+    "get_positions": "个人持仓",
+    "identify_event_portfolio_links": "事件持仓关联",
+    "get_stock_analysis_data": "个股行情",
 }
+
+_COMPLETE_LABELS = {
+    "ok": "已取到",
+    "degraded": "取到但来源标记不完整",
+    "failed": "查询失败",
+    "not_attempted": "已计划但未取到",
+}
+# 引用标记对应报告上下文里的 evidence_id。围栏内是图表 JSON、表格行是一整块来源数据，
+# 两者都不该被要求逐格引用，所以都不参与启发式计数。
+_CITATION = re.compile(r"\[(ev_[0-9a-f]{8,})\]")
+_NUMBERY = re.compile(r"\d+(?:[.,]\d+)?\s*%|\d+\.\d{2,}")
+_FENCE = re.compile(r"```[\s\S]*?```")
+
+
+def _args_fingerprint(args: dict) -> str:
+    """入参指纹；与取证节点同一套口径，计划与实取才能配上对."""
+    return json.dumps(args or {}, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def source_completeness(state: ResearchGraphState) -> list[dict]:
+    """计划来源 × 确认对象的实际状态；纯代码算，不要求模型自报.
+
+    这是单档的诚实性来源：单档没有角色覆盖可推导，但至少能说清「哪块数据压根没取到」。
+    只描述到 ResearchEvidence 真正携带的程度（success 与 data.partial），
+    来源是否过时由缺口文字负责，这里不猜。
+    """
+    obtained = {(item.tool, _args_fingerprint(item.args)): item for item in state.evidence}
+    rows: list[dict] = []
+    for call in state.tool_plan:
+        item = obtained.get((call.name, _args_fingerprint(call.args)))
+        if item is None:
+            status = "not_attempted"
+        elif not item.success:
+            status = "failed"
+        elif isinstance(item.data, dict) and item.data.get("partial") is True:
+            status = "degraded"
+        else:
+            status = "ok"
+        args = call.args or {}
+        codes: list[str | None] = (
+            [args["fund_code"]] if "fund_code" in args else list(args.get("fund_codes") or [None])
+        )
+        for code in codes:
+            rows.append({"source": SOURCE_LABELS.get(call.name, call.name), "fund_code": code, "status": status})
+    return rows
+
+
+def citation_audit(report_text: str, packet: list[dict]) -> tuple[int, int, int]:
+    """三个计数：可核对引用 / 引用了不存在的 ID / 含数字却没带引用的句子.
+
+    第三个数是启发式统计，**不参与状态判定**：模型漏标引用和编造数据在两处文本上无法区分，
+    把它当缺陷来判就会再造出一扇「必然 partial」的门——上一轮 0/31 completed 就是这么来的。
+    """
+    known = {item.get("evidence_id") for item in packet}
+    cited = _CITATION.findall(report_text)
+    unknown = sum(1 for item in cited if item not in known)
+    prose = _FENCE.sub("", report_text)
+    bare = sum(
+        1
+        for line in prose.splitlines()
+        if not line.lstrip().startswith("|") and _NUMBERY.search(line) and not _CITATION.search(line)
+    )
+    return len(cited) - unknown, unknown, bare
+
+
+def completeness_note(state: ResearchGraphState, report_text: str, packet: list[dict], divider: str) -> str:
+    """报告尾注的数据来源核对段；两种模式都有，多角色接在维度覆盖之后."""
+    rows = source_completeness(state)
+    problems = [row for row in rows if row["status"] != "ok"]
+    matched, unknown, bare = citation_audit(report_text, packet)
+    parts = [divider + "**数据来源核对**"]
+    if not rows:
+        parts.append("本轮没有可核对的计划来源。")
+    elif not problems:
+        parts.append(f"本轮计划的 {len(rows)} 项来源全部取到。")
+    for row in problems:
+        who = (row["fund_code"] + " ") if row["fund_code"] else ""
+        parts.append(who + row["source"] + "：" + _COMPLETE_LABELS[row["status"]])
+    parts.append(
+        f"引用核对：{matched} 处可核对、{unknown} 处引用了不存在的证据标识；"
+        f"另有 {bare} 行含数字但未带引用（启发式统计，不代表编造）。"
+    )
+    return "\n\n".join(parts)
 
 
 def build_assignments(state: ResearchGraphState) -> list[ResearchAssignment]:
@@ -390,7 +482,7 @@ def completion_note(state: ResearchGraphState) -> str:
         parts.append("交叉审核：" + ("未完成" if state.agent_review_status == "failed" else "存在待核验项"))
     for gap in state.gaps:
         if "数据范围或质量不完整" in gap or "数据并非最新" in gap:
-            for tool, label in _GAP_LABELS.items():
+            for tool, label in SOURCE_LABELS.items():
                 gap = gap.replace(tool, label)
             parts.append(gap)
     return "\n\n".join(parts)

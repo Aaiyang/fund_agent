@@ -221,7 +221,10 @@ async def test_real_sdk_truncated_report_stream_and_checkpoint_both_include_the_
             output = await run(workflow, "分析000001的潜力", stream=True)
 
     saved = await snapshot(workflow)
-    assert output == saved.values["messages"][-1].content == first + tail
+    assert output.startswith(first + tail)
+    saved_content = saved.values["messages"][-1].content
+    assert saved_content.startswith(first + tail)
+    assert "数据来源核对" in saved_content  # 续写完整后仍由代码补尾注
     assert result(saved).status == "completed" and not saved.next
     assert saved.values["messages"][-1].response_metadata["report_continuations"] == 1
     assert len(requests) == 2 and all(item["stream"] for item in requests)
