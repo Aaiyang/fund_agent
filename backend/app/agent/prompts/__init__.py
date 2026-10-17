@@ -17,6 +17,7 @@ with open(os.path.join(_PROMPTS_DIR, "session_title.md"), encoding="utf-8") as _
 
 from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后：graph → contract → schemas
     AGENT_ANALYSIS_CONTRACT,
+    MULTI_ROLE_REPORT_STRUCTURE,
     RESEARCH_REVIEW_CONTRACT,
     REPORT_CONTINUATION,
     REPORT_EMPTY_RETRY,
@@ -58,6 +59,7 @@ _GRAPH_PROMPT_KEYS = (
     REVIEW_RULES,
     REPORT_CONTINUATION,
     REPORT_EMPTY_RETRY,
+    MULTI_ROLE_REPORT_STRUCTURE,
     AGENT_ANALYSIS_CONTRACT,
     RESEARCH_REVIEW_CONTRACT,
 )

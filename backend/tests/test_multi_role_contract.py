@@ -8,7 +8,14 @@ from annotated_types import MaxLen
 from pydantic import BaseModel
 
 from app.agent.graph.multi_role_research import build_multi_role_subgraph, remaining_budget
-from app.agent.graph.research_contract import build_assignments, completion_note, derive_coverage, role_evidence
+from app.agent.graph.research import report_context
+from app.agent.graph.research_contract import (
+    build_assignments,
+    completion_manifest,
+    completion_note,
+    derive_coverage,
+    role_evidence,
+)
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
@@ -190,6 +197,80 @@ class TestAssignmentsDoNotScaleWithObjects:
         performance = next(item for item in build_assignments(comparison_state(codes)) if item.role == "performance")
         assert [item.scope for item in performance.required_evidence] == ["per_fund", "per_fund", "global"]
         assert Counter(item.role for item in build_assignments(comparison_state(codes))).most_common(1)[0][1] == 1
+
+
+def _state_for_report(strategy: str, coverage: TaskCoverage | None = None) -> ResearchGraphState:
+    """一份能直接喂给 report_context 的最小多角色/单档状态."""
+    intent = "fund_research"
+    return ResearchGraphState(
+        turn_id="t",
+        fund_codes=["000001"],
+        skill_instructions="内置流程",
+        skill_evidence="取证边界",
+        research_task=ResearchTask(
+            turn_id="t",
+            request=ResearchRequest(intent=intent, fund_queries=["000001"], strategy=strategy),
+            instruction="研究这只基金",
+        ),
+        agent_assignments=build_assignments(
+            ResearchGraphState(
+                turn_id="t",
+                fund_codes=["000001"],
+                research_task=ResearchTask(
+                    turn_id="t",
+                    request=ResearchRequest(intent=intent, fund_queries=["000001"], strategy="multi_role"),
+                    instruction="研究这只基金",
+                ),
+            )
+        ),
+        agent_reports=[
+            AgentReport(
+                run_id="t",
+                role="manager",
+                round=1,
+                status="partial",
+                analysis=AgentAnalysis(findings=[finding(["ev_a"])]),
+                coverage=coverage,
+            )
+        ],
+    )
+
+
+def test_multi_role_report_is_organised_by_dimension_then_synthesis() -> None:
+    """多角色报告按维度分节、末尾才综合；这段结构契约必须真的进到成文上下文."""
+    context = report_context(_state_for_report("multi_role"))
+    assert "每个**实际运行过的**维度单独一节" in context
+    assert "综合结论与分歧" in context and "角色分歧与未解决项" in context
+    # 关键约束：本维度没覆盖的对象不许借别的维度填空。
+    assert "不许借用其他维度的材料填空" in context
+    assert "role_label" in context and "dropped_citations" in context
+
+
+def test_single_mode_report_keeps_its_own_structure() -> None:
+    """维度分节只属于多角色：把新排版漏进单档会连带改掉普通研究的结论先行."""
+    context = report_context(_state_for_report("single"))
+    assert "综合结论与分歧" not in context and "每个**实际运行过的**维度单独一节" not in context
+    assert "本轮已由代码完成有界取证" in context
+
+
+def test_manifest_names_labels_and_reports_dropped_citations() -> None:
+    """成文节点要能直接读到中文维度名与被排除的伪引用条数，而不是从缺口文字里猜."""
+    coverage = TaskCoverage(
+        task_id="manager",
+        status="partial",
+        met=["历任经理与任期"],
+        missing=["历任经理与任期（缺 000001）"],
+        explanation="缺少 历任经理与任期（缺 000001）",
+        dropped_citations=2,
+    )
+    # 只 manager 有信封，其余维度既没运行也没覆盖结论。
+    manifest = completion_manifest(_state_for_report("multi_role", coverage))
+    task = next(item for item in manifest["tasks"] if item["role"] == "manager")
+    assert task["role_label"] == "基金经理与团队"
+    assert task["attempted"] is True and task["dropped_citations"] == 2
+    quiet = next(item for item in manifest["tasks"] if item["role"] == "risk")
+    assert quiet["attempted"] is False and quiet["status"] == "blocked"
+    assert quiet["dropped_citations"] == 0 and quiet["role_label"] == "风险与回撤"
 
 
 def test_restored_budget_does_not_restart_the_stage_clock():

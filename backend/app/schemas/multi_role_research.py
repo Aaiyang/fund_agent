@@ -51,6 +51,9 @@ class TaskCoverage(BaseModel):
     met: list[str] = Field(default_factory=list, max_length=6)
     missing: list[str] = Field(default_factory=list, max_length=6)
     explanation: str = Field(default="", max_length=300)
+    # 该角色有多少条结论因引用无法核对而被整条丢弃。交给成文节点如实说明，
+    # 而不是让它从缺口文字里猜。
+    dropped_citations: int = Field(default=0, ge=0)
 
 
 class EvidenceFinding(BaseModel):

@@ -18,14 +18,21 @@ ReportStatus = Literal["completed", "partial", "failed", "skipped"]
 
 
 class ManifestTask(TypedDict):
-    """一个角色维度的覆盖结论，进报告上下文与结尾附注."""
+    """一个角色维度的覆盖结论，进报告上下文与结尾附注.
+
+    `role_label` 与 `dropped_citations` 是给成文节点用的：它写某一节时要能直接引用
+    中文名和「有几条结论因引用无法核对被排除」，而不是从缺口文字里猜或干脆不提。
+    """
 
     task_id: str
     role: ResearchRole
+    role_label: str
     status: CoverageStatus
+    attempted: bool
     met: list[str]
     missing: list[str]
     explanation: str
+    dropped_citations: int
 
 
 class CompletionManifest(TypedDict):
@@ -245,7 +252,12 @@ def derive_coverage(
         else "缺少 " + "；".join(missing)
     )
     coverage = TaskCoverage(
-        task_id=assignment.task_id, status=status, met=met, missing=missing, explanation=explanation
+        task_id=assignment.task_id,
+        status=status,
+        met=met,
+        missing=missing,
+        explanation=explanation,
+        dropped_citations=dropped,
     )
     all_gaps = list(dict.fromkeys([*gaps, *analysis.gaps]))
     kept = AgentAnalysis(
@@ -287,15 +299,19 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
     tasks: list[ManifestTask] = []
     for item in assignments:
         report = reports.get(item.role)
+        label = ROLE_LABELS.get(item.role, item.role)
         if report is not None and report.status == "skipped":
             tasks.append(
                 {
                     "task_id": item.task_id,
                     "role": item.role,
+                    "role_label": label,
                     "status": "skipped",
+                    "attempted": False,
                     "met": [],
                     "missing": [requirement.label for requirement in item.required_evidence],
                     "explanation": _SKIP_LABELS.get(report.skip_reason or "", "该角色未运行"),
+                    "dropped_citations": 0,
                 }
             )
             continue
@@ -304,12 +320,15 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
             {
                 "task_id": item.task_id,
                 "role": item.role,
+                "role_label": label,
                 "status": coverage.status if coverage is not None else "blocked",
+                "attempted": coverage is not None,
                 "met": list(coverage.met) if coverage is not None else [],
                 "missing": list(coverage.missing)
                 if coverage is not None
                 else [requirement.label for requirement in item.required_evidence],
                 "explanation": coverage.explanation if coverage is not None else "角色没有产出可核验的发现",
+                "dropped_citations": coverage.dropped_citations if coverage is not None else 0,
             }
         )
     running = [item for item in tasks if item["status"] != "skipped"]
