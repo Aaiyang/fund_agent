@@ -1029,6 +1029,11 @@ class LangGraphAgent:
                 "session_id": session_id,
                 "environment": settings.ENVIRONMENT.value,
                 "debug": settings.DEBUG,
+                # Langfuse 3.x 只从这几个 metadata 键读 trace 级属性；没有它们，
+                # evals 就分不出单档与深度档，两种模式没法同题对照。
+                "langfuse_session_id": session_id,
+                "langfuse_user_id": user_id,
+                "langfuse_tags": [f"strategy:{research_strategy}"],
             },
         }
 
@@ -1146,6 +1151,11 @@ class LangGraphAgent:
                 "session_id": session_id,
                 "environment": settings.ENVIRONMENT.value,
                 "debug": settings.DEBUG,
+                # Langfuse 3.x 只从这几个 metadata 键读 trace 级属性；没有它们，
+                # evals 就分不出单档与深度档，两种模式没法同题对照。
+                "langfuse_session_id": session_id,
+                "langfuse_user_id": user_id,
+                "langfuse_tags": [f"strategy:{research_strategy}"],
             },
         }
         graph = await self._get_graph()

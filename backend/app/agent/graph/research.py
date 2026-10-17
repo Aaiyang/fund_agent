@@ -20,6 +20,7 @@ from app.agent.skills import read_skill
 from app.agent.graph.multi_role_research import AgentCall, build_multi_role_subgraph, evidence_packet, publish_progress
 from app.agent.graph.research_contract import (
     build_assignments,
+    citation_audit,
     completeness_note,
     completion_manifest,
     completion_note,
@@ -606,6 +607,17 @@ def _build(
             # 尾注一律由代码追加。单档没有维度覆盖可推导，但同样要说清「哪块来源压根
             # 没取到」与引用可核对性——这才是它以前真正缺的那块诚实性。
             packet = evidence_packet(state, report_evidence)[0]
+            # 引用可核对性是这轮唯一能量化的诚实性指标，先进日志再进尾注，
+            # 否则真实模型跑完也无从比较两种模式各漏了多少。
+            matched, unknown, uncited = citation_audit(text, packet)
+            logger.info(
+                "research_citation_audit",
+                turn_id=state.turn_id,
+                strategy=task.request.strategy,
+                matched=matched,
+                unknown=unknown,
+                uncited_lines=uncited,
+            )
             note = completeness_note(
                 state,
                 text,
@@ -635,6 +647,7 @@ def _build(
             "research_completed",
             turn_id=state.turn_id,
             intent=intent,
+            strategy=task.request.strategy,
             status=status,
             evidence_count=len(state.evidence),
             gap_count=len(state.gaps),
