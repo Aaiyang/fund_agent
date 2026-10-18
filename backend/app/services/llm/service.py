@@ -86,15 +86,26 @@ def _unwrap_structured(response: Any) -> Any:
     """取出结构化结果；解析失败时抛可分类、可回喂的契约异常.
 
     Raises:
-        LLMContractViolation: 模型回了话但不符合 schema（缺字段、枚举值不对等）。
+        LLMContractViolation: 模型回了话但不符合 schema（缺字段、枚举值不对等），或者
+            压根没有按工具调用返回。
     """
     if not isinstance(response, dict) or "parsed" not in response:
         return response
+    raw = response.get("raw")
+    model_name = getattr(getattr(raw, "response_metadata", {}), "get", lambda *_: None)("model_name") or "unknown"
     error = response.get("parsing_error")
     if error is not None:
-        raw = response.get("raw")
-        model_name = getattr(getattr(raw, "response_metadata", {}), "get", lambda *_: None)("model_name") or "unknown"
         raise LLMContractViolation(str(model_name), str(error))
+    if response["parsed"] is None:
+        # 实测 GLM-5.3 偶尔以普通文本写完（finish_reason=stop、正文上千字）而不是发工具调用，
+        # LangChain 此时只把 parsed 置 None、parsing_error 留空。这不是传输问题，是契约问题：
+        # 报成 ValidationError 会绕过回喂重试，整个维度直接判死。
+        content = getattr(raw, "content", "")
+        chars = len(content) if isinstance(content, str) else 0
+        raise LLMContractViolation(
+            str(model_name),
+            f"模型用 {chars} 字普通文本作答，没有按结构化工具调用返回；请改用工具调用输出全部字段。",
+        )
     return response["parsed"]
 
 

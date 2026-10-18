@@ -159,6 +159,20 @@ def test_structured_parsing_error_becomes_a_classified_contract_violation():
     assert error.value.reason == "contract" and "Field required" in str(error.value)
 
 
+def test_missing_tool_call_is_a_contract_violation_not_a_crash():
+    """模型改用普通文本作答时 parsed 为空：要报成契约问题，让回喂重试有机会接住."""
+    from langchain_core.messages import AIMessage
+
+    from app.services.llm.service import _unwrap_structured
+    from app.services.llm.timeouts import LLMContractViolation
+
+    prose = "这是一段没有走工具调用的回答。" * 30
+    with pytest.raises(LLMContractViolation) as error:
+        _unwrap_structured({"raw": AIMessage(content=prose), "parsed": None, "parsing_error": None})
+    assert error.value.reason == "contract"
+    assert str(len(prose)) in error.value.field_errors, "要留下可诊断的线索：写了多少字"
+
+
 async def test_structured_call_reports_usage_from_the_raw_message(monkeypatch):
     """include_raw 的价值之一：结构化调用的 token 不再是日志里的一串 None."""
     from langchain_core.messages import AIMessage
