@@ -172,9 +172,26 @@ Live-eval metrics under `backend/evals/metrics/prompts/` score the published rep
 `multi_role_dimension_coverage`, `multi_role_incremental_value` (does it say anything a
 single pass over the same evidence would not) and `multi_role_verifiability`.
 Run `python -m scripts.benchmark_multi_role --delay-ms 100 --runs 5` for the controlled
-communication-stage benchmark. The five-run median was 327.25ms for a fixed two-round
-reference scheduler and 226.02ms for the optimized graph. It uses a model substitute
-and excludes evidence collection and final synthesis; it is not a real-provider or
-end-to-end speed claim. Results are saved to `.runtime/multi-role-benchmark.json`.
+communication-stage benchmark. Re-measured against the derived-coverage contract, the
+five-run median was 320.33ms for the fixed reference (five dimensions, always two rounds,
+11 structured calls) and 229.16ms for the optimized graph (6 calls: five dimensions plus
+one clean review, no revisions). It uses a model substitute and excludes evidence
+collection and final synthesis; it is not a real-provider or end-to-end speed claim.
+Results are saved to `.runtime/multi-role-benchmark.json`.
+`python -m scripts.compare_research_modes --yes-live --fund-code <code>` is the real-provider
+counterpart: it drives a running API with the same question in both tiers and reports
+client-visible TTFT, total time, section/citation counts, the code-generated footer and the
+`research_progress`/`research_activity` frame counts. It writes to
+`.runtime/research-mode-comparison.json` and must never run in CI.
+First live baseline (2026-10-18, `glm-5.3-flash`, fund 000001, same question, same session):
+single 38.41s to first character / 75.58s total / 25 citations with 0 unverifiable;
+multi-role 97.5s / 129.98s / 24 citations with 0 unverifiable, 27 `research_progress` frames
+and 0 `research_activity` frames. Both tiers now carry the code-generated source check,
+while only multi-role carries the dimension sections and the scope footer. The activity line
+is dead by construction today: `ProgressChatOpenAI` deliberately keeps only the *length* of
+`reasoning_content`, and a `function_calling` answer streams empty `token` values, so the
+observer at `services/llm/timeouts.py` never receives a fragment. Fixing it needs a product
+decision (show a benign "thought N characters" line, or stop shipping the field), not a patch
+that leaks hidden reasoning to the client.
 Live evaluations must compare latency, complete/partial rates and human-checked
 semantic support with the same model and research targets before tightening budgets.
