@@ -354,11 +354,14 @@ def derive_coverage(
     all_gaps = list(dict.fromkeys([*gaps, *analysis.gaps]))
     kept = AgentAnalysis(
         findings=findings,
-        # 存进信封的缺口截断到 4 条（schema 上限），但状态判定用的是未截断的 all_gaps。
+        # 存进信封的缺口截断到 4 条（schema 上限）；这里只保留模型自述的那几条作披露用。
         gaps=all_gaps[:4],
         addressed_issue_indices=addressed,
     )
-    return kept, coverage, all_gaps
+    # 返回值里的 gaps 只含**服务端判定**的问题（伪引用、未回应审核反馈）。模型如实声明的
+    # 数据局限（例如"系统没有同类排名"）是脚注，不是缺陷：拿它拽状态就会让每一次运行
+    # 都必然 partial——实测五个维度全部「已覆盖」却五个角色都报 partial，就是这个门。
+    return kept, coverage, gaps
 
 
 def _matches_fund(item: dict, code: str) -> bool:

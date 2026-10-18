@@ -491,8 +491,11 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
             if item["status"] != "completed":
                 gaps.append(ROLE_LABELS.get(item["role"], item["role"]) + "：" + item["explanation"])
         for report in selected_reports(state).values():
-            if report.status != "skipped":
-                gaps.extend(ROLE_LABELS.get(report.role, report.role) + "：" + gap for gap in report.analysis.gaps)
+            # 该维度已经完全覆盖时，它自述的数据局限是脚注不是运行缺陷：照常进报告正文，
+            # 但不汇进 state.gaps，否则每次深度研究都必然 partial（实测踩过）。
+            if report.status in {"skipped", "completed"}:
+                continue
+            gaps.extend(ROLE_LABELS.get(report.role, report.role) + "：" + gap for gap in report.analysis.gaps)
         revisions = {item.role: item for item in latest_reports(state, 2)}
         for role in state.agent_revision_roles:
             if role not in revisions or revisions[role].status in {"failed", "skipped"}:

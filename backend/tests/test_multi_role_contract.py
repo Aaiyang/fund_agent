@@ -3,6 +3,7 @@
 import json
 from collections import Counter
 from datetime import timedelta
+from typing import Literal
 
 from annotated_types import MaxLen
 from pydantic import BaseModel
@@ -111,8 +112,12 @@ class TestDerivedCoverage:
             gaps=["近一年净值缺口", "公告仅索引", "行业配置滞后", "经理任职回报缺失"],
         )
         kept, coverage, gaps = derive(analysis)
-        # 服务端加的「已排除」排在模型自述之前，合起来 5 条只留 4 条。
-        assert coverage.status == "completed" and len(kept.gaps) == 4 and len(gaps) == 5
+        # 信封里截到 4 条；服务端判定的缺陷只有伪造那 1 条，它才参与状态判定。
+        assert (
+            coverage.status == "completed"
+            and len(kept.gaps) == 4
+            and gaps == ["有 1 条结论引用了不存在或该角色不可见的证据，已排除"]
+        )
 
     def test_out_of_range_feedback_acknowledgement_is_dropped(self) -> None:
         analysis = AgentAnalysis(findings=[finding(["ev_a", "ev_b"])], addressed_issue_indices=[1])
@@ -199,7 +204,9 @@ class TestAssignmentsDoNotScaleWithObjects:
         assert Counter(item.role for item in build_assignments(comparison_state(codes))).most_common(1)[0][1] == 1
 
 
-def _state_for_report(strategy: str, coverage: TaskCoverage | None = None) -> ResearchGraphState:
+def _state_for_report(
+    strategy: Literal["single", "multi_role"], coverage: TaskCoverage | None = None
+) -> ResearchGraphState:
     """一份能直接喂给 report_context 的最小多角色/单档状态."""
     intent = "fund_research"
     return ResearchGraphState(
@@ -271,6 +278,21 @@ def test_manifest_names_labels_and_reports_dropped_citations() -> None:
     quiet = next(item for item in manifest["tasks"] if item["role"] == "risk")
     assert quiet["attempted"] is False and quiet["status"] == "blocked"
     assert quiet["dropped_citations"] == 0 and quiet["role_label"] == "风险与回撤"
+
+
+def test_model_stated_limitations_do_not_demote_the_dimension() -> None:
+    """真实跑一次才暴露的门：五个维度尾注全「已覆盖」，五个信封却都报 partial.
+
+    模型如实声明的数据局限（系统没有同类排名、公告只有标题）是脚注。把它当缺陷判，
+    每次深度研究都必然 partial——和上一轮"任务数超过 findings 上限"是同一类错误。
+    """
+    analysis = AgentAnalysis(
+        findings=[finding(["ev_a"]), finding(["ev_b"])],
+        gaps=["系统没有同类排名与百分位数据", "公告仅有标题未读正文", "净值未复权不等于总回报", "持仓按季披露有滞后"],
+    )
+    kept, coverage, hard_gaps = derive(analysis)
+    assert coverage.status == "completed" and kept.gaps, "局限本身仍要留在报告里披露"
+    assert hard_gaps == [], "模型自述的局限不能变成服务端缺陷"
 
 
 def test_restored_budget_does_not_restart_the_stage_clock():
