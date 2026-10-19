@@ -35,14 +35,20 @@ investment scope are **not** available, so no role is assigned to them; asking a
 to analyse unavailable data produces confident filler, which is what this feature kept
 doing.
 
-| role | dimension | evidence visible to it |
-| --- | --- | --- |
-| `performance` | 业绩与基准契合 | snapshot period returns, `get_fund_benchmark` (benchmark text, parsed weights, excess return / beta / alpha / tracking error when every component index resolves), common-window comparison, market context |
-| `risk` | 风险与回撤 | NAV metrics including max drawdown **with peak/trough dates**, annualised volatility, Sharpe and Sortino (both `_rf0`: zero risk-free rate), comparison risk fields |
-| `holdings` | 持仓与行业风格 | disclosed top-10 with prior-quarter weights, weight changes, new entries, industry allocation, linked sectors and board quotes |
-| `manager` | 基金经理与团队 | manager periods, merged tenures, and the source page's 任职回报 column as raw text |
-| `disclosure` | 披露与来源质量 | announcement index (titles, dates, major-change hints only — never body text), market events |
-| `portfolio` | 组合适配 | positions and portfolio ledger, event-position links, code-computed allocation scenarios. Created **only** when a position read was attempted, and it runs only when that read succeeded |
+| role | owner (signs the section) | dimension | evidence visible to it |
+| --- | --- | --- | --- |
+| `performance` | 业绩分析师 | 业绩与基准契合 | snapshot period returns, `get_fund_benchmark` (benchmark text, parsed weights, excess return / beta / alpha / tracking error when every component index resolves), common-window comparison, market context |
+| `risk` | 风险分析师 | 风险与回撤 | NAV metrics including max drawdown **with peak/trough dates**, annualised volatility, Sharpe and Sortino (both `_rf0`: zero risk-free rate), comparison risk fields |
+| `holdings` | 持仓与风格分析师 | 持仓与行业风格 | disclosed top-10 with prior-quarter weights, weight changes, new entries, industry allocation, linked sectors and board quotes |
+| `manager` | 基金经理研究员 | 基金经理与团队 | manager periods, merged tenures, and the source page's 任职回报 column as raw text |
+| `disclosure` | 披露与来源质量审查员 | 披露与来源质量 | announcement index (titles, dates, major-change hints only — never body text), market events |
+| `portfolio` | 组合配置顾问 | 组合适配 | positions and portfolio ledger, event-position links, code-computed allocation scenarios. Created **only** when a position read was attempted, and it runs only when that read succeeded |
+
+Both name columns come from one map (`app/agent/roles.py`: `ROLE_OWNERS` / `ROLE_LABELS`),
+and the section heading the synthesizer must copy verbatim is generated there too
+(`### 风险分析师｜风险与回撤`). Mobile's progress line shows the owner, not the dimension.
+Owners are professional titles, never invented people: nothing behind a read-only pipeline
+corresponds to a named staff member.
 
 Slices are deliberately disjoint. A supplement therefore revises only the role whose own
 data changed — for example new announcements reach `disclosure`, not `portfolio`.
@@ -58,13 +64,16 @@ and scenario nodes:
    not grow with the number of funds, because the output caps cannot absorb a task count
    that scales with them.
 2. Roles run in parallel. Each returns findings that cite server-issued `evidence_id`s
-   only. A join barrier waits for every envelope, including explicit skipped or failed ones.
-3. The reviewer receives each role's findings, the server-derived coverage, and
-   `cited_evidence` — bounded excerpts of only the evidence entries some finding actually
-   cites. It no longer re-reads the whole packet: its job is to judge whether a claim is
-   supported by what it cites, not to re-ingest the sources. Feedback points at a role and
-   finding index; unknown claim targets, evidence IDs and fund codes are rejected and
-   disclosed.
+   only, plus one optional `stance`: a professional position on a named topic
+   (`position_size`, `benchmark_fit`, …) with the condition that would flip it. A join
+   barrier waits for every envelope, including explicit skipped or failed ones.
+3. The reviewer receives each role's findings, the server-derived coverage, each role's
+   stance, and `cited_evidence` — bounded excerpts of only the evidence entries some finding
+   actually cites. It no longer re-reads the whole packet: its job is to judge whether a
+   claim is supported by what it cites, not to re-ingest the sources. Feedback points at a
+   role and finding index; unknown claim targets, evidence IDs and fund codes are rejected
+   and disclosed. It is told explicitly that a colleague's stance is not evidence and that
+   it must not raise issues in order to manufacture a disagreement.
 4. At most two independent supplement requests execute in parallel, from a fixed read-only
    whitelist: announcements (10), managers (20), or market events (10 within 168 hours).
    Arguments are constructed by the server and identical calls are deduplicated.
@@ -72,9 +81,15 @@ and scenario nodes:
    whose derived coverage is incomplete revise once. Review failure does not trigger a full
    rewrite. Unnecessary revisions reuse reviewed first-round work. A failed revision keeps
    the useful first-round findings while disclosing the unresolved feedback.
-6. One synthesis receives the machine-checked completion matrix and must include a
-   角色分歧与未解决项 section transcribing every server-computed divergence with its
-   resolved-or-not status. Agent consensus is not independent factual support.
+6. One synthesis receives the machine-checked completion matrix, the divergence list and the
+   server-paired `tensions` (same topic and object, strictly opposite stances from different
+   roles) and must write the report as a team document: one section per dimension under the
+   code-generated owner heading, a 同事立场与分歧 section that transcribes each tension (or
+   states plainly that the dimensions agree and why), an 行动建议与触发条件 table, and a
+   closing 综合结论与分歧 whose every judgment names the owners supporting and opposing it
+   alongside real `[ev_…]` citations. It must also include a 角色分歧与未解决项 section
+   transcribing every divergence with its resolved-or-not status. Agent consensus is not
+   independent factual support, and internal enum keys must not appear in the prose.
 
 The server assigns each envelope's task ID, sender and round. The reducer merges by
 `(run_id, role, round)`, sorts deterministically, accepts identical replay, and rejects
@@ -98,6 +113,13 @@ outputs reached `completed`, every partial had exactly the cap of 4 findings and
 11 of 11 final results were `partial`, and 8 of 12 reviews failed — four of them instantly
 with nothing verified to review. The model is good at citing and bad at bookkeeping, so
 the bookkeeping moved to code.
+
+A `stance` is the one thing a role still self-declares, and it is deliberately inert:
+`derive_coverage` may drop a stance whose own citations are unverifiable, but a stance never
+enters the status expression, the coverage row or the gap list. Wiring it to any of those
+would rebuild the same "always partial" gate that the coverage table created. Tensions are
+paired from stances by code after the fact, so an empty tension list is a legal outcome and
+no run can be failed for lacking a disagreement.
 
 Revision feedback acknowledgement still checks presence and ownership through
 `addressed_issue_indices`; out-of-range acknowledgements are dropped and reported. The
