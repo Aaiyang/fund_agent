@@ -29,6 +29,7 @@ from app.schemas.chat import ChatRequest, Message
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
+    DimensionStance,
     EvidenceFinding,
     ResearchActivity,
     ResearchProgress,
@@ -61,6 +62,7 @@ def multi_workflow(monkeypatch):
         degraded_evidence=None,
         forged_revision=False,
         forge_roles=("risk",),
+        stances={},
     )
     agent = LangGraphAgent()
     agent._graph = agent._build_graph(InMemorySaver())
@@ -196,7 +198,23 @@ def multi_workflow(monkeypatch):
                     limitation="历史披露，不能保证未来表现",
                 )
             )
-        return AgentAnalysis(findings=findings, addressed_issue_indices=data.get("required_issue_indices", []))
+        marker = state.stances.get(role)
+        stance = (
+            DimensionStance(
+                verdict=f"{role}的仓位立场",
+                marker=marker,
+                topic="position_size",
+                condition="回撤收窄则改变",
+                evidence_ids=[findings[0].evidence_ids[0]],
+            )
+            if marker
+            else None
+        )
+        return AgentAnalysis(
+            findings=findings,
+            addressed_issue_indices=data.get("required_issue_indices", []),
+            stance=stance,
+        )
 
     agent.llm_service = SimpleNamespace(get_llm=lambda: None, call=respond)
     return state
@@ -462,6 +480,28 @@ async def test_clean_review_reuses_complete_first_round_without_revision_calls(m
     result = (await saved_state(state)).values["research_result"]
     assert result.status == "completed" and not result.gaps
     assert '"completed_count": 5' in "\n".join(str(message.content) for message in state.reports[-1])
+
+
+async def test_opposite_stances_reach_the_synthesis_as_a_paired_tension(multi_workflow):
+    """立场要活着穿过 derive_coverage，综合上下文里才有可转写的对立.
+
+    单测各自覆盖了配对与成文规则，这条盯的是接缝：stance 在重建信封时被丢掉，
+    上面那些测试照样全绿，而真实报告里永远不会有分歧段。
+    """
+    state = multi_workflow
+    state.clean_review = True
+    state.stances = {"risk": "oppose", "performance": "support"}
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="多角色深度研究")],
+        "research-a",
+        user_id="42",
+        research_followup_id=reference,
+    )
+    context = "\n".join(str(message.content) for message in state.reports[-1])
+    assert '"topic_label": "仓位大小"' in context and '"revised": false' in context
+    assert '"owner_a": "业绩分析师"' in context and '"owner_b": "风险分析师"' in context
+    assert '"heading": "### 风险分析师｜风险与回撤"' in context, "节标题要由代码给到成文节点"
 
 
 async def test_market_supplement_revises_only_the_role_that_receives_new_evidence(multi_workflow):
