@@ -22,7 +22,9 @@ export type ChatResearchProgress = {
   kind: 'research_progress';
   run_id: string;
   stage: 'evidence' | 'analysis' | 'review' | 'supplement' | 'revision' | 'report';
-  role: 'fundamentals' | 'risk' | 'portfolio' | null;
+  /** 与后端 schemas/multi_role_research.ResearchRole 同源的六个维度键；这个类型是手写的，
+   *  OpenAPI 描述不了流式帧，所以后端加维度时这里会静默失配——只能靠类型对齐与测试盯住。 */
+  role: 'performance' | 'risk' | 'holdings' | 'manager' | 'disclosure' | 'portfolio' | null;
   status: 'started' | 'completed' | 'partial' | 'failed' | 'skipped';
 };
 

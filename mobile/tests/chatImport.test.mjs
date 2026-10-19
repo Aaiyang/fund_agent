@@ -186,7 +186,7 @@ test(`a late ${entry} stream stays hidden in the current session`, async () => {
   assert.equal(render('B').review, null);
   assert.equal(render('B').turns.length, 0);
   assert.equal(render('A').review.import_id, 'batch');
-  assert.match(render('A').turns.at(-1).researchProgress, /风险与回撤进行中/);
+  assert.match(render('A').turns.at(-1).researchProgress, /风险分析师 · 进行中/);
   assert.equal(render('A').turns.filter((turn) => turn.role === 'user').length, entry === 'message' ? 1 : 0);
   finish();
   await sending;

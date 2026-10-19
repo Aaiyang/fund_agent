@@ -16,14 +16,14 @@ test('parallel role progress merges in either completion order and isolates runs
   progress = exports.mergeResearchProgress(progress, event('manager', 'started'));
   progress = exports.mergeResearchProgress(progress, event('risk', 'completed'));
   assert.equal(progress.length, 2);
-  assert.match(exports.describeResearchProgress(progress), /基金经理与团队进行中/);
-  assert.match(exports.describeResearchProgress(progress), /风险与回撤已完成/);
+  assert.match(exports.describeResearchProgress(progress), /基金经理研究员 · 进行中/);
+  assert.match(exports.describeResearchProgress(progress), /风险分析师 · 已完成/);
   assert.equal(exports.mergeResearchProgress(progress, event('risk', 'failed', 'another')), progress);
 });
 
 test('review and revision display their public stage without hiding partial failures', () => {
   let progress = exports.mergeResearchProgress([], event('risk', 'failed'));
-  assert.match(exports.describeResearchProgress(progress), /风险与回撤未完成/);
+  assert.match(exports.describeResearchProgress(progress), /风险分析师 · 未完成/);
   progress = exports.mergeResearchProgress(progress, { ...event(null, 'started'), stage: 'review' });
   assert.equal(exports.describeResearchProgress(progress), '交叉审核：进行中');
 });
@@ -71,16 +71,26 @@ test('live outcomes come from the last round per role and ignore in-flight roles
 });
 
 test('the activity line is prefixed with the role and stays single-line', () => {
-  assert.equal(exports.describeResearchActivity({ role: 'risk', text: '先核净值 再算回撤' }), '风险与回撤 · 先核净值 再算回撤');
+  assert.equal(exports.describeResearchActivity({ role: 'risk', text: '先核净值 再算回撤' }), '风险分析师 · 先核净值 再算回撤');
   assert.equal(exports.describeResearchActivity({ role: null, text: '比对三份发现' }), '比对三份发现');
 });
 
 // 后端新增维度而界面还没配中文名时，退化成显示原始 key，不能渲染出 undefined。
 test('an unmapped role degrades to its raw key instead of undefined', () => {
   const progress = exports.mergeResearchProgress([], event('sentiment', 'completed'));
-  assert.equal(exports.describeResearchProgress(progress), '独立分析：sentiment已完成');
+  assert.equal(exports.describeResearchProgress(progress), '独立分析：sentiment · 已完成');
   assert.equal(
     exports.describeResearchActivity({ role: 'sentiment', text: '看资金流' }),
     'sentiment · 看资金流'
   );
+});
+
+// 徽标靠子串决定颜色（agent.tsx 里匹配"失败/未完成"才变红），所以归属人名字不能含这两个词。
+test('owner labels never contain the substrings the badge colours on', () => {
+  const labels = ['performance', 'risk', 'holdings', 'manager', 'disclosure', 'portfolio'].map((role) =>
+    exports.describeResearchActivity({ role, text: 'x' }),
+  );
+  for (const label of labels) {
+    assert.doesNotMatch(label, /失败|未完成/, `${label} 会让徽标误判成红色`);
+  }
 });

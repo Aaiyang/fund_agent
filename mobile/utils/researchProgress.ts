@@ -1,16 +1,17 @@
 import type { ChatResearchProgress } from '@/api/chatStream';
 
 const STAGES = { evidence: '收集研究证据', analysis: '独立分析', review: '交叉审核', supplement: '补充证据', revision: '反馈修订', report: '综合报告' };
-// 与后端 research_contract.ROLE_LABELS 同源：六个专业评价维度各一条。
+// 与后端 app/agent/roles.py 的 ROLE_OWNERS 同源：进度那一行说的是"谁在忙"，不是"哪块数据"。
+// 维度名（业绩与基准契合…）由服务端写在报告正文与尾注里，这里再写一遍只会挤掉一行空间。
 // 用 Record 而不是收窄的联合类型，是为了让后端新增维度时界面退化成显示原始 key，
 // 而不是渲染出 undefined。
 const ROLES: Record<string, string> = {
-  performance: '业绩与基准契合',
-  risk: '风险与回撤',
-  holdings: '持仓与行业风格',
-  manager: '基金经理与团队',
-  disclosure: '披露与来源质量',
-  portfolio: '组合适配',
+  performance: '业绩分析师',
+  risk: '风险分析师',
+  holdings: '持仓与风格分析师',
+  manager: '基金经理研究员',
+  disclosure: '披露与来源质量审查员',
+  portfolio: '组合配置顾问',
 };
 const STATUS = { started: '进行中', completed: '已完成', partial: '有待确认项', failed: '未完成', skipped: '无需执行' };
 /** 后端加了新维度而这里还没配中文名时，退化成显示原始 key，而不是渲染出 undefined。 */
@@ -32,7 +33,10 @@ export function describeResearchProgress(events: ChatResearchProgress[]): string
   if (!latest) return undefined;
   const active = events.filter((item) => item.stage === latest.stage && item.status !== 'skipped');
   if (!active.length) return `${STAGES[latest.stage]}：无需执行`;
-  return `${STAGES[latest.stage]}：${active.map((item) => `${item.role ? roleLabel(item.role) : ''}${STATUS[item.status]}`).join(' · ')}`;
+  // 归属人和状态之间要有分隔：以前直连会拼出"风险分析师已完成"，读起来像一个人名叫这个。
+  return `${STAGES[latest.stage]}：${active
+    .map((item) => [item.role ? roleLabel(item.role) : '', STATUS[item.status]].filter(Boolean).join(' · '))
+    .join(' · ')}`;
 }
 
 /** 一行滚动摘要：角色名 + 服务端截好的思考尾部（已经是单行）。 */
