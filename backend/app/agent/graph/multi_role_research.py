@@ -350,6 +350,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                         "status": item.status,
                         "findings": [finding.model_dump(mode="json") for finding in item.analysis.findings],
                         "gaps": item.analysis.gaps,
+                        "stance": item.analysis.stance.model_dump(mode="json") if item.analysis.stance else None,
                         "coverage": item.coverage.model_dump(mode="json") if item.coverage else None,
                     }
                     for item in latest_reports(state, 1)

@@ -16,6 +16,7 @@ from app.agent.graph.research_contract import (
     completion_note,
     derive_coverage,
     role_evidence,
+    role_tensions,
 )
 from app.agent.prompts.graph import ROLE_BRIEFS
 from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
@@ -372,6 +373,72 @@ def test_stance_citing_unseen_evidence_is_dropped_alone() -> None:
     kept, coverage, gaps = derive(analysis)
     assert kept.stance is None
     assert coverage.status == "partial" and len(kept.findings) == 1 and gaps == []
+
+
+def stance_report(role, marker, topic, verdict, *, fund_code=None, round_number=1):
+    """一个带立场的信封，用于配对测试；结论本身不参与配对，只有 stance 参与."""
+    return AgentReport(
+        run_id="t",
+        role=role,
+        round=round_number,
+        status="completed",
+        analysis=AgentAnalysis(
+            findings=[finding(["ev_a"])],
+            stance=DimensionStance(
+                verdict=verdict, marker=marker, topic=topic, fund_code=fund_code, evidence_ids=["ev_a"]
+            ),
+        ),
+    )
+
+
+def tension_state(*reports):
+    return ResearchGraphState(turn_id="t", fund_codes=["000001"], agent_reports=list(reports))
+
+
+def test_role_tensions_pair_only_strict_opposition() -> None:
+    """对立由代码配对：方向必须严格相反、议题与对象都要相同，同角色不配."""
+    agree = tension_state(
+        stance_report("risk", "oppose", "position_size", "只宜小仓位"),
+        stance_report("performance", "conditional", "position_size", "能扛回撤就可以"),
+    )
+    assert role_tensions(agree) == [], "有条件支持不是反对"
+    cross_object = tension_state(
+        stance_report("risk", "oppose", "position_size", "只宜小仓位", fund_code="000001"),
+        stance_report("performance", "support", "position_size", "可以重仓", fund_code="000002"),
+    )
+    assert role_tensions(cross_object) == [], "不同对象的不算同一场争论"
+    clash = tension_state(
+        stance_report("risk", "oppose", "position_size", "只宜小仓位"),
+        stance_report("performance", "support", "position_size", "可以按纪律加仓"),
+    )
+    rows = role_tensions(clash)
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row["owner_a"], row["owner_b"]) == ("业绩分析师", "风险分析师"), "配对顺序按角色键定，重放必须一致"
+    assert row["topic_label"] == "仓位大小" and row["revised"] is False and row["evidence_ids"] == ["ev_a"]
+    revised = tension_state(
+        stance_report("risk", "oppose", "position_size", "只宜小仓位"),
+        stance_report("performance", "support", "position_size", "可以按纪律加仓"),
+        stance_report("performance", "support", "position_size", "修订后仍支持", round_number=2),
+    )
+    assert role_tensions(revised)[0]["revised"] is True
+
+
+def test_role_tensions_ignore_the_catch_all_topic() -> None:
+    """兜底枚举 other 不参与配对：配出来的对立不可信."""
+    state = tension_state(
+        stance_report("risk", "oppose", "other", "这个维度不看好"),
+        stance_report("performance", "support", "other", "这个维度看好"),
+    )
+    assert role_tensions(state) == []
+
+
+def test_report_structure_requires_an_honest_tension_section() -> None:
+    """立场小节要真的进契约，并写明"空也要说实话"."""
+    context = report_context(_state_for_report("multi_role"))
+    assert "同事立场与分歧" in context and "tensions" in context
+    assert "不得为了显得有团队而编造分歧" in context
+    assert "stance、marker、topic" in context, "枚举原值也要进禁词清单"
 
 
 def test_restored_budget_does_not_restart_the_stage_clock():

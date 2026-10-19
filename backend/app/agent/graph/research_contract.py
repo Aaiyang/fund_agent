@@ -5,13 +5,15 @@
 
 import json
 import re
+from itertools import combinations
 from typing import Literal, TypedDict
 
-from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
+from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, STANCE_TOPIC_LABELS, section_heading
 from app.core.logging import logger
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
+    DimensionStance,
     EvidenceFinding,
     EvidenceRequirement,
     ResearchAssignment,
@@ -55,6 +57,20 @@ class CompletionManifest(TypedDict):
     review_status: Literal["completed", "partial", "failed"] | None
     revision_required_roles: list[ResearchRole]
     revision_status: dict[ResearchRole, ReportStatus]
+
+
+class Tension(TypedDict):
+    """一条跨维度立场对立：同一议题、同一对象、方向相反的两个立场."""
+
+    topic: str
+    topic_label: str
+    fund_code: str | None
+    owner_a: str
+    verdict_a: str
+    owner_b: str
+    verdict_b: str
+    evidence_ids: list[str]
+    revised: bool
 
 
 # 每个角色只看得见自己那块数据：既省 token，也让「这个角色到底看了什么」可核对。
@@ -482,6 +498,48 @@ def divergences(state: ResearchGraphState) -> list[dict]:
         }
         for index, issue in enumerate(state.agent_review.issues)
     ]
+
+
+def role_tensions(state: ResearchGraphState) -> list[Tension]:
+    """同一议题上两个维度的立场对立，由代码配对得出.
+
+    不让模型申报冲突：那要给 ``ReviewIssue`` 加第二个 role 或新增输出数组，最慢的审核调用
+    会更长，而且空字段天然有被填满的压力。这里只看 ``marker`` 严格相反（support×oppose）
+    且议题与对象一致的立场；空列表是合法结果，也不参与任何状态判定。
+    """
+    selected = selected_reports(state)
+    revised = {
+        item.role
+        for item in state.agent_reports
+        if item.run_id == state.turn_id and item.round == 2 and item.status in {"completed", "partial"}
+    }
+    entries: list[tuple[ResearchRole, DimensionStance]] = sorted(
+        [(role, report.analysis.stance) for role, report in selected.items() if report.analysis.stance is not None],
+        key=lambda item: item[0],
+    )
+    tensions: list[Tension] = []
+    for (role_a, stance_a), (role_b, stance_b) in combinations(entries, 2):
+        if stance_a.topic == "other" or stance_a.topic != stance_b.topic:
+            continue
+        if stance_a.fund_code != stance_b.fund_code:
+            continue
+        if {stance_a.marker, stance_b.marker} != {"support", "oppose"}:
+            continue
+        tensions.append(
+            {
+                "topic": stance_a.topic,
+                "topic_label": STANCE_TOPIC_LABELS.get(stance_a.topic, stance_a.topic),
+                "fund_code": stance_a.fund_code,
+                "owner_a": ROLE_OWNERS[role_a],
+                "verdict_a": stance_a.verdict,
+                "owner_b": ROLE_OWNERS[role_b],
+                "verdict_b": stance_b.verdict,
+                "evidence_ids": sorted({*stance_a.evidence_ids, *stance_b.evidence_ids}),
+                # 立场没有被"回应"这个动作，只有进没进过修订轮；报告据此说它是否被处理过。
+                "revised": role_a in revised or role_b in revised,
+            }
+        )
+    return tensions
 
 
 def completion_note(state: ResearchGraphState) -> str:

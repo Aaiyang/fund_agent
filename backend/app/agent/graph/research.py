@@ -25,6 +25,7 @@ from app.agent.graph.research_contract import (
     completion_manifest,
     completion_note,
     divergences,
+    role_tensions,
 )
 from app.analytics.allocation import allocation_scenario, portfolio_scenario_inputs
 from app.core.logging import logger
@@ -215,6 +216,7 @@ def report_context(state: ResearchGraphState) -> str:
         payload["agent_review"] = state.agent_review.model_dump(mode="json") if state.agent_review else None
         payload["completion"] = completion_manifest(state)
         payload["divergences"] = divergences(state)
+        payload["tensions"] = role_tensions(state)
     return (
         "\n# 服务端研究工作流（开发者维护的内置流程）\n"
         + instructions
