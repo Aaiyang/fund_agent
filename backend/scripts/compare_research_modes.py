@@ -32,6 +32,8 @@ SECTION = re.compile(r"^#{2,3} +\S", re.MULTILINE)
 OWNER_HEADING = re.compile(
     r"^### (?:业绩分析师|风险分析师|持仓与风格分析师|基金经理研究员|披露与来源质量审查员|组合配置顾问)｜", re.MULTILINE
 )
+# 围栏里是图表/持仓卡片的 JSON，"type":"holdings" 是协议字段，不算漏进正文的内部键名。
+FENCE = re.compile(r"```[\s\S]*?```")
 INTERNAL_KEYS = re.compile(r"\b(?:performance|risk|holdings|manager|disclosure|portfolio|finding_index|task_id)\b")
 MARKERS = {
     "范围核对": "**研究范围核对**",
@@ -76,7 +78,7 @@ def measure(text: str, frames: dict[str, int]) -> dict[str, Any]:
         "chars": len(text),
         "sections": len(SECTION.findall(text)),
         "owner_sections": len(OWNER_HEADING.findall(text)),
-        "internal_key_hits": len(INTERNAL_KEYS.findall(text)),
+        "internal_key_hits": len(INTERNAL_KEYS.findall(FENCE.sub("", text))),
         "chart_blocks": text.count("```fund-chart"),
         "citations": len(CITATION.findall(text)),
         "audit_matched": int(audited.group(1)) if audited else None,
