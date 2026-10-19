@@ -242,6 +242,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         publish_progress(state, stage, "started", role)
         started = time.monotonic()
         input_chars = 0
+        gaps: list[str] = []  # 失败路径也要能记日志：未进 try 成功分支时它得是个空清单而不是未绑定
         try:
             if assignment is None:
                 # 上面已经按 not_applicable 跳过；走到这里说明跳过判定和任务清单不一致。
@@ -310,6 +311,9 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
             coverage_status=report.coverage.status if report.coverage is not None else None,
             met_count=len(report.coverage.met) if report.coverage is not None else 0,
             missing_count=len(report.coverage.missing) if report.coverage is not None else 0,
+            # 覆盖 completed 却仍然 partial 时，只有这两项能说明原因（伪引用条数 + 服务端缺陷清单）。
+            dropped_citations=report.coverage.dropped_citations if report.coverage is not None else 0,
+            hard_gaps=gaps,
         )
         return {"agent_reports": [report]}
 
