@@ -53,7 +53,7 @@ from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后
 # v24：基金横向对比与共同净值窗口计算，保留数据不足及费用边界
 # v25：用户显式启动多角色研究与任务内证据通信边界
 # v26：图内内联提示词收进 prompts.graph，输出契约改由 schema 生成（单一来源）
-# v27：多角色报告按归属人成文（节标题、综合结论署名），内部键名禁止漏进正文
+# v27：多角色报告按归属人成文（节标题、综合结论署名），内部键名禁止漏进正文；角色输出加 stance 立场
 _GRAPH_PROMPT_KEYS = (
     ROLE_RULES,
     tuple(ROLE_BRIEFS.values()),

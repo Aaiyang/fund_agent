@@ -8,6 +8,7 @@ import re
 from typing import Literal, TypedDict
 
 from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
+from app.core.logging import logger
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
@@ -351,11 +352,23 @@ def derive_coverage(
         dropped_citations=dropped,
     )
     all_gaps = list(dict.fromkeys([*gaps, *analysis.gaps]))
+    stance = analysis.stance
+    if stance is not None and not set(stance.evidence_ids) <= set(evidence):
+        # 立场引了不存在的证据，丢掉这个观点就够了：不丢发现，更不碰状态。
+        # 覆盖与状态只看服务端判定，把自报的东西接回去就是第三扇「必然 partial」的门。
+        logger.info(
+            "research_stance_dropped",
+            task_id=assignment.task_id,
+            role=assignment.role,
+            cited=len(stance.evidence_ids),
+        )
+        stance = None
     kept = AgentAnalysis(
         findings=findings,
         # 存进信封的缺口截断到 4 条（schema 上限）；这里只保留模型自述的那几条作披露用。
         gaps=all_gaps[:4],
         addressed_issue_indices=addressed,
+        stance=stance,
     )
     # 返回值里的 gaps 只含**服务端判定**的问题（伪引用、未回应审核反馈）。模型如实声明的
     # 数据局限（例如"系统没有同类排名"）是脚注，不是缺陷：拿它拽状态就会让每一次运行

@@ -50,7 +50,9 @@ def _describe(annotation: object, depth: int) -> str:
         return "，".join(part for part in parts if part)
     if origin is Literal:
         return "只能是 " + " | ".join(str(value) for value in get_args(annotation))
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:
+        # `X | None` 写出来的是 types.UnionType 而不是 typing.Union，两个都要认：
+        # 只认后者时嵌套模型不展开，契约里只剩一行类型名，模型根本不知道要填什么字段。
         members = [arg for arg in get_args(annotation) if arg is not type(None)]
         joined = " 或 ".join(_describe(member, depth) for member in members)
         return joined + ("，可为 null" if len(members) != len(get_args(annotation)) else "")

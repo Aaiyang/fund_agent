@@ -22,6 +22,7 @@ from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
+    DimensionStance,
     EvidenceFinding,
     EvidenceRequirement,
     ResearchAssignment,
@@ -333,6 +334,44 @@ def test_model_stated_limitations_do_not_demote_the_dimension() -> None:
     kept, coverage, hard_gaps = derive(analysis)
     assert coverage.status == "completed" and kept.gaps, "局限本身仍要留在报告里披露"
     assert hard_gaps == [], "模型自述的局限不能变成服务端缺陷"
+
+
+def test_stance_never_demotes_the_dimension() -> None:
+    """立场只是署名与对照的素材：带对立立场和不带立场，状态判定必须逐字段相同.
+
+    这是本项目栽过两次的坑（任务数超过 findings 上限、把自述局限当缺陷）。任何由模型
+    自己填的东西一旦参与状态，就会变成一扇每次运行都过不去的门。
+    """
+    base = AgentAnalysis(findings=[finding(["ev_a"]), finding(["ev_b"])])
+    opposed = base.model_copy(
+        update={
+            "stance": DimensionStance(
+                verdict="按这个回撤水平只宜当卫星仓位",
+                marker="oppose",
+                topic="position_size",
+                condition="回撤收窄到三成内则转为支持",
+                evidence_ids=["ev_a"],
+            )
+        }
+    )
+    kept_plain, coverage_plain, gaps_plain = derive(base)
+    kept, coverage, gaps = derive(opposed)
+    assert kept.stance is not None and kept.stance.marker == "oppose", "立场要活着进信封"
+    assert coverage == coverage_plain and gaps == gaps_plain, "立场不得改变覆盖结论或服务端缺陷"
+    assert kept.findings == base.findings and kept.gaps == base.gaps
+
+
+def test_stance_citing_unseen_evidence_is_dropped_alone() -> None:
+    """立场引了不存在的证据：只丢这个观点，发现与状态都不受牵连."""
+    analysis = AgentAnalysis(
+        findings=[finding(["ev_a"])],
+        stance=DimensionStance(
+            verdict="基准读不懂就别谈超额", marker="support", topic="benchmark_fit", evidence_ids=["ev_zzz"]
+        ),
+    )
+    kept, coverage, gaps = derive(analysis)
+    assert kept.stance is None
+    assert coverage.status == "partial" and len(kept.findings) == 1 and gaps == []
 
 
 def test_restored_budget_does_not_restart_the_stage_clock():

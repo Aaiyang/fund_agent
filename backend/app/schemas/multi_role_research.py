@@ -66,6 +66,34 @@ class EvidenceFinding(BaseModel):
     limitation: str = Field(max_length=500)
 
 
+class DimensionStance(BaseModel):
+    """本维度对某个决策议题的专业立场：一个可以被同事的证据翻盘的判断.
+
+    立场不是覆盖声明——它永不参与状态判定，只用于成文署名与跨维度对立配对。
+    ``topic`` 用枚举而不是自由文本，因为"同一议题上方向相反"要能由代码配出来；
+    自由文本的对象名基本配不中。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    verdict: str = Field(min_length=1, max_length=120)
+    marker: Literal["support", "oppose", "conditional", "neutral"] = "neutral"
+    topic: Literal[
+        "short_term_holding",
+        "long_term_holding",
+        "position_size",
+        "entry_timing",
+        "benchmark_fit",
+        "risk_budget",
+        "information_quality",
+        "team_stability",
+        "other",
+    ] = "other"
+    # 立场在什么条件下翻转；marker=neutral 时它就是"证据撑不起判断"的说明。
+    condition: str = Field(default="", max_length=120)
+    fund_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    evidence_ids: list[EvidenceId] = Field(default_factory=list, max_length=3)
+
+
 class AgentAnalysis(BaseModel):
     """Model output; the server adds the sender, task, round and coverage."""
 
@@ -75,6 +103,7 @@ class AgentAnalysis(BaseModel):
     addressed_issue_indices: list[Annotated[int, Field(ge=0, le=5, strict=True)]] = Field(
         default_factory=list, max_length=6
     )
+    stance: DimensionStance | None = None
 
 
 class AgentReport(BaseModel):
