@@ -348,7 +348,10 @@ def derive_coverage(
     addressed = sorted(set(analysis.addressed_issue_indices) & set(issue_indices))
     if set(issue_indices) - set(addressed):
         gaps.append("尚未回应全部分配给该角色的审核反馈")
-    if set(analysis.addressed_issue_indices) - set(issue_indices):
+    if issue_indices and set(analysis.addressed_issue_indices) - set(issue_indices):
+        # 只在修订轮判"越界"：首轮根本没有审核反馈可回应，而 addressed_issue_indices 就写在
+        # 同一份输出契约里，模型会顺手填上——实测 2026-10-19 那一轮 5 个维度里 3 个因此
+        # 被判 partial（覆盖结论明明是 completed）。首轮填的序号一律忽略，不算缺陷。
         gaps.append("越界的审核反馈确认已排除")
 
     status = "blocked" if not findings else "completed" if not missing else "partial"

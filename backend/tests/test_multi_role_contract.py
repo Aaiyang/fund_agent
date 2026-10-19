@@ -130,6 +130,18 @@ class TestDerivedCoverage:
         assert kept.addressed_issue_indices == []
         assert any("越界" in gap for gap in gaps) and any("尚未回应" in gap for gap in gaps)
 
+    def test_first_round_acknowledgements_are_ignored_not_counted(self) -> None:
+        """首轮没有反馈可回应：模型顺手填的序号要忽略，不能算成服务端缺陷.
+
+        实测 2026-10-19 那一轮 5 个维度里 3 个因此被判 partial，而覆盖结论全是 completed——
+        `addressed_issue_indices` 和发现写在同一份契约里，模型就会填。这是第三扇"必然 partial"
+        的门，和前两次（findings 上限、自述局限）同一类。
+        """
+        analysis = AgentAnalysis(findings=[finding(["ev_a", "ev_b"])], addressed_issue_indices=[0, 1])
+        kept, coverage, gaps = derive(analysis)  # issues 为空 = 首轮
+        assert kept.addressed_issue_indices == []
+        assert gaps == [] and coverage.status == "completed"
+
     def test_global_scope_accepts_any_hit_but_still_requires_citation(self) -> None:
         assignment = ResearchAssignment(
             task_id="risk",
