@@ -17,6 +17,8 @@ from app.agent.graph.research_contract import (
     derive_coverage,
     role_evidence,
 )
+from app.agent.prompts.graph import ROLE_BRIEFS
+from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
@@ -24,6 +26,7 @@ from app.schemas.multi_role_research import (
     EvidenceRequirement,
     ResearchAssignment,
     ResearchReview,
+    ResearchRole,
     TaskCoverage,
 )
 from app.schemas.research import ResearchEvidence, ResearchGraphState, ResearchRequest, ResearchTask
@@ -253,10 +256,44 @@ def test_multi_role_report_is_organised_by_dimension_then_synthesis() -> None:
     assert "role_label" in context and "dropped_citations" in context
 
 
+def test_report_sections_are_signed_and_free_of_internal_keys() -> None:
+    """每一节由谁写的要能看出来，内部键名不能漏进用户读的正文."""
+    context = report_context(_state_for_report("multi_role"))
+    assert "节标题逐字复制 completion[].heading" in context
+    assert "### 风险分析师｜风险与回撤" in context, "示例抬头要真的出现在契约里，模型才有可抄的形状"
+    assert "指称某个维度或同伴时只能用它的中文归属名" in context
+    for key in ("performance", "finding_index", "task_id", "partial"):
+        assert key in context, f"禁词清单里必须点名 {key}"
+    # 综合段的归属写法：署名不是证据。
+    assert "同事的署名不是证据" in context
+
+
+def test_report_structure_restores_the_action_table_and_chart() -> None:
+    """多角色曾经比单档更不可执行：行动表与走势图引用都丢了，这里钉回来."""
+    context = report_context(_state_for_report("multi_role"))
+    assert "行动建议与触发条件" in context
+    assert "| --- |" in context, "移动端只认带分隔行的表格语法"
+    assert "触发条件" in context and "复核指标" in context
+    assert "chart_code_block" in context and "本轮无图表引用" in context
+
+
+def test_role_vocabulary_has_one_source() -> None:
+    """维度名、归属人、简报开头的职务名必须是同一套键与同一批字."""
+    from typing import get_args
+
+    roles = set(get_args(ResearchRole))
+    assert set(ROLE_LABELS) == roles and set(ROLE_OWNERS) == roles and set(ROLE_BRIEFS) == roles
+    assert len(set(ROLE_LABELS.values())) == len(roles) and len(set(ROLE_OWNERS.values())) == len(roles)
+    for role, brief in ROLE_BRIEFS.items():
+        assert brief.startswith(ROLE_OWNERS[role]), f"{role} 的简报开头与归属人词表漂移了"
+    assert section_heading("risk") == f"### {ROLE_OWNERS['risk']}｜{ROLE_LABELS['risk']}"
+
+
 def test_single_mode_report_keeps_its_own_structure() -> None:
     """维度分节只属于多角色：把新排版漏进单档会连带改掉普通研究的结论先行."""
     context = report_context(_state_for_report("single"))
     assert "综合结论与分歧" not in context and "每个**实际运行过的**维度单独一节" not in context
+    assert "行动建议与触发条件" not in context and "｜" not in context
     assert "本轮已由代码完成有界取证" in context
 
 
@@ -274,10 +311,13 @@ def test_manifest_names_labels_and_reports_dropped_citations() -> None:
     manifest = completion_manifest(_state_for_report("multi_role", coverage))
     task = next(item for item in manifest["tasks"] if item["role"] == "manager")
     assert task["role_label"] == "基金经理与团队"
+    assert task["role_owner"] == "基金经理研究员"
+    assert task["heading"] == "### 基金经理研究员｜基金经理与团队"
     assert task["attempted"] is True and task["dropped_citations"] == 2
     quiet = next(item for item in manifest["tasks"] if item["role"] == "risk")
     assert quiet["attempted"] is False and quiet["status"] == "blocked"
     assert quiet["dropped_citations"] == 0 and quiet["role_label"] == "风险与回撤"
+    assert quiet["heading"] == "### 风险分析师｜风险与回撤", "没跑成的维度也要有归属，否则那一节没人认领"
 
 
 def test_model_stated_limitations_do_not_demote_the_dimension() -> None:

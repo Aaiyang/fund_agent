@@ -27,11 +27,17 @@ from app.utils.auth import create_access_token
 CITATION = re.compile(r"\[ev_[0-9a-f]{8,}\]")
 AUDITED = re.compile(r"引用核对：(\d+) 处可核对、(\d+) 处")
 SECTION = re.compile(r"^#{2,3} +\S", re.MULTILINE)
+# 归属人抬头由代码给（completion[].heading），所以这里能直接数出"有几节真的署了名"。
+OWNER_HEADING = re.compile(
+    r"^### (?:业绩分析师|风险分析师|持仓与风格分析师|基金经理研究员|披露与来源质量审查员|组合配置顾问)｜", re.MULTILINE
+)
+INTERNAL_KEYS = re.compile(r"\b(?:performance|risk|holdings|manager|disclosure|portfolio|finding_index|task_id)\b")
 MARKERS = {
     "范围核对": "**研究范围核对**",
     "来源核对": "**数据来源核对**",
     "综合结论": "综合结论与分歧",
     "分歧小节": "角色分歧与未解决项",
+    "行动表": "行动建议与触发条件",
 }
 
 
@@ -68,6 +74,9 @@ def measure(text: str, frames: dict[str, int]) -> dict[str, Any]:
     return {
         "chars": len(text),
         "sections": len(SECTION.findall(text)),
+        "owner_sections": len(OWNER_HEADING.findall(text)),
+        "internal_key_hits": len(INTERNAL_KEYS.findall(text)),
+        "chart_blocks": text.count("```fund-chart"),
         "citations": len(CITATION.findall(text)),
         "audit_matched": int(audited.group(1)) if audited else None,
         "audit_unknown": int(audited.group(2)) if audited else None,
@@ -132,7 +141,20 @@ async def main() -> None:
             results.append(await run_once(client, token, args, strategy))
 
     table = Table(title="研究档位对照（真实模型，客户端可见口径）")
-    for column in ("档位", "首字(s)", "总耗时(s)", "正文字符", "小节", "引用", "核对到/未知", "进度帧", "活动帧"):
+    for column in (
+        "档位",
+        "首字(s)",
+        "总耗时(s)",
+        "正文字符",
+        "小节",
+        "署名节",
+        "漏键名",
+        "图表块",
+        "引用",
+        "核对到/未知",
+        "进度帧",
+        "活动帧",
+    ):
         table.add_column(column, justify="right")
     for item in results:
         table.add_row(
@@ -141,6 +163,9 @@ async def main() -> None:
             str(item["total_seconds"]),
             str(item["chars"]),
             str(item["sections"]),
+            str(item["owner_sections"]),
+            str(item["internal_key_hits"]),
+            str(item["chart_blocks"]),
             str(item["citations"]),
             f"{item['audit_matched']}/{item['audit_unknown']}",
             str(item["progress_frames"]),

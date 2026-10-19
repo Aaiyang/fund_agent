@@ -4,6 +4,7 @@ import hashlib
 import os
 from typing import Optional
 
+from app.agent.roles import ROLE_OWNERS
 from app.core.config import settings
 
 _PROMPTS_DIR = os.path.dirname(__file__)
@@ -52,9 +53,11 @@ from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后
 # v24：基金横向对比与共同净值窗口计算，保留数据不足及费用边界
 # v25：用户显式启动多角色研究与任务内证据通信边界
 # v26：图内内联提示词收进 prompts.graph，输出契约改由 schema 生成（单一来源）
+# v27：多角色报告按归属人成文（节标题、综合结论署名），内部键名禁止漏进正文
 _GRAPH_PROMPT_KEYS = (
     ROLE_RULES,
     tuple(ROLE_BRIEFS.values()),
+    tuple(ROLE_OWNERS.values()),
     ROLE_REVISION_RULES,
     REVIEW_RULES,
     REPORT_CONTINUATION,
@@ -66,7 +69,7 @@ _GRAPH_PROMPT_KEYS = (
 
 # 后缀是内联提示词与 schema 契约的内容指纹：改一个字就换指纹。以前只有 system.md
 # 记版本，图里那几段中文改了多少轮都没人账，KV 前缀失效只能靠手动升版本号。
-SYSTEM_PROMPT_VERSION = "fund-agent-v26+" + hashlib.sha256(repr(_GRAPH_PROMPT_KEYS).encode()).hexdigest()[:8]
+SYSTEM_PROMPT_VERSION = "fund-agent-v27+" + hashlib.sha256(repr(_GRAPH_PROMPT_KEYS).encode()).hexdigest()[:8]
 
 
 def load_prompt_file(filename: str) -> str:

@@ -1,9 +1,13 @@
-"""Deterministic per-role assignments; coverage is derived from real citations, not self-reported."""
+"""Deterministic per-role assignments; coverage is derived from real citations, not self-reported.
+
+维度名与归属人词表在 ``app.agent.roles``，那里是唯一来源。
+"""
 
 import json
 import re
 from typing import Literal, TypedDict
 
+from app.agent.roles import ROLE_LABELS, ROLE_OWNERS, section_heading
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
@@ -24,11 +28,15 @@ class ManifestTask(TypedDict):
 
     `role_label` 与 `dropped_citations` 是给成文节点用的：它写某一节时要能直接引用
     中文名和「有几条结论因引用无法核对被排除」，而不是从缺口文字里猜或干脆不提。
+    `role_owner` 与 `heading` 同样是代码给的：谁署名这一节、节标题长什么样，都不该由
+    模型拼——它拼出来的标题会漏掉归属人，或者把内部键名写进正文。
     """
 
     task_id: str
     role: ResearchRole
     role_label: str
+    role_owner: str
+    heading: str
     status: CoverageStatus
     attempted: bool
     met: list[str]
@@ -62,15 +70,6 @@ _ROLE_TOOLS: dict[ResearchRole, frozenset[str]] = {
     "portfolio": frozenset(
         {"get_portfolio", "get_portfolio_snapshot", "get_positions", "identify_event_portfolio_links"}
     ),
-}
-
-ROLE_LABELS: dict[ResearchRole, str] = {
-    "performance": "业绩与基准契合",
-    "risk": "风险与回撤",
-    "holdings": "持仓与行业风格",
-    "manager": "基金经理与团队",
-    "disclosure": "披露与来源质量",
-    "portfolio": "组合适配",
 }
 
 _SKIP_LABELS = {
@@ -395,12 +394,16 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
     for item in assignments:
         report = reports.get(item.role)
         label = ROLE_LABELS.get(item.role, item.role)
+        owner = ROLE_OWNERS[item.role]
+        heading = section_heading(item.role)
         if report is not None and report.status == "skipped":
             tasks.append(
                 {
                     "task_id": item.task_id,
                     "role": item.role,
                     "role_label": label,
+                    "role_owner": owner,
+                    "heading": heading,
                     "status": "skipped",
                     "attempted": False,
                     "met": [],
@@ -416,6 +419,8 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
                 "task_id": item.task_id,
                 "role": item.role,
                 "role_label": label,
+                "role_owner": owner,
+                "heading": heading,
                 "status": coverage.status if coverage is not None else "blocked",
                 "attempted": coverage is not None,
                 "met": list(coverage.met) if coverage is not None else [],
