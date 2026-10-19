@@ -15,6 +15,7 @@ import re
 import sys
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -115,12 +116,13 @@ async def run_once(client: httpx.AsyncClient, token: str, args: argparse.Namespa
                 parts.append(content)
     text = "".join(parts)
     elapsed = time.perf_counter() - started
-    return {
+    metrics = {
         "strategy": strategy,
         "ttft_seconds": round((first_content_at or started) - started, 2),
         "total_seconds": round(elapsed, 2),
         **measure(text, frames),
     }
+    return metrics, text
 
 
 async def main() -> None:
@@ -138,7 +140,10 @@ async def main() -> None:
         for strategy in args.strategies:
             console = Console()
             console.print(f"[cyan]running[/cyan] strategy={strategy} funds={','.join(args.fund_codes)}")
-            results.append(await run_once(client, token, args, strategy))
+            metrics, text = await run_once(client, token, args, strategy)
+            results.append(metrics)
+            # 指标只能说明形状对不对；"像不像一个团队"要有人读一遍原文。
+            Path(f"{args.out}.{strategy}.md").write_text(text, encoding="utf-8")
 
     table = Table(title="研究档位对照（真实模型，客户端可见口径）")
     for column in (
