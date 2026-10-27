@@ -31,12 +31,14 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
-  # Pyright: static type checker (runs in project venv via uv)
+  # Pyright: static type checker.
+  # uv is not a hard requirement — a missing binary used to make this hook die with
+  # exit 127, which silently disabled the type gate for anyone without uv installed.
   - repo: local
     hooks:
       - id: pyright
         name: pyright
-        entry: bash -c "cd backend && uv run pyright"
+        entry: bash -c "cd backend && if command -v uv >/dev/null 2>&1; then uv run pyright; elif [ -x .venv/bin/pyright ]; then .venv/bin/pyright; elif [ -x .venv/Scripts/pyright.exe ]; then .venv/Scripts/pyright.exe; else echo pyright-unavailable-no-uv-and-no-venv-binary && exit 1; fi"
         language: system
         types: [python]
         pass_filenames: false

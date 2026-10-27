@@ -154,6 +154,11 @@ stubPath = "typings"
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 
+# Without these, a bare `pyright` run resolves nothing and reports ~400 bogus
+# reportMissingImports; only `uv run pyright` picked the environment up.
+venvPath = "."
+venv = ".venv"
+
 # Tightened from defaults — cheap real-bug catchers
 reportDuplicateImport = "error"
 reportInvalidTypeVarUse = "error"
