@@ -152,18 +152,18 @@ export function PersonaEditor({ group, snapshot, currentRevision, onClose, onSav
   </Modal>;
 }
 const styles = StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end' },
-    sheet: { maxHeight: '90%', width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: theme.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: theme.border, alignSelf: 'center', marginTop: 10 },
+    backdrop: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+    sheet: { maxHeight: '90%', width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: theme.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: theme.border },
+    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, alignSelf: 'center', marginTop: 10 },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme.border },
     title: { fontSize: 19, fontWeight: '700', color: theme.text, marginBottom: 4 },
     content: { padding: 20 }, section: { marginBottom: 24 },
     label: { fontSize: 15, color: theme.text, fontWeight: '600', marginBottom: 6 },
     hint: { fontSize: 12, color: theme.textMuted, lineHeight: 19 },
     choice: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: theme.border, marginTop: 8 },
-    selected: { backgroundColor: '#EFF6FF', borderColor: '#93B5FA' },
+    selected: { backgroundColor: theme.primarySoft, borderColor: theme.primary },
     choiceText: { flex: 1, paddingRight: 8 }, choiceTitle: { fontSize: 14, fontWeight: '600', color: theme.text, marginBottom: 3 },
-    radio: { width: 20, height: 20, borderWidth: 1.5, borderColor: '#CBD5E1', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+    radio: { width: 20, height: 20, borderWidth: 1.5, borderColor: theme.borderStrong, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
     radioSelected: { borderColor: theme.primary }, dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.primary },
     unset: { minHeight: 44, justifyContent: 'center', alignItems: 'flex-start' },
     tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 },
@@ -174,6 +174,6 @@ const styles = StyleSheet.create({
     close: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
     closeText: { fontSize: 26, color: theme.textMuted }, remove: { color: theme.danger, fontSize: 12 },
     footer: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border },
-    actions: { flexDirection: 'row', gap: 10 }, warning: { backgroundColor: '#FFFBEB', padding: 12, borderRadius: 10, marginBottom: 12 },
+    actions: { flexDirection: 'row', gap: 10 }, warning: { backgroundColor: theme.warningSoft, padding: 12, borderRadius: 10, marginBottom: 12 },
     warningText: { fontSize: 12, color: theme.warning, lineHeight: 20, marginBottom: 8 }, error: { color: theme.danger, fontSize: 12, lineHeight: 20, marginBottom: 10 },
 });

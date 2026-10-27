@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "持见",
+    "title": "Fund Agent",
     "description": "A production-ready FastAPI template with LangGraph and Langfuse integration",
     "version": "1.0.0"
   },
@@ -525,6 +525,96 @@
         ]
       }
     },
+    "/api/v1/chatbot/fund-selection/decision/stream": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Choose Analysis Fund Stream",
+        "description": "选择后直接从原检查点流式输出报告，复用普通聊天的过滤与图表校验.",
+        "operationId": "choose_analysis_fund_stream_api_v1_chatbot_fund_selection_decision_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FundSelectionDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chatbot/continue/stream": {
+      "post": {
+        "tags": [
+          "Chatbot"
+        ],
+        "summary": "Continue Agent Run Stream",
+        "description": "原任务继续也流式输出，不重选基金、不新增问题、不重复取证.",
+        "operationId": "continue_agent_run_stream_api_v1_chatbot_continue_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentContinueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chatbot/fund-selection/decision": {
       "post": {
         "tags": [
@@ -1003,6 +1093,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FundNavRefreshResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/funds/compare/nav": {
+      "post": {
+        "tags": [
+          "Funds"
+        ],
+        "summary": "Get Fund Comparison Nav",
+        "description": "按报告固定的共同窗口重取 2–3 只基金的对齐归一序列，供对比曲线使用.",
+        "operationId": "get_fund_comparison_nav_api_v1_funds_compare_nav_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FundComparisonSeriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundComparisonSeriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -4930,7 +5067,7 @@
             "anyOf": [
               {
                 "type": "integer",
-                "minimum": 1.0
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -4950,8 +5087,8 @@
           },
           "amount": {
             "type": "number",
-            "maximum": 1000000000.0,
-            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000,
+            "exclusiveMinimum": 0,
             "title": "Amount"
           }
         },
@@ -5011,7 +5148,7 @@
           },
           "amount": {
             "type": "number",
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Amount"
           },
           "frequency": {
@@ -5027,8 +5164,8 @@
           },
           "run_day": {
             "type": "integer",
-            "maximum": 31.0,
-            "minimum": 1.0,
+            "maximum": 31,
+            "minimum": 1,
             "title": "Run Day",
             "description": "每周几（1-7）或每月几号（1-31）",
             "default": 1
@@ -5170,7 +5307,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
@@ -5199,8 +5336,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 31.0,
-                "minimum": 1.0
+                "maximum": 31,
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -5456,13 +5593,25 @@
             "anyOf": [
               {
                 "type": "integer",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Holding Account Id"
+          },
+          "research_followup_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Followup Id"
           },
           "research_fund_codes": {
             "items": {
@@ -5725,6 +5874,327 @@
         ],
         "title": "CurrentUserResponse",
         "description": "GET /auth/me 的响应模型（spec 3.1 获取当前用户信息）.\n\nAttributes:\n    id: 用户 ID\n    email: 用户邮箱\n    username: 可选的显示名\n    created_at: 账号创建时间"
+      },
+      "FundComparisonChartFund": {
+        "properties": {
+          "fund_code": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "title": "Fund Code"
+          },
+          "window_change_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Change Ratio"
+          },
+          "observed_max_drawdown_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Max Drawdown Ratio"
+          },
+          "annualized_nav_volatility_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualized Nav Volatility Ratio"
+          },
+          "aligned_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Aligned Count",
+            "default": 0
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fund_code"
+        ],
+        "title": "FundComparisonChartFund",
+        "description": "报告时点的单基金对比指标；客户端数字表以它为准."
+      },
+      "FundComparisonChartRef": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "fund_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 2,
+            "title": "Fund Codes"
+          },
+          "common_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Common From"
+          },
+          "common_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Common To"
+          },
+          "aligned_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Aligned Count",
+            "default": 0
+          },
+          "funds": {
+            "items": {
+              "$ref": "#/components/schemas/FundComparisonChartFund"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 2,
+            "title": "Funds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fund_codes",
+          "common_from",
+          "common_to",
+          "funds"
+        ],
+        "title": "FundComparisonChartRef",
+        "description": "多基金对比图的固定共同窗口与报告时点指标；序列由客户端按此窗口另取."
+      },
+      "FundComparisonPeriodReturns": {
+        "properties": {
+          "return_1m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return 1M"
+          },
+          "return_3m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return 3M"
+          },
+          "return_6m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return 6M"
+          },
+          "return_1y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return 1Y"
+          }
+        },
+        "type": "object",
+        "title": "FundComparisonPeriodReturns",
+        "description": "共同窗口内的阶段收益；没有覆盖该阶段的基金保留 None."
+      },
+      "FundComparisonPoint": {
+        "properties": {
+          "nav_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Nav Date"
+          },
+          "change_ratio": {
+            "type": "number",
+            "title": "Change Ratio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nav_date",
+          "change_ratio"
+        ],
+        "title": "FundComparisonPoint",
+        "description": "归一后的同日累计变化；0.1 表示 10%，不是单位净值."
+      },
+      "FundComparisonSeriesFund": {
+        "properties": {
+          "fund_code": {
+            "type": "string",
+            "title": "Fund Code"
+          },
+          "fund_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fund Name"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/FundComparisonPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "period_returns": {
+            "$ref": "#/components/schemas/FundComparisonPeriodReturns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fund_code"
+        ],
+        "title": "FundComparisonSeriesFund",
+        "description": "一只基金在共同日期上的归一序列；名称只用于图例."
+      },
+      "FundComparisonSeriesRequest": {
+        "properties": {
+          "fund_codes": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 2,
+            "title": "Fund Codes"
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fund_codes",
+          "from_date",
+          "to_date"
+        ],
+        "title": "FundComparisonSeriesRequest",
+        "description": "按报告生成的固定共同窗口重取对齐序列；只给代码和日期，不接受任意范围."
+      },
+      "FundComparisonSeriesResponse": {
+        "properties": {
+          "metric_basis": {
+            "type": "string",
+            "const": "unadjusted_unit_nav",
+            "title": "Metric Basis",
+            "default": "unadjusted_unit_nav"
+          },
+          "common_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Common From"
+          },
+          "common_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Common To"
+          },
+          "aligned_count": {
+            "type": "integer",
+            "title": "Aligned Count",
+            "default": 0
+          },
+          "funds": {
+            "items": {
+              "$ref": "#/components/schemas/FundComparisonSeriesFund"
+            },
+            "type": "array",
+            "title": "Funds"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gaps"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "title": "FundComparisonSeriesResponse",
+        "description": "按固定共同窗口重取的对齐序列；指标仍以报告消息里的引用为准."
       },
       "FundDetailResponse": {
         "properties": {
@@ -6738,7 +7208,7 @@
           },
           "account_id": {
             "type": "integer",
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Account Id"
           }
         },
@@ -7485,7 +7955,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -7497,7 +7967,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -7509,7 +7979,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -7521,7 +7991,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -8013,7 +8483,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -8025,7 +8495,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -8037,7 +8507,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -8049,7 +8519,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -8088,7 +8558,7 @@
         "properties": {
           "expected_revision": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Expected Revision"
           }
         },
@@ -8104,7 +8574,7 @@
         "properties": {
           "expected_version": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Expected Version"
           }
         },
@@ -8120,7 +8590,7 @@
         "properties": {
           "expected_version": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Expected Version"
           },
           "content": {
@@ -8313,7 +8783,7 @@
         "properties": {
           "expected_revision": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Expected Revision"
           },
           "enabled": {
@@ -8348,6 +8818,38 @@
             "title": "Content",
             "description": "The complete content of the message"
           },
+          "research_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Id",
+            "description": "服务端签发的可进一步研究的报告标识"
+          },
+          "research_intent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fund_research",
+                  "fund_comparison",
+                  "portfolio_diagnosis",
+                  "allocation_analysis",
+                  "sector_research",
+                  "stock_research"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Intent",
+            "description": "该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」"
+          },
           "research_roles": {
             "anyOf": [
               {
@@ -8381,25 +8883,27 @@
             "title": "Research Review Status",
             "description": "多角色报告的交叉审核结局"
           },
-          "research_intent": {
+          "research_citations": {
             "anyOf": [
               {
-                "type": "string",
-                "enum": [
-                  "fund_research",
-                  "fund_comparison",
-                  "portfolio_diagnosis",
-                  "allocation_analysis",
-                  "sector_research",
-                  "stock_research"
-                ]
+                "$ref": "#/components/schemas/ResearchCitations"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Research Intent",
-            "description": "该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」"
+            "description": "报告正文角标对应的编号证据、来源核对与引用审计；前端折叠展示"
+          },
+          "fund_comparison_chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FundComparisonChartRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "多基金对比报告的固定共同窗口与指标；客户端据此绘制归一收益对比图"
           }
         },
         "type": "object",
@@ -8538,7 +9042,7 @@
         "properties": {
           "expected_revision": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Expected Revision"
           }
         },
@@ -8562,7 +9066,7 @@
           },
           "expected_revision": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Expected Revision"
           }
         },
@@ -8644,8 +9148,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 600.0,
-                "minimum": 1.0
+                "maximum": 600,
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -8843,8 +9347,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 600.0,
-                "minimum": 1.0
+                "maximum": 600,
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -8962,7 +9466,7 @@
         "properties": {
           "expected_revision": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Expected Revision"
           },
           "changes": {
@@ -8983,17 +9487,17 @@
           "total_market_value": {
             "type": "number",
             "title": "Total Market Value",
-            "default": 0.0
+            "default": 0
           },
           "total_cost": {
             "type": "number",
             "title": "Total Cost",
-            "default": 0.0
+            "default": 0
           },
           "total_profit_loss": {
             "type": "number",
             "title": "Total Profit Loss",
-            "default": 0.0
+            "default": 0
           },
           "total_profit_loss_rate": {
             "anyOf": [
@@ -9009,7 +9513,7 @@
           "daily_profit_loss": {
             "type": "number",
             "title": "Daily Profit Loss",
-            "default": 0.0
+            "default": 0
           },
           "fund_count": {
             "type": "integer",
@@ -9351,7 +9855,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -9363,7 +9867,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -9375,7 +9879,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "minimum": 0
               },
               {
                 "type": "null"
@@ -9503,6 +10007,137 @@
         ],
         "title": "RelatedSectorsResponse",
         "description": "GET /funds/{fund_code}/related-sectors 响应（占位实现）."
+      },
+      "ResearchCitationAudit": {
+        "properties": {
+          "matched": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Matched",
+            "default": 0
+          },
+          "unknown": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Unknown",
+            "default": 0
+          },
+          "uncited_lines": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Uncited Lines",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ResearchCitationAudit",
+        "description": "引用可核对性计数；只用于折叠面板，不进入可见正文."
+      },
+      "ResearchCitationItem": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "maximum": 99,
+            "minimum": 1,
+            "title": "Number"
+          },
+          "evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Evidence Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "tool": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Tool"
+          },
+          "fund_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Fund Codes"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 600,
+            "title": "Excerpt",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "evidence_id",
+          "label",
+          "tool"
+        ],
+        "title": "ResearchCitationItem",
+        "description": "报告正文里真正被引用的一条证据；number 是前端角标，不是模型写的."
+      },
+      "ResearchCitations": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchCitationItem"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Citations"
+          },
+          "coverage": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Coverage"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Sources"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/ResearchCitationAudit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ResearchCitations",
+        "description": "一条研究报告的编号引用与折叠证据；由服务端生成，不要求模型填写."
       },
       "ResearchRoleOutcome": {
         "properties": {
@@ -10586,7 +11221,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
@@ -10599,7 +11234,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0.0
+                "exclusiveMinimum": 0
               },
               {
                 "type": "null"
@@ -10621,13 +11256,21 @@
             ],
             "title": "Target Code",
             "description": "转换目标基金"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "description": "同一交易的重试沿用此键；复用键但改变参数返回 409"
           }
         },
         "type": "object",
         "required": [
           "account_id",
           "operation",
-          "trade_date"
+          "trade_date",
+          "idempotency_key"
         ],
         "title": "TradeCreateRequest",
         "description": "加减仓：记一笔买入、赎回、定投期数或转换."

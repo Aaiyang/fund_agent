@@ -1,10 +1,40 @@
 /** 所有页面共用的布局与文字小构件。 */
 
-import { type ReactNode } from 'react';
-import { type StyleProp, type ViewStyle, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { type ReactNode, useState } from 'react';
+import { type StyleProp, type ViewStyle, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
+
+/** 背景里两团很淡的色晕，让整屏不是一块死平的米白。 */
+function Atmosphere() {
+  return (
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+      <View
+        style={{
+          position: 'absolute',
+          top: -120,
+          right: -80,
+          width: 280,
+          height: 280,
+          borderRadius: 140,
+          backgroundColor: 'rgba(47, 112, 87, 0.055)',
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          top: 180,
+          left: -140,
+          width: 260,
+          height: 260,
+          borderRadius: 130,
+          backgroundColor: 'rgba(128, 99, 51, 0.035)',
+        }}
+      />
+    </View>
+  );
+}
 
 export function Screen({
   children,
@@ -21,7 +51,8 @@ export function Screen({
   pinned?: ReactNode;
 }) {
   return (
-    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background, overflow: 'hidden' }}>
+      <Atmosphere />
       {pinned ? (
         <View
           style={{
@@ -29,7 +60,7 @@ export function Screen({
             borderBottomWidth: 1,
             borderColor: theme.border,
             paddingHorizontal: theme.gap,
-            paddingVertical: 8,
+            paddingVertical: 10,
           }}
         >
           {pinned}
@@ -56,7 +87,20 @@ export function Screen({
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
-    <View style={[{ backgroundColor: theme.surface, borderRadius: theme.radius, padding: theme.gap, marginBottom: theme.gap }, style]}>
+    <View
+      style={[
+        {
+          backgroundColor: theme.surface,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: theme.radius,
+          padding: 14,
+          marginBottom: theme.gap,
+        },
+        theme.cardShadow,
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -64,8 +108,8 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
 
 export function SectionTitle({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{title}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, letterSpacing: 0.1 }}>{title}</Text>
       {action ? (
         <Pressable
           accessibilityRole="button"
@@ -74,7 +118,7 @@ export function SectionTitle({ title, action, onAction }: { title: string; actio
           onPress={onAction}
           style={({ pressed }) => [{ paddingHorizontal: 4, paddingVertical: 2 }, pressed && { opacity: 0.7 }]}
         >
-          <Text style={{ fontSize: 13, color: theme.primary }}>{action}</Text>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: theme.primary }}>{action}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -105,6 +149,10 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
   return <View style={[{ flexDirection: 'row', flexWrap: 'wrap' }, style]}>{children}</View>;
 }
 
+export function Divider({ style }: { style?: StyleProp<ViewStyle> }) {
+  return <View style={[{ height: 1, backgroundColor: theme.border }, style]} />;
+}
+
 export function Button({
   label,
   onPress,
@@ -128,13 +176,24 @@ export function Button({
       style={({ pressed }) => [
         {
           backgroundColor: background,
-          borderRadius: 10,
+          borderRadius: 12,
+          minHeight: 46,
           paddingVertical: 12,
           alignItems: 'center',
+          justifyContent: 'center',
           borderWidth: variant === 'secondary' ? 1 : 0,
           borderColor: theme.border,
-          opacity: disabled || loading ? 0.55 : pressed ? 0.9 : 1,
+          opacity: disabled || loading ? 0.5 : pressed ? 0.9 : 1,
         },
+        variant === 'primary'
+          ? {
+            shadowColor: theme.primaryStrong,
+            shadowOpacity: 0.16,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 2,
+          }
+          : null,
       ]}
     >
       <Text style={{ color, fontSize: 15, fontWeight: '600' }}>{loading ? '处理中…' : label}</Text>
@@ -159,13 +218,13 @@ export function Chip({ label, active, onPress }: { label: string; active?: boole
         borderRadius: 999,
         marginRight: 8,
         marginBottom: 8,
-        backgroundColor: active ? theme.primary : theme.surface,
+        backgroundColor: active ? theme.primary : theme.surfaceSoft,
         borderWidth: 1,
         borderColor: active ? theme.primary : theme.border,
         opacity: pressed ? 0.7 : 1,
       })}
     >
-      <Text style={{ fontSize: 13, color: active ? '#FFFFFF' : theme.text }}>{label}</Text>
+      <Text style={{ fontSize: 13, color: active ? theme.primaryInk : theme.textSoft }}>{label}</Text>
     </Pressable>
   );
 }
@@ -213,14 +272,15 @@ export function NavTab({
   );
 }
 
-export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warning' | 'danger' | 'muted' }) {
+export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warning' | 'danger' | 'muted' | 'success' }) {
   const palette = {
     warning: { background: theme.warningBackground, color: theme.warning },
-    danger: { background: '#FEE2E2', color: theme.danger },
-    muted: { background: '#F3F4F6', color: theme.textMuted },
+    danger: { background: theme.dangerSoft, color: theme.danger },
+    muted: { background: theme.surfaceMuted, color: theme.textMuted },
+    success: { background: theme.successSoft, color: theme.success },
   }[tone];
   return (
-    <View style={{ backgroundColor: palette.background, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+    <View style={{ backgroundColor: palette.background, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
       <Text style={{ fontSize: 11, color: palette.color }}>{label}</Text>
     </View>
   );
@@ -230,7 +290,7 @@ export function Badge({ label, tone = 'warning' }: { label: string; tone?: 'warn
 export function FieldLabel({ label, extra }: { label: string; extra?: ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-      <Text style={{ fontSize: 13, color: theme.textMuted }}>{label}</Text>
+      <Text style={{ fontSize: 12, color: theme.textMuted }}>{label}</Text>
       {extra}
     </View>
   );
@@ -256,6 +316,7 @@ export function Field({
   /** 接口地址与 API Key 这类串不能被首字母大写改写，调用点显式关掉。 */
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ marginBottom: 12 }}>
       <FieldLabel label={label} extra={labelExtra} />
@@ -267,15 +328,18 @@ export function Field({
         placeholderTextColor={theme.textFaint}
         secureTextEntry={secureTextEntry}
         autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        selectionColor={theme.primary}
         style={{
           borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 10,
+          borderColor: focused ? theme.primary : theme.border,
+          borderRadius: 11,
           paddingHorizontal: 12,
-          paddingVertical: 10,
+          paddingVertical: 11,
           fontSize: 15,
           color: theme.text,
-          backgroundColor: theme.surface,
+          backgroundColor: focused ? theme.surface : theme.surfaceSoft,
         }}
       />
     </View>

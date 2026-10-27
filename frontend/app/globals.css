@@ -7,9 +7,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --font-display: 'Noto Serif SC', 'Songti SC', STSong, SimSun, serif;
+  --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -35,6 +36,11 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-gold: #806333;
+  --color-text-soft: #465e4e;
+  --color-text-faint: #6f8577;
+  --color-up: #c43d32;
+  --color-down: #2e7654;
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -54,38 +60,39 @@ body {
 
 :root {
   color-scheme: light;
-  --background: #f5f6f8;
-  --foreground: #111827;
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --popover: #ffffff;
-  --popover-foreground: #111827;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #eff6ff;
-  --secondary-foreground: #1d4ed8;
-  --muted: #eef2f7;
-  --muted-foreground: #6b7280;
-  --accent: #eff6ff;
-  --accent-foreground: #1d4ed8;
-  --destructive: #b91c1c;
-  --border: #e5e7eb;
-  --input: #d1d5db;
-  --ring: #2563eb;
-  --chart-1: #2563eb;
-  --chart-2: #1e9e62;
-  --chart-3: #b45309;
-  --chart-4: #7c3aed;
-  --chart-5: #d93026;
-  --radius: 0.75rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eff6ff;
-  --sidebar-accent-foreground: #1d4ed8;
-  --sidebar-border: #e5e7eb;
-  --sidebar-ring: #2563eb;
+  --background: #f2f1e8;
+  --foreground: #263c30;
+  --card: #fffdf7;
+  --card-foreground: #263c30;
+  --popover: #fffef9;
+  --popover-foreground: #263c30;
+  --primary: #2f7057;
+  --primary-foreground: #fffdf7;
+  --secondary: #edf1e7;
+  --secondary-foreground: #265e48;
+  --muted: #edf1e7;
+  --muted-foreground: #596d5d;
+  --accent: #f3e8cf;
+  --accent-foreground: #6b5027;
+  --destructive: #b6424b;
+  --border: rgb(43 80 56 / 13%);
+  --input: rgb(43 80 56 / 22%);
+  --ring: #2f7057;
+  --chart-1: #2f7057;
+  --chart-2: #806333;
+  --chart-3: #c43d32;
+  --chart-4: #3f6e8c;
+  --chart-5: #a35d3b;
+  --radius: 1rem;
+  --sidebar: #f6f4ea;
+  --sidebar-foreground: #263c30;
+  --sidebar-primary: #2f7057;
+  --sidebar-primary-foreground: #fffdf7;
+  --sidebar-accent: #edf1e7;
+  --sidebar-accent-foreground: #265e48;
+  --sidebar-border: rgb(43 80 56 / 12%);
+  --sidebar-ring: #2f7057;
+  --paper-shadow: 0 18px 50px rgb(33 58 42 / 7%);
 }
 
 .dark {
@@ -130,20 +137,68 @@ body {
     @apply bg-background text-foreground;
     min-height: 100vh;
     background-image:
-      linear-gradient(rgb(37 99 235 / 2.5%) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(37 99 235 / 2.5%) 1px, transparent 1px);
-    background-size: 28px 28px;
+      radial-gradient(circle at 12% 6%, rgb(47 112 87 / 7%), transparent 32%),
+      radial-gradient(circle at 88% 94%, rgb(128 99 51 / 5%), transparent 30%),
+      repeating-linear-gradient(0deg, rgb(43 80 56 / 1.6%) 0 1px, transparent 1px 5px);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
   }
+  ::placeholder {
+    color: rgb(89 109 93 / 70%);
+  }
 }
 
 ::selection {
-  background: rgb(37 99 235 / 18%);
+  background: rgb(47 112 87 / 18%);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #c3cfc2 transparent;
+}
+
+@keyframes thinking-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.thinking-dot {
+  animation: thinking-dot 1.25s ease-in-out infinite;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise-in {
+  animation: rise-in 0.35s ease-out both;
+}
+
+.paper-panel {
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  box-shadow: var(--paper-shadow);
+  backdrop-filter: blur(14px);
+}
+
+.assistant-copy {
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--foreground);
 }

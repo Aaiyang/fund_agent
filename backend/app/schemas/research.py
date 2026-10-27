@@ -1,6 +1,6 @@
 """研究任务的父子图契约；证据和中间推理仅属于研究子图."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from langgraph.graph.message import add_messages
@@ -110,6 +110,10 @@ class ResearchResult(BaseModel):
     strategy: Literal["single", "multi_role"] = "single"
 
 
+EvidenceStatus = Literal["ok", "empty", "failed"]
+AcquisitionStatus = Literal["ok", "empty", "failed", "not_attempted"]
+
+
 class ResearchEvidence(BaseModel):
     """复用现有工具结果，保留日期与警告；失败和截断必须公开."""
 
@@ -118,6 +122,85 @@ class ResearchEvidence(BaseModel):
     success: bool
     text: str
     data: dict | list | str | None = None
+    status: EvidenceStatus | None = None
+    error_code: str | None = None
+    retryable: bool = False
+    source: str | None = None
+    as_of: str | None = None
+    stale: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class EvidenceAcquisition(BaseModel):
+    """一次取证调用的机器台账；只用于服务端判定与展示，不进入模型输入."""
+
+    tool: str
+    args: dict = Field(default_factory=dict)
+    fund_codes: list[str] = Field(default_factory=list)
+    status: AcquisitionStatus
+    stage: Literal["plan", "role", "supplement"] = "plan"
+    error_code: str | None = None
+    retryable: bool = False
+    attempts: int = 0
+    missing_metrics: list[str] = Field(default_factory=list)
+    missing_fund_codes: list[str] = Field(default_factory=list)
+
+
+class ResearchCitationItem(BaseModel):
+    """报告正文里真正被引用的一条证据；number 是前端角标，不是模型写的."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    number: int = Field(ge=1, le=99)
+    evidence_id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=80)
+    tool: str = Field(min_length=1, max_length=80)
+    fund_codes: list[str] = Field(default_factory=list, max_length=3)
+    as_of: str | None = Field(default=None, max_length=40)
+    excerpt: str = Field(default="", max_length=600)
+
+
+class ResearchCitationAudit(BaseModel):
+    """引用可核对性计数；只用于折叠面板，不进入可见正文."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    matched: int = Field(default=0, ge=0)
+    unknown: int = Field(default=0, ge=0)
+    uncited_lines: int = Field(default=0, ge=0)
+
+
+class ResearchCitations(BaseModel):
+    """一条研究报告的编号引用与折叠证据；由服务端生成，不要求模型填写."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    version: Literal[1] = 1
+    citations: list[ResearchCitationItem] = Field(default_factory=list, max_length=64)
+    coverage: list[str] = Field(default_factory=list, max_length=40)
+    sources: list[str] = Field(default_factory=list, max_length=40)
+    audit: ResearchCitationAudit = Field(default_factory=ResearchCitationAudit)
+
+
+class FundComparisonChartFund(BaseModel):
+    """报告时点的单基金对比指标；客户端数字表以它为准."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    fund_code: str = Field(pattern=r"^\d{6}$")
+    window_change_ratio: float | None = None
+    observed_max_drawdown_ratio: float | None = None
+    annualized_nav_volatility_ratio: float | None = None
+    aligned_count: int = Field(default=0, ge=0)
+    stale: bool = False
+
+
+class FundComparisonChartRef(BaseModel):
+    """多基金对比图的固定共同窗口与报告时点指标；序列由客户端按此窗口另取."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    version: Literal[1] = 1
+    fund_codes: list[str] = Field(min_length=2, max_length=3)
+    common_from: date
+    common_to: date
+    aligned_count: int = Field(default=0, ge=0)
+    funds: list[FundComparisonChartFund] = Field(min_length=2, max_length=3)
 
 
 class ResearchToolCall(BaseModel):
@@ -154,3 +237,4 @@ class ResearchGraphState(BaseModel):
     agent_revision_roles: list[ResearchRole] = Field(default_factory=list)
     agent_review_status: Literal["completed", "partial", "failed"] | None = None
     agent_started_at: datetime | None = None
+    agent_acquisition: list[EvidenceAcquisition] = Field(default_factory=list)

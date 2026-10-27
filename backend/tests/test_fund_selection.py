@@ -477,11 +477,10 @@ async def test_confirmation_survives_report_failure_and_continues_without_resele
         assert scenario.search.await_count == 1 and report_calls == 2
         assert scenario.evidence_calls == before_calls
         history = (await client.get("/chatbot/messages")).json()["messages"]
-        # 正文来自模型，尾注由代码追加，两者都要在落库内容里。
-        assert (
-            history[-1]["content"].startswith("使用已确认的基金继续分析。")
-            and "数据来源核对" in history[-1]["content"]
-        )
+        last = history[-1]
+        assert last["content"].startswith("使用已确认的基金继续分析。")
+        assert "数据来源核对" not in last["content"]
+        assert last["research_citations"]["coverage"][0].startswith("研究对象：")
         again = await client.post("/chatbot/continue", json={"turn_id": data["continuation"]["turn_id"]})
         assert again.status_code == 200 and report_calls == 2
 
@@ -607,9 +606,11 @@ async def test_report_progress_survives_nonstreaming_http_resume(scenario, monke
             else await client.post("/chatbot/continue", json={"turn_id": continuation["turn_id"]})
         )
         assert response.status_code == 200, response.text
-        # 非流式恢复同样带上代码追加的来源核对尾注。
-        resumed_content = response.json()["messages"][-1]["content"]
-        assert resumed_content.startswith("已确认基金的研究报告。") and "数据来源核对" in resumed_content
+        # 非流式恢复：正文不再追加尾注，证据与覆盖在结构化字段里。
+        payload = response.json()["messages"][-1]
+        assert payload["content"].startswith("已确认基金的研究报告。")
+        assert "数据来源核对" not in payload["content"]
+        assert payload["research_citations"]["coverage"][0].startswith("研究对象：")
         assert response.json()["pending_action"] is None and response.json()["continuation"] is None
         assert "private thinking" not in response.text
         assert scenario.search.await_count == 1
@@ -649,13 +650,14 @@ async def test_selection_and_continuation_stream_validate_before_headers(scenari
         assert response.headers["x-accel-buffering"] == "no"
         frames = stream_frames(response)
         streamed = "".join(item["content"] for item in frames)
-        assert (
-            streamed.startswith("使用已确认的基金继续分析。") and "数据来源核对" in streamed
-        )  # 尾注也要真的流给客户端
+        assert streamed.startswith("使用已确认的基金继续分析。")
+        assert "数据来源核对" not in streamed
         assert frames[-1]["done"] and frames[-1]["pending_action"] is None and frames[-1]["continuation"] is None
         assert scenario.search.await_count == 1 and len(scenario.calls) == 2
         assert (await client.post("/chatbot/fund-selection/decision/stream", json=body)).status_code == 409
         snapshot = await scenario.agent._graph.aget_state({"configurable": {"thread_id": scenario.identity.id}})
+        citations = snapshot.values["messages"][-1].additional_kwargs["research_citations"]
+        assert citations["coverage"][0].startswith("研究对象：")
         completed = await client.post("/chatbot/continue/stream", json={"turn_id": snapshot.values["turn_id"]})
         assert completed.status_code == 200 and len(scenario.calls) == 2
 
@@ -691,7 +693,11 @@ async def test_stream_failure_keeps_confirmation_and_continues_without_repeating
         finished = stream_frames(result)
         assert finished[-1]["continuation"] is None
         finished_text = "".join(item["content"] for item in finished)
-        assert finished_text.startswith("使用已确认的基金继续分析。") and "数据来源核对" in finished_text
+        assert finished_text.startswith("使用已确认的基金继续分析。")
+        assert "数据来源核对" not in finished_text
+        snapshot = await scenario.agent._graph.aget_state({"configurable": {"thread_id": scenario.identity.id}})
+        citations = snapshot.values["messages"][-1].additional_kwargs["research_citations"]
+        assert citations["coverage"][0].startswith("研究对象：")
         assert scenario.evidence_calls == evidence_before and scenario.search.await_count == 1
 
 
@@ -740,7 +746,10 @@ async def test_text_continue_preserves_selected_target_and_original_turn(scenari
         if endpoint.endswith("stream"):
             frames = [json.loads(line[6:]) for line in resumed.text.splitlines() if line.startswith("data: ")]
             resumed = "".join(frame["content"] for frame in frames)
-            assert resumed.startswith("使用已确认的基金继续分析。") and "数据来源核对" in resumed
+            assert resumed.startswith("使用已确认的基金继续分析。")
+            assert "数据来源核对" not in resumed
+            citations = after.values["messages"][-1].additional_kwargs["research_citations"]
+            assert citations["coverage"][0].startswith("研究对象：")
 
 
 async def test_new_chat_cannot_overwrite_a_running_human_resume(scenario):

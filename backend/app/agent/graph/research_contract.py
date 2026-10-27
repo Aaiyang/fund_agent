@@ -13,6 +13,8 @@ from app.core.logging import logger
 from app.schemas.multi_role_research import (
     AgentAnalysis,
     AgentReport,
+    CoverageGap,
+    CoverageGapKind,
     DimensionStance,
     EvidenceFinding,
     EvidenceRequirement,
@@ -20,10 +22,14 @@ from app.schemas.multi_role_research import (
     ResearchRole,
     TaskCoverage,
 )
-from app.schemas.research import ResearchGraphState
+from app.schemas.research import EvidenceAcquisition, ResearchGraphState
 
 CoverageStatus = Literal["completed", "partial", "blocked", "skipped"]
 ReportStatus = Literal["completed", "partial", "failed", "skipped"]
+# 这些工具的空列表是有效结论（没有公告/事件），不能判成上游缺数据。
+EMPTY_IS_AVAILABLE = frozenset(
+    {"get_fund_announcements", "get_market_events", "get_fund_sectors", "get_sector_market", "get_market_context"}
+)
 
 
 class ManifestTask(TypedDict):
@@ -46,6 +52,9 @@ class ManifestTask(TypedDict):
     missing: list[str]
     explanation: str
     dropped_citations: int
+    missing_gaps: list[dict]
+    revision_needed: bool
+    supplement_needed: bool
 
 
 class CompletionManifest(TypedDict):
@@ -119,6 +128,8 @@ SOURCE_LABELS = {
 _COMPLETE_LABELS = {
     "ok": "已取到",
     "degraded": "取到但来源标记不完整",
+    "empty": "已取到但为空",
+    "unavailable": "已取到但上游缺指标",
     "failed": "查询失败",
     "not_attempted": "已计划但未取到",
 }
@@ -137,12 +148,29 @@ def _args_fingerprint(args: dict) -> str:
 def source_completeness(state: ResearchGraphState) -> list[dict]:
     """计划来源 × 确认对象的实际状态；纯代码算，不要求模型自报.
 
-    这是单档的诚实性来源：单档没有角色覆盖可推导，但至少能说清「哪块数据压根没取到」。
-    只描述到 ResearchEvidence 真正携带的程度（success 与 data.partial），
-    来源是否过时由缺口文字负责，这里不猜。
+    多角色用 acquisition 台账覆盖计划、角色补取和审核补取三阶段；单档仍按计划逐项核对。
+    只描述到证据真正携带的程度，来源是否过时由缺口文字负责，这里不猜。
     """
+    if state.agent_acquisition:
+        rows: list[dict] = []
+        for row in state.agent_acquisition:
+            for code in row.fund_codes or [None]:
+                if row.status == "ok" and code in row.missing_fund_codes:
+                    status = "unavailable"
+                elif row.status == "ok" and row.missing_metrics and not row.missing_fund_codes:
+                    status = "unavailable"
+                else:
+                    status = row.status
+                rows.append(
+                    {
+                        "source": SOURCE_LABELS.get(row.tool, row.tool),
+                        "fund_code": code,
+                        "status": status,
+                    }
+                )
+        return rows
     obtained = {(item.tool, _args_fingerprint(item.args)): item for item in state.evidence}
-    rows: list[dict] = []
+    rows = []
     for call in state.tool_plan:
         item = obtained.get((call.name, _args_fingerprint(call.args)))
         if item is None:
@@ -180,23 +208,33 @@ def citation_audit(report_text: str, packet: list[dict]) -> tuple[int, int, int]
     return len(cited) - unknown, unknown, bare
 
 
-def completeness_note(state: ResearchGraphState, report_text: str, packet: list[dict], divider: str) -> str:
-    """报告尾注的数据来源核对段；两种模式都有，多角色接在维度覆盖之后."""
+def source_completeness_lines(state: ResearchGraphState) -> list[str]:
+    """来源完备性的可展示行；标题、折叠面板和最终正文由不同层决定."""
     rows = source_completeness(state)
     problems = [row for row in rows if row["status"] != "ok"]
-    matched, unknown, bare = citation_audit(report_text, packet)
-    parts = [divider + "**数据来源核对**"]
+    lines: list[str] = []
     if not rows:
-        parts.append("本轮没有可核对的计划来源。")
+        lines.append("本轮没有可核对的计划来源。")
     elif not problems:
-        parts.append(f"本轮计划的 {len(rows)} 项来源全部取到。")
+        lines.append(f"本轮计划的 {len(rows)} 项来源全部取到。")
     for row in problems:
         who = (row["fund_code"] + " ") if row["fund_code"] else ""
-        parts.append(who + row["source"] + "：" + _COMPLETE_LABELS[row["status"]])
-    parts.append(
+        lines.append(who + row["source"] + "：" + _COMPLETE_LABELS[row["status"]])
+    return lines
+
+
+def citation_audit_line(report_text: str, packet: list[dict]) -> str:
+    """引用可核对性的统一措辞；正文不直接展示，折叠面板与旧尾注共用."""
+    matched, unknown, bare = citation_audit(report_text, packet)
+    return (
         f"引用核对：{matched} 处可核对、{unknown} 处引用了不存在的证据标识；"
         f"另有 {bare} 行含数字但未带引用（启发式统计，不代表编造）。"
     )
+
+
+def completeness_note(state: ResearchGraphState, report_text: str, packet: list[dict], divider: str) -> str:
+    """报告尾注的数据来源核对段；保留给旧调用与单测，正文不再自动追加."""
+    parts = [divider + "**数据来源核对**", *source_completeness_lines(state), citation_audit_line(report_text, packet)]
     return "\n\n".join(parts)
 
 
@@ -301,18 +339,56 @@ def role_evidence(packet: list[dict], role: ResearchRole) -> list[dict]:
     return [item for item in packet if item["tool"] in _ROLE_TOOLS[role]]
 
 
+def _row_for(
+    acquisition: list[EvidenceAcquisition] | None, tools: list[str], code: str | None
+) -> EvidenceAcquisition | None:
+    """找一条与本要求匹配的取得记录；有实际尝试的记录优先于未尝试记录."""
+    matches = [row for row in (acquisition or []) if row.tool in tools and (code is None or code in row.fund_codes)]
+    if not matches:
+        return None
+    return next((row for row in reversed(matches) if row.status != "not_attempted"), matches[-1])
+
+
+def _packet_has(packet: list[dict], tools: list[str], code: str | None) -> bool:
+    """角色实际拿到的证据里是否已有该工具/对象."""
+    return any(item.get("tool") in tools and (code is None or _matches_fund(item, code)) for item in packet)
+
+
+def _missing_kind(
+    packet: list[dict], acquisition: list[EvidenceAcquisition] | None, tools: list[str], code: str | None
+) -> tuple[CoverageGapKind, str | None, str]:
+    """未引用缺口的机器原因：可用未引用 / 取数失败 / 未尝试 / 上游不可得."""
+    row = _row_for(acquisition, tools, code)
+    if row is not None:
+        if row.status == "failed":
+            return "fetch_failed", row.tool, row.error_code or "工具查询失败"
+        if row.status == "not_attempted":
+            return "not_attempted", row.tool, "计划内证据未尝试"
+        if code is not None and code in row.missing_fund_codes:
+            return "upstream_unavailable", row.tool, "上游未算出 " + "、".join(row.missing_metrics)
+        if row.status == "empty" and row.tool not in EMPTY_IS_AVAILABLE:
+            return "upstream_unavailable", row.tool, "上游返回为空"
+        if _packet_has(packet, tools, code):
+            return "available_not_cited", row.tool, "证据已取到但本维度未引用"
+        # 取得成功但上下文预算没有把它交给角色；再修订也看不到，不能算可引用缺口。
+        return "upstream_unavailable", row.tool, "证据未纳入角色上下文"
+    if _packet_has(packet, tools, code):
+        return "available_not_cited", tools[0] if tools else None, "证据已取到但本维度未引用"
+    return "not_attempted", tools[0] if tools else None, "计划内证据未尝试"
+
+
 def derive_coverage(
     analysis: AgentAnalysis,
     packet: list[dict],
     assignment: ResearchAssignment,
     fund_codes: list[str],
     issue_indices: list[int],
+    acquisition: list[EvidenceAcquisition] | None = None,
 ) -> tuple[AgentAnalysis, TaskCoverage, list[str]]:
     """丢弃引用无效证据的发现，再由代码从存活发现的实际引用推导覆盖.
 
     模型只负责给结论和引用证据 ID；「这个角色覆盖到了哪些对象、哪些数据维度」由这里算。
-    以前要模型自己填 coverage 表并做索引交叉核对，实测 31 次角色输出 0 次 completed，
-    每次都是恰好 4 findings + 4 gaps（全撞上限）——那是契约在决定结果，不是分析在决定。
+    acquisition 台账进一步区分「没引用」「没取到」「上游为空」，决定后续是修订、补取还是只记缺口。
     """
     evidence = {item["evidence_id"]: item for item in packet}
     findings: list[EvidenceFinding] = []
@@ -331,18 +407,85 @@ def derive_coverage(
     cited = [evidence[evidence_id] for finding in findings for evidence_id in finding.evidence_ids]
     met: list[str] = []
     missing: list[str] = []
+    missing_gaps: list[CoverageGap] = []
     for requirement in assignment.required_evidence:
         hits = [item for item in cited if item["tool"] in requirement.tools]
         if requirement.scope == "per_fund" and fund_codes:
-            lacking = [code for code in fund_codes if not any(_matches_fund(item, code) for item in hits)]
+            lacking: list[str] = []
+            for code in fund_codes:
+                code_hits = [item for item in hits if _matches_fund(item, code)]
+                row = _row_for(acquisition, requirement.tools, code)
+                if code_hits:
+                    if row is not None and code in row.missing_fund_codes:
+                        lacking.append(code)
+                        missing_gaps.append(
+                            CoverageGap(
+                                kind="upstream_unavailable",
+                                requirement=requirement.label,
+                                fund_code=code,
+                                tool=row.tool,
+                                detail="上游未算出 " + "、".join(row.missing_metrics),
+                            )
+                        )
+                    continue
+                kind, tool, detail = _missing_kind(packet, acquisition, requirement.tools, code)
+                lacking.append(code)
+                missing_gaps.append(
+                    CoverageGap(
+                        kind=kind,
+                        requirement=requirement.label,
+                        fund_code=code,
+                        tool=tool,
+                        detail=detail,
+                    )
+                )
             if lacking:
                 missing.append(requirement.label + "（缺 " + "、".join(lacking) + "）")
             else:
                 met.append(requirement.label)
         elif hits:
-            met.append(requirement.label)
+            # 对比工具一次返回全部对象，但风险指标可能只算出了其中几只；风险维度
+            # 不能因为调用成功就宣称覆盖了没算出回撤/波动的基金。业绩维度也引用
+            # 同一工具，所以这个门槛只对风险角色生效。
+            row = _row_for(acquisition, requirement.tools, None)
+            unavailable: list[str] = []
+            if assignment.role == "risk" and "get_fund_comparison_data" in requirement.tools:
+                if row is not None:
+                    unavailable = sorted(set(row.missing_fund_codes))
+                else:
+                    unavailable = sorted(
+                        {
+                            code
+                            for item in hits
+                            for code in item.get("risk_metric_missing") or []
+                            if isinstance(code, str)
+                        }
+                    )
+            if unavailable:
+                missing.append(requirement.label + "（缺 " + "、".join(unavailable) + "）")
+                missing_gaps.extend(
+                    CoverageGap(
+                        kind="upstream_unavailable",
+                        requirement=requirement.label,
+                        fund_code=code,
+                        tool="get_fund_comparison_data",
+                        detail="上游未算出风险指标",
+                    )
+                    for code in unavailable
+                )
+            else:
+                met.append(requirement.label)
         else:
+            kind, tool, detail = _missing_kind(packet, acquisition, requirement.tools, None)
             missing.append(requirement.label)
+            missing_gaps.append(
+                CoverageGap(
+                    kind=kind,
+                    requirement=requirement.label,
+                    tool=tool,
+                    detail=detail,
+                )
+            )
 
     # 审核反馈的确认同样由代码核：越界确认（声称回应了没分配给它的 issue）和漏确认都记下来。
     addressed = sorted(set(analysis.addressed_issue_indices) & set(issue_indices))
@@ -369,6 +512,9 @@ def derive_coverage(
         missing=missing,
         explanation=explanation,
         dropped_citations=dropped,
+        missing_gaps=missing_gaps,
+        revision_needed=any(gap.kind == "available_not_cited" for gap in missing_gaps),
+        supplement_needed=any(gap.kind in {"fetch_failed", "not_attempted"} for gap in missing_gaps),
     )
     all_gaps = list(dict.fromkeys([*gaps, *analysis.gaps]))
     stance = analysis.stance
@@ -442,6 +588,9 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
                     "missing": [requirement.label for requirement in item.required_evidence],
                     "explanation": _SKIP_LABELS.get(report.skip_reason or "", "该角色未运行"),
                     "dropped_citations": 0,
+                    "missing_gaps": [],
+                    "revision_needed": False,
+                    "supplement_needed": False,
                 }
             )
             continue
@@ -461,6 +610,11 @@ def completion_manifest(state: ResearchGraphState) -> CompletionManifest:
                 else [requirement.label for requirement in item.required_evidence],
                 "explanation": coverage.explanation if coverage is not None else "角色没有产出可核验的发现",
                 "dropped_citations": coverage.dropped_citations if coverage is not None else 0,
+                "missing_gaps": [gap.model_dump(mode="json") for gap in coverage.missing_gaps]
+                if coverage is not None
+                else [],
+                "revision_needed": coverage.revision_needed if coverage is not None else False,
+                "supplement_needed": coverage.supplement_needed if coverage is not None else False,
             }
         )
     running = [item for item in tasks if item["status"] != "skipped"]
@@ -492,15 +646,23 @@ def divergences(state: ResearchGraphState) -> list[dict]:
         if report.run_id == state.turn_id and report.round == 2 and report.status in {"completed", "partial"}
         for index in report.analysis.addressed_issue_indices
     }
-    return [
-        {
+    entries: list[dict] = []
+    for index, issue in enumerate(state.agent_review.issues):
+        entry: dict = {
             "role": issue.role,
             "finding_index": issue.finding_index,
             "reason": issue.reason,
             "resolved": index in addressed,
         }
-        for index, issue in enumerate(state.agent_review.issues)
-    ]
+        if issue.challenger_role is not None and issue.challenger_finding_index is not None:
+            entry["cross_examination"] = {
+                "challenger_role": issue.challenger_role,
+                "challenger_finding_index": issue.challenger_finding_index,
+                "challenger_evidence_ids": list(issue.challenger_evidence_ids),
+                "resolved": index in addressed,
+            }
+        entries.append(entry)
+    return entries
 
 
 def role_tensions(state: ResearchGraphState) -> list[Tension]:
@@ -545,29 +707,34 @@ def role_tensions(state: ResearchGraphState) -> list[Tension]:
     return tensions
 
 
-def completion_note(state: ResearchGraphState) -> str:
-    """Always publish confirmed scope and unmet evidence, even if synthesis omits them."""
+def completion_lines(state: ResearchGraphState) -> list[str]:
+    """维度覆盖的可展示行；报告正文不写，折叠面板按行展示."""
     manifest = completion_manifest(state)
-    parts = ["\n\n---\n\n**研究范围核对**", "研究对象：" + ("、".join(state.fund_codes) or "无确认对象")]
+    lines = ["研究对象：" + ("、".join(state.fund_codes) or "无确认对象")]
     for task in manifest["tasks"]:
         label = ROLE_LABELS.get(task["role"], task["role"])
         if task["status"] == "skipped":
-            parts.append(label + "：未运行（" + task["explanation"] + "）")
+            lines.append(label + "：未运行（" + task["explanation"] + "）")
             continue
         if task["status"] == "completed":
-            parts.append(label + "：已覆盖 " + "、".join(task["met"]))
+            lines.append(label + "：已覆盖 " + "、".join(task["met"]))
             continue
         suffix = "；修订未完成，首轮发现仍待复核" if _revision_pending(state, manifest, task["role"]) else ""
         detail = "缺少 " + "；".join(task["missing"]) if task["missing"] else task["explanation"]
-        parts.append(label + "：" + detail + suffix)
+        lines.append(label + "：" + detail + suffix)
     if state.agent_review_status != "completed":
-        parts.append("交叉审核：" + ("未完成" if state.agent_review_status == "failed" else "存在待核验项"))
+        lines.append("交叉审核：" + ("未完成" if state.agent_review_status == "failed" else "存在待核验项"))
     for gap in state.gaps:
         if "数据范围或质量不完整" in gap or "数据并非最新" in gap:
             for tool, label in SOURCE_LABELS.items():
                 gap = gap.replace(tool, label)
-            parts.append(gap)
-    return "\n\n".join(parts)
+            lines.append(gap)
+    return lines
+
+
+def completion_note(state: ResearchGraphState) -> str:
+    """旧的研究范围尾注；正文不再追加，保留给单测与兼容调用."""
+    return "\n\n".join(["\n\n---\n\n**研究范围核对**", *completion_lines(state)])
 
 
 def _revision_pending(state: ResearchGraphState, manifest: CompletionManifest, role: ResearchRole) -> bool:

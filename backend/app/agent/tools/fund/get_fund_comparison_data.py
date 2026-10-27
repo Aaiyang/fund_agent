@@ -20,7 +20,8 @@ async def get_fund_comparison_data(fund_codes: list[str]) -> ToolResult:
     夏普/索提诺按无风险利率0计算（_rf0即此意），共同日点不足120时这些年化指标为空，
     空值代表算不出来，不是0，不能补造，也不能拿各自区间的数字替代共同窗口。
     指标为比值0.1=10%，未分红复权，不是投资者总回报，不判断费用、相关性或未来收益。
-    rows中的fund-chart引用可逐字展示，图表各自查询，不能称为叠加比较曲线。
+    rows中的fund-chart引用可逐字展示单基金走势；客户端会按同一共同窗口自动渲染同期收益对比图，
+    模型不要生成对比序列、叠加图或新的图表协议。
     """
     data = await fund_comparison_service.get_data(FundComparisonRequest(fund_codes=fund_codes))
     return ToolResult.ok(

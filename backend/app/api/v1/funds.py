@@ -25,6 +25,8 @@ from app.schemas.fund import (
     NavRange,
     RelatedSectorsResponse,
 )
+from app.schemas.fund_comparison import FundComparisonSeriesRequest, FundComparisonSeriesResponse
+from app.services.fund_comparison_service import fund_comparison_service
 from app.services.fund_service import fund_service
 from app.services.fund_sync_service import fund_sync_service
 
@@ -62,6 +64,25 @@ async def refresh_latest_navs(
         status=result.status,
         requested=result.requested,
         updated=result.updated,
+    )
+    return result
+
+
+@router.post("/compare/nav", response_model=FundComparisonSeriesResponse)
+@limiter.limit(settings.RATE_LIMIT_ENDPOINTS["funds"][0])
+async def get_fund_comparison_nav(
+    request: Request,
+    payload: FundComparisonSeriesRequest,
+    identity: AuthIdentity = Depends(get_current_identity),
+) -> FundComparisonSeriesResponse:
+    """按报告固定的共同窗口重取 2–3 只基金的对齐归一序列，供对比曲线使用."""
+    result = await fund_comparison_service.get_series(payload)
+    logger.info(
+        "fund_comparison_nav_requested",
+        user_id=identity.user_id,
+        fund_codes=payload.fund_codes,
+        aligned_count=result.aligned_count,
+        gap_count=len(result.gaps),
     )
     return result
 

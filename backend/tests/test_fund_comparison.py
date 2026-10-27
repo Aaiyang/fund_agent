@@ -14,8 +14,9 @@ from app.agent.tools.fund import get_fund_comparison_data
 from app.agent.tools.registry import FUND_TOOLS
 from app.analytics.fund_comparison import aligned_nav_metrics
 from app.analytics.returns import NavPoint
+from app.models.fund import Fund
 from app.schemas.fund import FundNavHistoryResponse, FundNavPoint
-from app.schemas.fund_comparison import FundComparisonRequest
+from app.schemas.fund_comparison import FundComparisonRequest, FundComparisonSeriesRequest
 from app.schemas.research import ResearchRequest
 from app.services.fund_comparison_service import FundComparisonService
 from app.utils.task_routing import infer_research_request, request_after_fund_selection
@@ -47,6 +48,11 @@ def histories(monkeypatch):
     reader = AsyncMock(side_effect=read)
     monkeypatch.setattr(service_module, "business_today", lambda: TODAY)
     monkeypatch.setattr(service_module.fund_service, "get_nav_history", reader)
+
+    async def read_names(codes):
+        return {code: Fund(fund_code=code, fund_name=f"基金{code}") for code in codes}
+
+    monkeypatch.setattr(service_module.fund_repository, "get_funds", AsyncMock(side_effect=read_names))
     return data, reader
 
 
@@ -130,7 +136,57 @@ async def test_complete_same_dates_keep_raw_metrics_and_do_not_return_series(his
     assert payload["metric_basis"] == "unadjusted_unit_nav" and "points" not in payload
     assert "fund-chart" in text and "000002" in text
     assert get_fund_comparison_data in FUND_TOOLS
-    assert read_skill("fund-comparison", "instructions").version == "1.0.0"
+    assert read_skill("fund-comparison", "instructions").version == "1.1.0"
+
+
+async def test_comparison_series_uses_fixed_window_and_starts_every_fund_at_zero(histories):
+    data, reader = histories
+    request = FundComparisonSeriesRequest(fund_codes=["000001", "000002"], from_date=START, to_date=TODAY)
+    result = await FundComparisonService().get_series(request)
+
+    assert result.common_from == START and result.common_to == TODAY
+    assert result.aligned_count == len(data["000001"].points)
+    assert [fund.fund_name for fund in result.funds] == ["基金000001", "基金000002"]
+    assert all(len(fund.points) == result.aligned_count for fund in result.funds)
+    assert all(fund.points[0].change_ratio == 0 for fund in result.funds)
+    # 两只基金的净值比例在整个窗口内恒定，归一变化应完全相同。
+    assert result.funds[0].points[-1].change_ratio == pytest.approx(result.funds[1].points[-1].change_ratio)
+    assert result.funds[0].period_returns.return_1y == pytest.approx(result.funds[0].points[-1].change_ratio)
+    assert result.funds[0].period_returns.return_1m is not None
+    assert result.funds[0].period_returns.return_3m is not None
+    assert result.funds[0].period_returns.return_6m is not None
+    assert all(call.kwargs == {"start_date": START, "end_date": TODAY} for call in reader.await_args_list)
+
+
+async def test_comparison_series_period_returns_leave_uncovered_months_empty(histories):
+    request = FundComparisonSeriesRequest(
+        fund_codes=["000001", "000002"],
+        from_date=TODAY - timedelta(days=70),
+        to_date=TODAY,
+    )
+    result = await FundComparisonService().get_series(request)
+    periods = result.funds[0].period_returns
+
+    assert periods.return_1m is not None
+    assert periods.return_3m is None and periods.return_6m is None and periods.return_1y is None
+
+
+def test_comparison_series_request_refuses_future_and_overlong_windows(monkeypatch):
+    import app.schemas.fund_comparison as comparison_schema
+
+    monkeypatch.setattr(comparison_schema, "business_today", lambda: TODAY)
+    with pytest.raises(ValidationError):
+        FundComparisonSeriesRequest(
+            fund_codes=["000001", "000002"], from_date=START, to_date=TODAY + timedelta(days=1)
+        )
+    with pytest.raises(ValidationError):
+        FundComparisonSeriesRequest(
+            fund_codes=["000001", "000002"],
+            from_date=TODAY - timedelta(days=400),
+            to_date=TODAY,
+        )
+    with pytest.raises(ValidationError):
+        FundComparisonSeriesRequest(fund_codes=["000001", "000002"], from_date=TODAY, to_date=TODAY)
 
 
 async def test_short_new_fund_aligns_actual_window_and_marks_partial(histories):
@@ -242,3 +298,61 @@ async def test_timeout_is_bounded_and_cancellation_propagates(histories, monkeyp
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_chart_reference_is_built_from_comparison_evidence_only():
+    from app.agent.graph.research import fund_comparison_chart_ref
+    from app.schemas.research import ResearchEvidence, ResearchGraphState, ResearchRequest, ResearchTask
+
+    payload = {
+        "status": "completed",
+        "common_from": "2025-10-13",
+        "common_to": "2026-10-13",
+        "common_count": 240,
+        "rows": [
+            {
+                "fund_code": "000001",
+                "window_change_ratio": 0.12,
+                "observed_max_drawdown_ratio": -0.08,
+                "annualized_nav_volatility_ratio": 0.18,
+                "aligned_count": 240,
+                "stale": False,
+            },
+            {
+                "fund_code": "000002",
+                "window_change_ratio": -0.03,
+                "observed_max_drawdown_ratio": -0.15,
+                "annualized_nav_volatility_ratio": 0.22,
+                "aligned_count": 240,
+                "stale": True,
+            },
+        ],
+    }
+    evidence = ResearchEvidence(
+        tool="get_fund_comparison_data",
+        args={"fund_codes": ["000001", "000002"]},
+        success=True,
+        text="[TOOL_OK]\n{}",
+        data=payload,
+    )
+
+    def state(intent: str) -> ResearchGraphState:
+        return ResearchGraphState(
+            turn_id="t",
+            fund_codes=["000001", "000002"],
+            evidence=[evidence],
+            research_task=ResearchTask(
+                turn_id="t",
+                request=ResearchRequest(intent=intent, fund_queries=["000001", "000002"]),
+                instruction="对比",
+            ),
+        )
+
+    chart = fund_comparison_chart_ref(state("fund_comparison"))
+    assert chart is not None
+    assert chart.fund_codes == ["000001", "000002"] and chart.aligned_count == 240
+    assert chart.funds[0].window_change_ratio == 0.12 and chart.funds[1].stale is True
+    assert fund_comparison_chart_ref(state("fund_research")) is None
+
+    unavailable = evidence.model_copy(update={"data": {**payload, "common_from": None, "common_to": None}})
+    assert fund_comparison_chart_ref(state("fund_comparison").model_copy(update={"evidence": [unavailable]})) is None

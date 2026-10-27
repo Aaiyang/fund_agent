@@ -1,4 +1,4 @@
-"""七个业务工具的 agent 集成测试（spec 30，用例 1-7）.
+"""八个业务工具的 agent 集成测试（spec 30，用例 1-7 与自选清单）.
 
 每个用例都跑真实的图（内存 checkpointer），配一个脚本化的 LLM，让它正好调用规范要求
 的那个工具，然后校验：
@@ -234,6 +234,37 @@ async def test_case_7_market(monkeypatch):
     _patch_tool_service(monkeypatch, "get_market_context", SimpleNamespace(get_quotes=fake_quotes))
     answer = await _run_case(monkeypatch, "get_market_context", {}, "上证指数")
     assert answer == "done:get_market_context"
+
+
+async def test_case_8_watchlist(monkeypatch):
+    seen = {}
+
+    async def fake_watchlist(user_id, group_id=None):
+        seen.update(user_id=user_id, group_id=group_id)
+        return [
+            SimpleNamespace(
+                fund_code="005827",
+                fund_name="易方达蓝筹精选",
+                fund_type="混合型",
+                latest_nav=1.5,
+                nav_date=business_today(),
+                daily_return=0.5,
+                weekly_return=1.0,
+                monthly_return=2.0,
+                quarterly_return=3.0,
+                semiannual_return=4.0,
+                annual_return=5.0,
+                is_held=False,
+                is_updated=True,
+                groups=["核心"],
+                group_ids=[],
+            )
+        ]
+
+    _patch_tool_service(monkeypatch, "get_watchlist", SimpleNamespace(list_funds=fake_watchlist))
+    answer = await _run_case(monkeypatch, "get_watchlist", {}, "易方达蓝筹精选")
+    assert answer == "done:get_watchlist"
+    assert seen == {"user_id": 42, "group_id": None}
 
 
 async def test_tool_loop_is_bounded(monkeypatch):

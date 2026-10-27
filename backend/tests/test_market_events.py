@@ -335,7 +335,7 @@ async def test_unique_evidence_calls_truncation_and_unavailable_not_no_impact(se
 
 
 def test_registry_schema_forbids_identity_raw_event_and_urls():
-    assert TOOLS_VERSION == "v20"
+    assert TOOLS_VERSION == "v21"
     assert get_market_events in MARKET_TOOLS and identify_event_portfolio_links in PORTFOLIO_TOOLS
     assert identify_event_portfolio_links in DEFAULT_AGENT_TOOLS
     assert set(identify_event_portfolio_links.args) == {"event_ids", "account_id", "position_limit"}

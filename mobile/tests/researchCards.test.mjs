@@ -68,10 +68,10 @@ test('cards reuse MarketChart and display only backend prices, quotes and calcul
   const native = { View: ({ children }) => element('div', {}, children), Text: ({ children }) => element('span', {}, children), ScrollView: ({ children }) => element('div', {}, children) };
   const ui = { Card: native.View, SectionTitle: ({ title }) => element('h3', {}, title), Chip: ({ label }) => element('button', {}, label), Stat: ({ label, value }) => element('span', {}, `${label} ${value}`) };
   const calls = [];
-  const { theme } = load('../constants/theme.ts');
+  const { theme } = load('../constants/theme.ts', { 'react-native': { Platform: { OS: 'web', select: (options) => options.web ?? options.default } } });
   const { ResearchDataCard } = load('../components/ResearchDataCard.tsx', {
     'react-native': native, '@/components/ui': ui, '@/constants/theme': { theme },
-    '@/utils/format': load('../utils/format.ts'),
+    '@/utils/format': load('../utils/format.ts', { '@/constants/theme': { theme } }),
     '@/components/states': { Async: ({ query, children }) => children(query.data), EmptyState: ({ title }) => element('span', {}, title), ErrorState: () => null, describeError: String },
     '@/components/MarketChart': { MarketChart: ({ bars }) => { calls.push(['chart', bars]); return element('svg', {}, element('title', {}, '原有MarketChart')); } },
     '@/hooks/useMarket': {

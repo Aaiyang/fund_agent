@@ -9,7 +9,7 @@ from annotated_types import MaxLen
 from pydantic import BaseModel
 
 from app.agent.graph.multi_role_research import build_multi_role_subgraph, remaining_budget
-from app.agent.graph.research import report_context
+from app.agent.graph.research import report_context, report_evidence
 from app.agent.graph.research_contract import (
     build_assignments,
     completion_manifest,
@@ -31,7 +31,13 @@ from app.schemas.multi_role_research import (
     ResearchRole,
     TaskCoverage,
 )
-from app.schemas.research import ResearchEvidence, ResearchGraphState, ResearchRequest, ResearchTask
+from app.schemas.research import (
+    EvidenceAcquisition,
+    ResearchEvidence,
+    ResearchGraphState,
+    ResearchRequest,
+    ResearchTask,
+)
 from app.utils.clock import utc_now
 
 
@@ -158,6 +164,186 @@ class TestDerivedCoverage:
         assert hit.status == "completed" and hit.met == ["共同窗口风险指标"]
         assert miss.status == "partial" and miss.missing == ["共同窗口风险指标"]
 
+    def test_comparison_tool_success_does_not_cover_funds_without_risk_metrics(self) -> None:
+        """对比工具一次返回三只，但 000001 的回撤/波动为空时不能判风险维度已覆盖."""
+        packet = [{**entry("ev_c", "get_fund_comparison_data"), "risk_metric_missing": ["000001"]}]
+        risk = ResearchAssignment(
+            task_id="risk",
+            role="risk",
+            summary="风险",
+            required_evidence=[
+                EvidenceRequirement(label="共同窗口风险指标", tools=["get_fund_comparison_data"], scope="global")
+            ],
+        )
+        performance = ResearchAssignment(
+            task_id="performance",
+            role="performance",
+            summary="业绩",
+            required_evidence=[
+                EvidenceRequirement(label="共同窗口对比", tools=["get_fund_comparison_data"], scope="global")
+            ],
+        )
+        analysis = AgentAnalysis(findings=[finding(["ev_c"])])
+        codes = ["000001", "000002", "000003"]
+        _, risk_coverage, _ = derive(analysis, packet, risk, codes)
+        _, performance_coverage, _ = derive(analysis, packet, performance, codes)
+        assert risk_coverage.status == "partial"
+        assert risk_coverage.missing == ["共同窗口风险指标（缺 000001）"]
+        # 业绩维度也引用同一工具，但共同窗口收益对三只都存在，不能受风险门槛牵连。
+        assert performance_coverage.status == "completed"
+
+    def test_report_evidence_exposes_per_fund_risk_metric_gaps(self) -> None:
+        state = ResearchGraphState(
+            evidence=[
+                ResearchEvidence(
+                    tool="get_fund_comparison_data",
+                    args={"fund_codes": ["000001", "000002"]},
+                    success=True,
+                    text="[TOOL_OK]\n{}",
+                    data={
+                        "rows": [
+                            {
+                                "fund_code": "000001",
+                                "observed_max_drawdown_ratio": None,
+                                "annualized_nav_volatility_ratio": None,
+                            },
+                            {
+                                "fund_code": "000002",
+                                "observed_max_drawdown_ratio": -0.2,
+                                "annualized_nav_volatility_ratio": 0.3,
+                            },
+                        ]
+                    },
+                )
+            ]
+        )
+        included, _ = report_evidence(state)
+        assert included[0]["risk_metric_missing"] == ["000001"]
+
+    def comparison_assignment(self) -> ResearchAssignment:
+        return ResearchAssignment(
+            task_id="risk",
+            role="risk",
+            summary="风险",
+            required_evidence=[
+                EvidenceRequirement(label="共同窗口风险指标", tools=["get_fund_comparison_data"], scope="global")
+            ],
+        )
+
+    def test_upstream_metric_gap_is_recorded_but_does_not_need_revision(self) -> None:
+        packet = [entry("ev_c", "get_fund_comparison_data")]
+        acquisition = [
+            EvidenceAcquisition(
+                tool="get_fund_comparison_data",
+                args={"fund_codes": ["000001", "000002"]},
+                fund_codes=["000001", "000002"],
+                status="ok",
+                missing_fund_codes=["000001"],
+                missing_metrics=["observed_max_drawdown_ratio", "annualized_nav_volatility_ratio"],
+            )
+        ]
+        _, coverage, _ = derive_coverage(
+            AgentAnalysis(findings=[finding(["ev_c"])]),
+            packet,
+            self.comparison_assignment(),
+            ["000001", "000002"],
+            [],
+            acquisition,
+        )
+        assert coverage.status == "partial"
+        assert coverage.missing == ["共同窗口风险指标（缺 000001）"]
+        assert [gap.kind for gap in coverage.missing_gaps] == ["upstream_unavailable"]
+        assert not coverage.revision_needed and not coverage.supplement_needed
+
+    def test_performance_is_not_demoted_by_missing_risk_metrics(self) -> None:
+        assignment = ResearchAssignment(
+            task_id="performance",
+            role="performance",
+            summary="业绩",
+            required_evidence=[
+                EvidenceRequirement(label="共同窗口对比", tools=["get_fund_comparison_data"], scope="global")
+            ],
+        )
+        packet = [entry("ev_c", "get_fund_comparison_data")]
+        acquisition = [
+            EvidenceAcquisition(
+                tool="get_fund_comparison_data",
+                args={"fund_codes": ["000001", "000002"]},
+                fund_codes=["000001", "000002"],
+                status="ok",
+                missing_fund_codes=["000001"],
+                missing_metrics=["observed_max_drawdown_ratio"],
+            )
+        ]
+        _, coverage, _ = derive_coverage(
+            AgentAnalysis(findings=[finding(["ev_c"])]),
+            packet,
+            assignment,
+            ["000001", "000002"],
+            [],
+            acquisition,
+        )
+        assert coverage.status == "completed" and coverage.met == ["共同窗口对比"]
+
+    def test_available_but_uncited_evidence_needs_revision(self) -> None:
+        packet = [
+            entry("ev_c", "get_fund_comparison_data"),
+            entry("ev_s", "get_fund_snapshot", "000001"),
+        ]
+        acquisition = [
+            EvidenceAcquisition(
+                tool="get_fund_comparison_data",
+                args={"fund_codes": ["000001", "000002"]},
+                fund_codes=["000001", "000002"],
+                status="ok",
+            )
+        ]
+        _, coverage, _ = derive_coverage(
+            AgentAnalysis(findings=[finding(["ev_s"])]),
+            packet,
+            self.comparison_assignment(),
+            ["000001", "000002"],
+            [],
+            acquisition,
+        )
+        assert coverage.missing == ["共同窗口风险指标"]
+        assert [gap.kind for gap in coverage.missing_gaps] == ["available_not_cited"]
+        assert coverage.revision_needed and not coverage.supplement_needed
+
+    def test_failed_or_missing_source_needs_supplement_not_revision(self) -> None:
+        packet = [entry("ev_s", "get_fund_snapshot", "000001")]
+        failed = [
+            EvidenceAcquisition(
+                tool="get_fund_comparison_data",
+                args={"fund_codes": ["000001", "000002"]},
+                fund_codes=["000001", "000002"],
+                status="failed",
+                error_code="UPSTREAM_ERROR",
+                retryable=True,
+            )
+        ]
+        _, coverage, _ = derive_coverage(
+            AgentAnalysis(findings=[finding(["ev_s"])]),
+            packet,
+            self.comparison_assignment(),
+            ["000001", "000002"],
+            [],
+            failed,
+        )
+        assert [gap.kind for gap in coverage.missing_gaps] == ["fetch_failed"]
+        assert coverage.supplement_needed and not coverage.revision_needed
+
+        _, untried, _ = derive_coverage(
+            AgentAnalysis(findings=[finding(["ev_s"])]),
+            packet,
+            self.comparison_assignment(),
+            ["000001", "000002"],
+            [],
+            None,
+        )
+        assert [gap.kind for gap in untried.missing_gaps] == ["not_attempted"]
+        assert untried.supplement_needed and not untried.revision_needed
+
 
 class TestRoleEvidenceSlices:
     def test_slices_follow_the_evaluation_dimensions(self) -> None:
@@ -263,7 +449,7 @@ def _state_for_report(
 def test_multi_role_report_is_organised_by_dimension_then_synthesis() -> None:
     """多角色报告按维度分节、末尾才综合；这段结构契约必须真的进到成文上下文."""
     context = report_context(_state_for_report("multi_role"))
-    assert "每个**实际运行过的**维度单独一节" in context
+    assert "每个实际运行过的维度单独一节" in context
     assert "综合结论与分歧" in context and "角色分歧与未解决项" in context
     # 关键约束：本维度没覆盖的对象不许借别的维度填空。
     assert "不许借用其他维度的材料填空" in context

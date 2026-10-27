@@ -74,13 +74,28 @@ and scenario nodes:
    role and finding index; unknown claim targets, evidence IDs and fund codes are rejected
    and disclosed. It is told explicitly that a colleague's stance is not evidence and that
    it must not raise issues in order to manufacture a disagreement.
-4. At most two independent supplement requests execute in parallel, from a fixed read-only
-   whitelist: announcements (10), managers (20), or market events (10 within 168 hours).
-   Arguments are constructed by the server and identical calls are deduplicated.
-5. Only roles targeted by valid issues, roles whose own slice gained new evidence, or roles
-   whose derived coverage is incomplete revise once. Review failure does not trigger a full
-   rewrite. Unnecessary revisions reuse reviewed first-round work. A failed revision keeps
-   the useful first-round findings while disclosing the unresolved feedback.
+3a. After each role call the server runs a numeric audit: percentages, amounts and
+   two-decimal numbers in a finding should be findable in the evidence it cites. The
+   `numeric_audit` payload is advisory only; derived sums, rounding and unit conversions
+   may miss, so it never changes coverage or run status.
+3b. Only for a real contradiction about the same object and metric may the reviewer fill
+   the optional challenger fields (role, finding index, evidence). The server validates the
+   challenger's role slice and evidence and keeps at most two challenges. A challenge is
+   delivered as `cross_examination` to the challenged role's single revision payload; it
+   adds no debate node and no extra model call, and `divergences` records whether it was
+   addressed.
+4. At most two independent review-requested supplement calls execute in parallel, from a
+   fixed read-only whitelist: announcements (10), managers (20), or market events (10 within
+   168 hours). Arguments are constructed by the server and identical calls are deduplicated.
+   The acquisition ledger may add up to three bounded retries for required, retryable calls
+   that have not succeeded, prioritising actual failures over never-attempted calls.
+5. Coverage gaps are classified by code as: evidence available but not cited, fetch failed,
+   not attempted, or upstream unavailable. Only the first two trigger action. Available but
+   uncited evidence goes straight to revision. Failed or missing calls are retried once;
+   only usable new evidence triggers a revision. Upstream-empty or null metrics are recorded
+   as gaps without a retry or revision. Review failure does not trigger a full rewrite.
+   Unnecessary revisions reuse reviewed first-round work. A failed revision keeps the useful
+   first-round findings while disclosing the unresolved feedback.
 6. One synthesis receives the machine-checked completion matrix, the divergence list and the
    server-paired `tensions` (same topic and object, strictly opposite stances from different
    roles) and must write the report as a team document: one section per dimension under the
@@ -147,8 +162,12 @@ references still pass the existing server validation.
 The parent graph's PostgreSQL saver persists the nested workflow. Existing session
 locks serialize chat, continuation and deletion. After execution fails or a stream is
 interrupted, the existing `/chatbot/pending-action` and `/chatbot/continue` flow resumes
-unfinished checkpoints without replaying completed graph nodes. Individual role or
-review failures produce a partial report; they do not trigger an unbounded debate.
+unfinished checkpoints without replaying completed graph nodes. If the multi-role subgraph
+already contains failed roles, continuation starts a fresh multi-role run with the same
+confirmed task instead of only writing a degraded report from `write_report`. When roles
+succeeded and only final synthesis failed, it resumes in place without repeating role or
+evidence work. Individual role or review failures still produce a partial report if not
+continued; they do not trigger an unbounded debate.
 
 All role calls use the existing user-scoped LLM service, structured Pydantic outputs,
 tenacity retry/fallback and inherited Langfuse callbacks. One-off structured calls do
@@ -168,11 +187,13 @@ not change shared tool bindings or the user's active-model index. Configure:
 
 There are at most eleven structured calls: six role analyses, one reviewer, six revisions
 (six in practice only when every dimension is revised; a public run without verified
-positions has five). Supplements add at most two tool calls, not model calls. Target after
+positions has five). Tool acquisition adds at most five calls: two review-requested
+supplements plus three ledger-driven retries, not model calls. Target after
 the latency work below is roughly a single-mode run plus one review round; it has not been
 re-measured against a live provider yet, so treat it as a budget, not a result.
 Progress merging does not regress after late callbacks. Logs record role/review duration,
-input characters, per-role coverage status with met/missing counts and supplement counts.
+input characters, per-role coverage status with met/missing counts, supplement counts and
+acquisition ok/empty/failed/not_attempted counts.
 The current implementation runs within the chat request, with explicit progress,
 cancellation and checkpoint continuation. It does not introduce a detached Taskiq research
 worker or independent conversations for each role. Providers must support the LLM service's
@@ -215,5 +236,19 @@ is dead by construction today: `ProgressChatOpenAI` deliberately keeps only the 
 observer at `services/llm/timeouts.py` never receives a fragment. Fixing it needs a product
 decision (show a benign "thought N characters" line, or stop shipping the field), not a patch
 that leaks hidden reasoning to the client.
+## Offline multi-role fixture evaluation
+
+`evals/fixtures/multi_role/cases.json` holds fixed evidence packs and expectations, and
+`evals/multi_role_eval.py` drives the real multi-role subgraph with deterministic model,
+tool and reviewer substitutes. It never calls the network or writes to the database:
+
+```bash
+python -m scripts.eval_multi_role --output .runtime/multi-role-eval.json
+```
+
+The report records per-case coverage, unknown citations, revision roles, duplicate claims,
+call counts and estimated tokens, plus aggregate unknown-citation rate, mean calls and
+maximum graph time. `tests/test_multi_role_eval.py` runs the same fixtures as a pytest gate.
+
 Live evaluations must compare latency, complete/partial rates and human-checked
 semantic support with the same model and research targets before tightening budgets.

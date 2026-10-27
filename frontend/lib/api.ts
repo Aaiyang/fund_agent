@@ -1,8 +1,37 @@
+import type { FundComparisonChartRef } from '@/lib/fund-api';
+
 export type ChatRole = 'user' | 'assistant' | 'system';
+
+export type ResearchCitation = {
+  number: number;
+  evidence_id: string;
+  label: string;
+  tool: string;
+  fund_codes: string[];
+  as_of: string | null;
+  excerpt: string;
+};
+
+export type ResearchCitations = {
+  version: number;
+  citations: ResearchCitation[];
+  coverage: string[];
+  sources: string[];
+  audit: { matched: number; unknown: number; uncited_lines: number };
+};
+
+export type ResearchRoleOutcome = {
+  role: string;
+  status: string;
+};
 
 export type ChatMessage = {
   role: ChatRole;
   content: string;
+  research_citations?: ResearchCitations | null;
+  research_roles?: ResearchRoleOutcome[] | null;
+  research_review_status?: string | null;
+  fund_comparison_chart?: FundComparisonChartRef | null;
 };
 
 export type Token = {
@@ -51,7 +80,7 @@ type StreamEvent = {
   done: boolean;
 };
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 async function readError(response: Response): Promise<string> {
@@ -72,7 +101,7 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init: RequestInit = {},
   token?: string,

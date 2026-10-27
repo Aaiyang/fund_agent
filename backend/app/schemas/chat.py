@@ -19,7 +19,7 @@ from app.schemas.base import BaseResponse
 from app.schemas.agent_import import AgentPendingAction, ImportId
 from app.schemas.agent_resume import AgentRunContinuation
 from app.schemas.multi_role_research import ResearchActivity, ResearchProgress, ResearchRoleOutcome
-from app.schemas.research import ResearchIntent
+from app.schemas.research import FundComparisonChartRef, ResearchCitations, ResearchIntent
 
 # 客户端研究入口的对象只能是六位代码，不接受名称（名称要经解析节点确认）
 ResearchFundCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
@@ -48,6 +48,14 @@ class Message(BaseModel):
     )
     research_review_status: Literal["completed", "partial", "failed", "skipped"] | None = Field(
         default=None, description="多角色报告的交叉审核结局"
+    )
+    research_citations: ResearchCitations | None = Field(
+        default=None,
+        description="报告正文角标对应的编号证据、来源核对与引用审计；前端折叠展示",
+    )
+    fund_comparison_chart: FundComparisonChartRef | None = Field(
+        default=None,
+        description="多基金对比报告的固定共同窗口与指标；客户端据此绘制归一收益对比图",
     )
 
 

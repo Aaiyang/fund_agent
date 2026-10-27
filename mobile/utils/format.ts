@@ -6,6 +6,8 @@
  * `return_1m` 这类分析值是比例（0.022 即 +2.2%）。按单位挑对 helper，别猜。
  */
 
+import { theme } from '@/constants/theme';
+
 const CNY = '¥';
 
 /** `toFixed` 会把小到显示不出来的值连符号一起留着；派生数字正好可能
@@ -163,6 +165,6 @@ export function formatSessionTime(value: string | null | undefined): string {
 
 /** 按中国市场的红绿惯例上色：涨是红，跌是绿。 */
 export function trendColor(value: number | null | undefined): string {
-  if (value === null || value === undefined || value === 0) return '#6B7280';
-  return value > 0 ? '#D93026' : '#1E9E62';
+  if (value === null || value === undefined || value === 0) return theme.flat;
+  return value > 0 ? theme.up : theme.down;
 }

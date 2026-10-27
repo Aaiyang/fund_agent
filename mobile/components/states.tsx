@@ -20,8 +20,23 @@ export function LoadingState({ label = '加载中…' }: { label?: string }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <View style={{ padding: 28, alignItems: 'center' }}>
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          marginBottom: 12,
+          backgroundColor: theme.primarySoft,
+          borderWidth: 1,
+          borderColor: theme.border,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: theme.primary, opacity: 0.5 }} />
+      </View>
       <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600' }}>{title}</Text>
-      {hint ? <Text style={{ marginTop: 6, fontSize: 13, color: theme.textMuted, textAlign: 'center' }}>{hint}</Text> : null}
+      {hint ? <Text style={{ marginTop: 6, fontSize: 13, color: theme.textMuted, textAlign: 'center', lineHeight: 20 }}>{hint}</Text> : null}
     </View>
   );
 }
@@ -29,7 +44,9 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <View style={{ padding: 20, alignItems: 'center' }}>
-      <Text style={{ fontSize: 14, color: theme.danger, textAlign: 'center', marginBottom: 12 }}>{message}</Text>
+      <View style={{ backgroundColor: theme.dangerSoft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12 }}>
+        <Text style={{ fontSize: 14, color: theme.danger, textAlign: 'center', lineHeight: 20 }}>{message}</Text>
+      </View>
       {onRetry ? <Button label="重试" variant="secondary" onPress={onRetry} /> : null}
     </View>
   );

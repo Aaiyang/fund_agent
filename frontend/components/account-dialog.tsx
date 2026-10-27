@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -88,17 +89,29 @@ export function AccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="gap-5 rounded-[24px] border-border bg-card p-6 sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>账号管理</DialogTitle>
-          <DialogDescription>
-            修改显示名称或邮箱，保存后立即生效。
-          </DialogDescription>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/xiaojing-avatar.png"
+              alt=""
+              width={40}
+              height={40}
+              unoptimized
+              className="size-10 rounded-[13px] border border-border object-cover"
+            />
+            <div>
+              <DialogTitle className="font-display text-xl">账号管理</DialogTitle>
+              <DialogDescription className="mt-1">
+                改个称呼，或换一个联系邮箱。
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-            <RefreshCw className="size-4 animate-spin" />
+            <RefreshCw className="size-4 animate-spin text-primary" />
             正在加载…
           </div>
         ) : (
@@ -107,6 +120,7 @@ export function AccountDialog({
               <Label htmlFor="account-username">显示名称</Label>
               <Input
                 id="account-username"
+                className="h-11 rounded-xl bg-card"
                 value={username}
                 maxLength={50}
                 onChange={(event) => setUsername(event.target.value)}
@@ -117,13 +131,14 @@ export function AccountDialog({
               <Label htmlFor="account-email">邮箱</Label>
               <Input
                 id="account-email"
+                className="h-11 rounded-xl bg-card"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />
             </div>
             {createdAt && (
-              <p className="text-xs text-muted-foreground">
+              <p className="rounded-xl bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
                 注册时间：{new Date(createdAt).toLocaleString('zh-CN')}
               </p>
             )}
@@ -133,7 +148,7 @@ export function AccountDialog({
         {error && (
           <div
             role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
+            className="rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
           >
             {error}
           </div>
@@ -141,6 +156,7 @@ export function AccountDialog({
 
         <DialogFooter>
           <Button
+            className="rounded-xl"
             onClick={() => void handleSave()}
             disabled={loading || saving}
           >

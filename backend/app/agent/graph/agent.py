@@ -576,7 +576,7 @@ class LangGraphAgent:
     async def get_run_continuation(self, session_id: str) -> AgentRunContinuation | None:
         """人工决定已消费但后续节点失败时，返回原任务的继续入口，不伪造人工中断."""
         graph = await self._get_graph()
-        state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+        state = await graph.aget_state({"configurable": {"thread_id": session_id}}, subgraphs=True)
         if not state.next or self._pending_interrupt(state) or not state.values.get("turn_id"):
             return None
         graph_state = GraphState.model_validate(state.values)
@@ -588,9 +588,14 @@ class LangGraphAgent:
                 selected = task.resolved_funds[0]
             elif len(task.resolved_funds) > 1:
                 selected = None
+        notice = (
+            "原任务有多角色分析未完成，继续会重新运行这次多角色研究并保留已确认的对象。"
+            if self._needs_multi_role_restart(state)
+            else "原任务尚未完成，继续会保留已确认的对象和已取得的证据，无需重新选择。"
+        )
         return AgentRunContinuation(
             turn_id=state.values["turn_id"],
-            notice="原任务尚未完成，继续会保留已确认的对象和已取得的证据，无需重新选择。",
+            notice=notice,
             selected_fund_code=selected.fund_code if selected else None,
             selected_fund_name=selected.fund_name if selected else None,
         )
@@ -598,7 +603,7 @@ class LangGraphAgent:
     async def continue_run(
         self, session_id: str, turn_id: str, *, user_id: str, username: str | None = None
     ) -> list[Message]:
-        """重试checkpoint中未完成节点，保留原轮次；不重新发送决定、启动工具或新消息."""
+        """重试checkpoint中未完成节点；失败角色重开同一任务，其余节点原地恢复."""
         graph = await self._get_graph()
         config: RunnableConfig = {
             "configurable": {"thread_id": session_id},
@@ -606,12 +611,23 @@ class LangGraphAgent:
             "recursion_limit": settings.AGENT_RECURSION_LIMIT,
             "metadata": {"user_id": user_id, "session_id": session_id, "username": username},
         }
-        state = await graph.aget_state(config)
+        state = await graph.aget_state(config, subgraphs=True)
         if state.values.get("turn_id") != turn_id or self._pending_interrupt(state):
             raise ValueError("agent_continuation_mismatch")
         if state.next:
-            logger.info("agent_run_continued", session_id=session_id, turn_id=turn_id, next_nodes=state.next)
-            await graph.ainvoke(None, config=config)
+            restart = self._continuation_restart_input(state)
+            if restart is not None:
+                logger.info(
+                    "research_multi_role_restarted",
+                    session_id=session_id,
+                    old_turn_id=turn_id,
+                    new_turn_id=restart["turn_id"],
+                    next_nodes=state.next,
+                )
+                await graph.ainvoke(restart, config=config)
+            else:
+                logger.info("agent_run_continued", session_id=session_id, turn_id=turn_id, next_nodes=state.next)
+                await graph.ainvoke(None, config=config)
         state = await graph.aget_state(config)
         pending = self._holding_review(state)
         if pending:
@@ -1161,7 +1177,7 @@ class LangGraphAgent:
         graph = await self._get_graph()
 
         try:
-            state = await graph.aget_state(config)
+            state = await graph.aget_state(config, subgraphs=True)
             # 本轮开始前已经入库的消息 id。stream_mode="messages" 不只转发模型 token，
             # 还会把节点输出里的消息全部转发；挂载成父节点的子图，其输出就是包含整段
             # 历史的完整状态，于是上一轮报告会被当成本轮新产出重新发射。见下方过滤。
@@ -1315,8 +1331,74 @@ class LangGraphAgent:
             raise stream_error
 
     @staticmethod
-    def _resume_input(state: StateSnapshot, payload: FundSelectionDecision | AgentContinueRequest) -> Command | None:
-        """选择只消费当前中断；继续只重跑原轮次未完成的节点."""
+    @staticmethod
+    def _pending_research_substate(state: StateSnapshot) -> StateSnapshot | None:
+        """顶层还在深研究节点时，取出对应的研究子图检查点."""
+        if not state.next or not any(node.startswith("deep_") for node in state.next):
+            return None
+        for task in state.tasks:
+            if not task.name.startswith("deep_"):
+                continue
+            substate = getattr(task, "state", None)
+            if substate is not None:
+                return substate
+        return None
+
+    @staticmethod
+    def _needs_multi_role_restart(state: StateSnapshot) -> bool:
+        """只重开确实有失败终态的研究；首轮失败但修订成功不算."""
+        task = state.values.get("research_task")
+        if task is None or task.request.strategy != "multi_role" or not task.resolved_funds:
+            return False
+        substate = LangGraphAgent._pending_research_substate(state)
+        if substate is None:
+            return False
+        first: dict[str, Any] = {}
+        second: dict[str, Any] = {}
+        for report in substate.values.get("agent_reports", []):
+            role = getattr(report, "role", None)
+            if not role:
+                continue
+            if getattr(report, "round", 0) == 1:
+                first[role] = report
+            else:
+                second[role] = report
+        # 修订轮 skipped 不能洗掉首轮失败；只有 completed/partial 的修订才覆盖首轮。
+        selected = [
+            second[role]
+            if role in second and getattr(second[role], "status", None) in {"completed", "partial"}
+            else report
+            for role, report in first.items()
+        ]
+        return any(getattr(report, "status", None) == "failed" for report in selected)
+
+    @staticmethod
+    def _continuation_restart_input(state: StateSnapshot) -> dict[str, Any] | None:
+        """有失败角色时用同一确认任务开新一轮，而不是从 write_report 续写降级稿."""
+        if not LangGraphAgent._needs_multi_role_restart(state):
+            return None
+        task = state.values.get("research_task")
+        if task is None:
+            return None
+        turn_id = uuid4().hex
+        return {
+            "turn_id": turn_id,
+            # 续跑是服务端授权的重试，不能沿用原任务里的 model 授权标记。
+            "research_task": task.model_copy(update={"turn_id": turn_id, "requested_by": "followup"}),
+            "research_result": None,
+            "fund_selection_result": None,
+            "long_term_memory": state.values.get("long_term_memory", ""),
+            "holding_import_ids": state.values.get("holding_import_ids", []),
+            "holding_account_id": state.values.get("holding_account_id"),
+            "holding_instruction": state.values.get("holding_instruction", ""),
+            "memory_write_status": None,
+        }
+
+    @staticmethod
+    def _resume_input(
+        state: StateSnapshot, payload: FundSelectionDecision | AgentContinueRequest
+    ) -> Command | dict[str, Any] | None:
+        """选择只消费当前中断；继续时失败角色重开任务，其余情况原地恢复."""
         if isinstance(payload, FundSelectionDecision):
             pending = LangGraphAgent._holding_review(state)
             if not isinstance(pending, FundSelectionAction) or pending.interrupt_id != payload.interrupt_id:
@@ -1328,14 +1410,14 @@ class LangGraphAgent:
             return Command(resume={payload.interrupt_id: payload.model_dump()})
         if state.values.get("turn_id") != payload.turn_id or LangGraphAgent._pending_interrupt(state):
             raise ValueError("agent_continuation_mismatch")
-        return None
+        return LangGraphAgent._continuation_restart_input(state)
 
     async def validate_stream_resume(
         self, session_id: str, payload: FundSelectionDecision | AgentContinueRequest
     ) -> None:
         """发送流式响应头之前，在会话锁内核验中断和轮次."""
         graph = await self._get_graph()
-        state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+        state = await graph.aget_state({"configurable": {"thread_id": session_id}}, subgraphs=True)
         self._resume_input(state, payload)
 
     async def get_chat_history(self, session_id: str) -> list[Message]:
@@ -1372,6 +1454,12 @@ class LangGraphAgent:
             review_status = (
                 original.additional_kwargs.get("research_review_status") if isinstance(original, AIMessage) else None
             )
+            citations = (
+                original.additional_kwargs.get("research_citations") if isinstance(original, AIMessage) else None
+            )
+            comparison = (
+                original.additional_kwargs.get("fund_comparison_chart") if isinstance(original, AIMessage) else None
+            )
             for message in convert_to_openai_messages([original]):
                 if message["role"] in ["assistant", "user"] and message["content"]:
                     result.append(
@@ -1384,6 +1472,8 @@ class LangGraphAgent:
                             else None,
                             research_roles=outcomes,
                             research_review_status=review_status,
+                            research_citations=citations,
+                            fund_comparison_chart=comparison,
                         )
                     )
         return result

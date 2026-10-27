@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -17,7 +18,10 @@ from pydantic import BaseModel, Field
 from app.agent.prompts.graph import review_prompt, role_prompt
 from app.core.config import settings
 from app.core.logging import logger
+from app.agent.graph.evidence_matrix import build_acquisition, is_empty, retry_calls
+from app.agent.graph.numeric_audit import audit_findings
 from app.agent.graph.research_contract import (
+    EMPTY_IS_AVAILABLE,
     ROLE_LABELS,
     build_assignments,
     completion_manifest,
@@ -36,7 +40,7 @@ from app.schemas.multi_role_research import (
     ResearchRole,
     ResearchStage,
 )
-from app.schemas.research import ResearchEvidence, ResearchGraphState
+from app.schemas.research import EvidenceAcquisition, ResearchEvidence, ResearchGraphState
 from app.utils.clock import utc_now
 
 
@@ -63,6 +67,95 @@ FetchEvidence = Callable[[ResearchGraphState, RunnableConfig, str, dict], Awaita
 _ROLES: tuple[ResearchRole, ...] = ("performance", "risk", "holdings", "manager", "disclosure", "portfolio")
 
 
+def _target_key(name: str, args: dict) -> tuple[str, tuple[str, ...]]:
+    """同一工具、同一组对象视为同一取证目标，避免不同 limit 触发重复调用."""
+    single = args.get("fund_code")
+    if isinstance(single, str):
+        return name, (single,)
+    multiple = args.get("fund_codes")
+    if isinstance(multiple, list):
+        return name, tuple(code for code in multiple if isinstance(code, str))
+    return name, ()
+
+
+def _drop_resolved_failures(gaps: list[str], acquisition: list[EvidenceAcquisition]) -> list[str]:
+    """补取已成功时，不再把上一轮的临时失败当成最终缺口."""
+    failed_tools = {row.tool for row in acquisition if row.status == "failed"}
+    resolved_tools = {row.tool for row in acquisition if row.status in {"ok", "empty"}} - failed_tools
+    failure_lines = {tool + "查询失败" for tool in resolved_tools} | {tool + "补证失败" for tool in resolved_tools}
+    return [gap for gap in gaps if gap not in failure_lines]
+
+
+def _challenge_evidence(packet: list[dict], evidence_ids: list[str]) -> list[dict]:
+    """质询证据只给有界摘录和日期，避免把整包原文再塞进修订轮."""
+    by_id = {str(item.get("evidence_id")): item for item in packet}
+    notes: list[dict] = []
+    for evidence_id in evidence_ids:
+        entry = by_id.get(evidence_id)
+        if entry is None:
+            continue
+        text = str(entry.get("text") or "")
+        date = re.search(r"\bas_of=([^\s;]+)", text)
+        notes.append(
+            {
+                "evidence_id": evidence_id,
+                "tool": entry.get("tool"),
+                "args": entry.get("args") or {},
+                "excerpt": text[:_REVIEW_EXCERPT_CHARS],
+                "as_of": date.group(1) if date else None,
+            }
+        )
+    return notes
+
+
+def _valid_challenge(issue: Any, reports: dict[str, AgentReport], packet: list[dict]) -> bool:
+    """挑战方、被挑战发现和挑战证据都必须真实且在同一角色切片内."""
+    if issue.challenger_role is None or issue.challenger_role == issue.role:
+        return False
+    if issue.challenger_finding_index is None or not issue.challenger_evidence_ids:
+        return False
+    challenger = reports.get(issue.challenger_role)
+    if challenger is None or issue.challenger_finding_index >= len(challenger.analysis.findings):
+        return False
+    finding = challenger.analysis.findings[issue.challenger_finding_index]
+    visible = {item["evidence_id"] for item in role_evidence(packet, issue.challenger_role)}
+    return set(issue.challenger_evidence_ids) <= set(finding.evidence_ids) <= visible
+
+
+def _cross_examination_payload(
+    state: ResearchGraphState, reports: dict[str, AgentReport], role: ResearchRole, packet: list[dict]
+) -> list[dict]:
+    """把审核已校验的挑战转成被质询角色可读的一轮修订载荷."""
+    review = state.agent_review
+    if review is None:
+        return []
+    result: list[dict] = []
+    for index, issue in enumerate(review.issues):
+        if issue.role != role or issue.challenger_role is None:
+            continue
+        challenged = reports.get(role)
+        challenger = reports.get(issue.challenger_role)
+        if challenged is None or challenger is None or issue.challenger_finding_index is None:
+            continue
+        if issue.finding_index >= len(challenged.analysis.findings):
+            continue
+        if issue.challenger_finding_index >= len(challenger.analysis.findings):
+            continue
+        challenger_finding = challenger.analysis.findings[issue.challenger_finding_index]
+        result.append(
+            {
+                "issue_index": index,
+                "challenger_role": issue.challenger_role,
+                "challenger_label": ROLE_LABELS.get(issue.challenger_role, issue.challenger_role),
+                "reason": issue.reason,
+                "challenged_claim": challenged.analysis.findings[issue.finding_index].claim,
+                "challenger_claim": challenger_finding.claim,
+                "challenger_evidence": _challenge_evidence(packet, issue.challenger_evidence_ids),
+            }
+        )
+    return result
+
+
 class MultiRoleGraphState(ResearchGraphState):
     """Only agent_reports has concurrent writers; every other channel has one writer."""
 
@@ -82,6 +175,7 @@ class MultiRoleGraphOutput(BaseModel):
     agent_revision_roles: list[ResearchRole]
     agent_review_status: Literal["completed", "partial", "failed"] | None
     agent_started_at: datetime | None
+    agent_acquisition: list[EvidenceAcquisition]
 
 
 def evidence_packet(state: ResearchGraphState, view: EvidenceView) -> tuple[list[dict], list[str]]:
@@ -160,10 +254,26 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
     async def prepare(state: MultiRoleGraphState, config: RunnableConfig) -> dict:
         packet, omitted = evidence_packet(state, view)
         assignments = build_assignments(state)
+        acquisition = build_acquisition(state)
+        logger.info(
+            "research_evidence_acquisition",
+            turn_id=state.turn_id,
+            planned=len(acquisition),
+            ok=sum(item.status == "ok" for item in acquisition),
+            empty=sum(item.status == "empty" for item in acquisition),
+            failed=sum(item.status == "failed" for item in acquisition),
+            not_attempted=sum(item.status == "not_attempted" for item in acquisition),
+        )
+        logger.debug(
+            "research_evidence_acquisition_detail",
+            turn_id=state.turn_id,
+            rows=[item.model_dump(mode="json") for item in acquisition],
+        )
         return {
             "agent_assignments": assignments,
             "agent_evidence_packet": packet,
             "agent_initial_evidence_ids": [item["evidence_id"] for item in packet],
+            "agent_acquisition": acquisition,
             "agent_revision_roles": [],
             "agent_review_status": None,
             "agent_started_at": utc_now(),
@@ -193,13 +303,20 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
             "skill_boundaries": state.skill_evidence,
         }
         if feedback:
-            data["peer_reports"] = [item.model_dump(mode="json") for item in latest_reports(state, 1)]
+            first_round = latest_reports(state, 1)
+            data["peer_reports"] = [item.model_dump(mode="json") for item in first_round]
             data["review"] = state.agent_review.model_dump(mode="json") if state.agent_review else None
             data["required_issue_indices"] = [
                 index
                 for index, issue in enumerate(state.agent_review.issues if state.agent_review else [])
                 if issue.role == role
             ]
+            if role is not None:
+                challenges = _cross_examination_payload(
+                    state, {item.role: item for item in first_round}, role, packet_for(state)
+                )
+                if challenges:
+                    data["cross_examination"] = challenges
         if role == "portfolio" and state.long_term_memory:
             data["historical_user_statements"] = state.long_term_memory[:2000]
             data["historical_context_notice"] = (
@@ -261,7 +378,12 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 if round_number == 2 and issue.role == role
             ]
             analysis, coverage, gaps = derive_coverage(
-                AgentAnalysis.model_validate(result), packet, assignment, list(state.fund_codes), indices
+                AgentAnalysis.model_validate(result),
+                packet,
+                assignment,
+                list(state.fund_codes),
+                indices,
+                state.agent_acquisition,
             )
             task = state.research_task
             if (
@@ -280,6 +402,20 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 if coverage.status == "completed" and not gaps
                 else "partial"
             )
+            try:
+                numeric = audit_findings(analysis.findings, packet, state.evidence)
+                logger.info(
+                    "research_numeric_audit",
+                    turn_id=state.turn_id,
+                    role=role,
+                    checked=numeric.checked,
+                    matched=numeric.matched,
+                    unmatched=len(numeric.unmatched),
+                    truncated=numeric.truncated,
+                )
+            except Exception:
+                logger.exception("research_numeric_audit_failed", turn_id=state.turn_id, role=role)
+                numeric = None
             report = AgentReport(
                 run_id=state.turn_id,
                 role=role,
@@ -287,6 +423,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 status=status,
                 analysis=analysis,
                 coverage=coverage,
+                numeric_audit=numeric,
             )
         except Exception:
             logger.exception("research_agent_failed", turn_id=state.turn_id, role=role, round=round_number)
@@ -356,6 +493,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                         "gaps": item.analysis.gaps,
                         "stance": item.analysis.stance.model_dump(mode="json") if item.analysis.stance else None,
                         "coverage": item.coverage.model_dump(mode="json") if item.coverage else None,
+                        "numeric_audit": item.numeric_audit.model_dump(mode="json") if item.numeric_audit else None,
                     }
                     for item in latest_reports(state, 1)
                 ],
@@ -370,7 +508,8 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
         publish_progress(state, "review", "started")
         started = time.monotonic()
         data = review_payload(state)
-        ids = {item["evidence_id"] for item in packet_for(state)}
+        packet = packet_for(state)
+        ids = {item["evidence_id"] for item in packet}
         reports = {item.role: item for item in latest_reports(state, 1)}
         if set(reports) != set(_ROLES):
             raise ValueError("research review barrier missing agent reports")
@@ -388,7 +527,7 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                     on_text=activity_streamer(state, "review", None),
                 )
             checked = ResearchReview.model_validate(result)
-            valid_issues = [
+            base_issues = [
                 issue
                 for issue in checked.issues
                 if issue.finding_index < len(reports[issue.role].analysis.findings)
@@ -400,7 +539,37 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 if (item.kind == "market_events" and item.fund_code is None)
                 or (item.kind != "market_events" and item.fund_code in state.fund_codes)
             ]
-            invalid = len(valid_issues) != len(checked.issues) or len(valid_supplements) != len(checked.supplements)
+            invalid = len(base_issues) != len(checked.issues) or len(valid_supplements) != len(checked.supplements)
+            valid_issues = []
+            challenges = 0
+            for issue in base_issues:
+                has_challenge = (
+                    issue.challenger_role is not None
+                    or issue.challenger_finding_index is not None
+                    or bool(issue.challenger_evidence_ids)
+                )
+                if not has_challenge:
+                    valid_issues.append(issue)
+                    continue
+                if challenges < 2 and _valid_challenge(issue, reports, packet):
+                    valid_issues.append(issue)
+                    challenges += 1
+                    continue
+                logger.info(
+                    "research_challenge_rejected",
+                    turn_id=state.turn_id,
+                    role=issue.role,
+                    challenger_role=issue.challenger_role,
+                )
+                valid_issues.append(
+                    issue.model_copy(
+                        update={
+                            "challenger_role": None,
+                            "challenger_finding_index": None,
+                            "challenger_evidence_ids": [],
+                        }
+                    )
+                )
             gaps = [*state.gaps, *checked.gaps, *(["审核中的无效反馈或越界补证请求已排除"] if invalid else [])]
             checked = checked.model_copy(update={"issues": valid_issues, "supplements": valid_supplements})
             status = "partial" if invalid or checked.gaps else "completed"
@@ -438,6 +607,15 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 continue
             seen.add(key)
             calls.append((name, args))
+        attempted_targets = {_target_key(name, args) for name, args in calls}
+        if state.agent_review_status != "failed":
+            acquisition = state.agent_acquisition or build_acquisition(state)
+            for name, args in retry_calls(state, acquisition):
+                target = _target_key(name, args)
+                if target in attempted_targets:
+                    continue
+                attempted_targets.add(target)
+                calls.append((name, args))
         publish_progress(state, "supplement", "started" if calls else "skipped")
 
         async def one(name: str, args: dict) -> ResearchEvidence:
@@ -457,7 +635,13 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 gaps.append(obtained.tool + "补证失败")
         updated = state.model_copy(update={"evidence": evidence})
         packet, omitted = evidence_packet(updated, view)
+        acquisition = build_acquisition(updated)
         gaps.extend(omitted)
+        usable = {
+            (item.tool, json.dumps(item.args, sort_keys=True))
+            for item in evidence
+            if item.success and (not is_empty(item.tool, item.data) or item.tool in EMPTY_IS_AVAILABLE)
+        }
         revision_roles: set[ResearchRole] = set()
         if state.agent_review_status != "failed":
             revision_roles.update(issue.role for issue in (state.agent_review.issues if state.agent_review else []))
@@ -465,9 +649,14 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
                 if report.status not in {"completed", "partial"}:
                     continue
                 visible = role_evidence(packet, role)
-                if any(item["evidence_id"] not in state.agent_initial_evidence_ids for item in visible):
+                new_usable = any(
+                    item["evidence_id"] not in state.agent_initial_evidence_ids
+                    and (item["tool"], json.dumps(item.get("args") or {}, sort_keys=True)) in usable
+                    for item in visible
+                )
+                if new_usable:
                     revision_roles.add(role)
-                if report.coverage is not None and report.coverage.status != "completed":
+                if report.coverage is not None and report.coverage.revision_needed:
                     revision_roles.add(role)
         if calls:
             publish_progress(
@@ -478,17 +667,19 @@ def build_multi_role_subgraph(call: AgentCall, view: EvidenceView, fetch: FetchE
             turn_id=state.turn_id,
             call_count=len(calls),
             revision_roles=sorted(revision_roles),
+            failed_calls=sum(not item.success for item in obtained_items),
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
         return {
             "evidence": evidence,
             "gaps": list(dict.fromkeys(gaps)),
             "agent_evidence_packet": packet,
+            "agent_acquisition": acquisition,
             "agent_revision_roles": sorted(revision_roles),
         }
 
     async def complete(state: MultiRoleGraphState, config: RunnableConfig) -> dict:
-        gaps = list(state.gaps)
+        gaps = _drop_resolved_failures(list(state.gaps), state.agent_acquisition)
         manifest = completion_manifest(state)
         for item in manifest["tasks"]:
             # 未运行也是一个要披露的结局：用户要求"结合我的持仓"而持仓没取到时，

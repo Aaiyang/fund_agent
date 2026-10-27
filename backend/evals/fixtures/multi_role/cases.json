@@ -1,0 +1,141 @@
+[
+  {
+    "id": "clean_two_funds",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "expected": {
+      "coverage": {
+        "performance": "completed",
+        "risk": "completed",
+        "holdings": "completed",
+        "manager": "completed",
+        "disclosure": "completed"
+      },
+      "revision_roles": [],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "missing_risk_000001",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "missing_risk_metrics": ["000001"],
+    "expected": {
+      "coverage": {
+        "performance": "completed",
+        "risk": "partial",
+        "holdings": "completed",
+        "manager": "completed",
+        "disclosure": "completed"
+      },
+      "revision_roles": [],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "failed_benchmark_retry",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "failed_tools": {"000002": ["get_fund_benchmark"]},
+    "retry_benchmark_success": true,
+    "expected": {
+      "revision_roles": ["performance"],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "uncited_comparison",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "uncited": [{"role": "performance", "tool": "get_fund_comparison_data"}],
+    "expected": {
+      "revision_roles": ["performance"],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "manager_issue",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "review_issue": {"role": "manager", "finding_index": 0},
+    "expected": {
+      "revision_roles": ["manager"],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "valid_challenge",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "review_issue": {"role": "manager", "finding_index": 0, "challenger": "risk"},
+    "expected": {
+      "revision_roles": ["manager"],
+      "unknown_citations": 0,
+      "challenge_count": 1
+    }
+  },
+  {
+    "id": "invalid_challenge",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "review_issue": {"role": "manager", "finding_index": 0, "challenger": "manager"},
+    "expected": {
+      "revision_roles": ["manager"],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "role_failure_holdings",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "role_failures": ["holdings"],
+    "expected": {
+      "coverage": {"holdings": "blocked"},
+      "revision_roles": [],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "three_fund_missing_holdings",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "011452", "022287"],
+    "missing_tools": {"022287": ["get_fund_holdings"]},
+    "expected": {
+      "coverage": {"holdings": "partial"},
+      "revision_roles": [],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "duplicate_claims",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "duplicate_claims": true,
+    "expected": {
+      "min_duplicate_claims": 3,
+      "revision_roles": [],
+      "unknown_citations": 0,
+      "challenge_count": 0
+    }
+  },
+  {
+    "id": "forged_citation",
+    "intent": "fund_comparison",
+    "fund_codes": ["000001", "000002"],
+    "forged_roles": ["risk"],
+    "expected": {
+      "coverage": {"risk": "blocked"},
+      "revision_roles": [],
+      "unknown_citations": 1,
+      "challenge_count": 0
+    }
+  }
+]

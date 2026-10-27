@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -273,49 +274,96 @@ export function LlmSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[88vh] gap-5 overflow-y-auto rounded-[24px] border-border bg-card p-6 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>模型供应商设置</DialogTitle>
-          <DialogDescription>
-            个人模型仅对当前账户生效，也可以使用默认 GLM Flash。
-          </DialogDescription>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/xiaojing-avatar.png"
+              alt=""
+              width={44}
+              height={44}
+              unoptimized
+              className="size-11 rounded-[14px] border border-border object-cover"
+            />
+            <div>
+              <DialogTitle className="font-display text-2xl">
+                模型中心
+              </DialogTitle>
+              <DialogDescription className="mt-1">
+                这里的模型只对当前账户生效。默认档案开箱可用，也可以接入自己的 OpenAI 兼容端点。
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         {loading && (
-          <output className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-            <RefreshCw className="size-4 animate-spin" /> 正在加载供应商配置…
+          <output className="flex items-center gap-2 rounded-xl bg-secondary/50 px-3 py-3 text-sm text-muted-foreground">
+            <RefreshCw className="size-4 animate-spin text-primary" />
+            正在加载供应商配置…
           </output>
         )}
         {loadError && (
           <div
             role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
+            className="rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
           >
             加载供应商配置失败：{loadError}
           </div>
         )}
-        <div hidden={loading || Boolean(loadError)} className="space-y-4">
+        <div hidden={loading || Boolean(loadError)} className="space-y-5">
+          {llm && (
+            <div className="rounded-2xl border border-primary/20 bg-primary/[0.055] p-4">
+              <p className="text-[10px] font-semibold tracking-[0.18em] text-primary">
+                当前使用
+              </p>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-semibold text-foreground">
+                    {llm.active}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {llm.profiles.find((profile) => profile.name === llm.active)
+                      ?.model ?? '默认模型'}
+                  </p>
+                </div>
+                <span className="rounded-full bg-card px-2.5 py-1 text-[10px] text-primary">
+                  已启用
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
+            <p className="px-1 text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">
+              模型档案
+            </p>
             {drafts.map((draft, index) => (
               <div
                 key={draft.name}
-                className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
+                className={`flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition-colors ${
+                  llm?.active === draft.name
+                    ? 'border-primary/20 bg-primary/[0.045]'
+                    : 'border-border bg-card/60'
+                }`}
               >
+                <span
+                  className={`size-2 rounded-full ${llm?.active === draft.name ? 'bg-primary' : 'bg-border'}`}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
                     {draft.name}
                     {draft.read_only && (
-                      <span className="ml-2 text-xs text-muted-foreground">
+                      <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-normal text-text-soft">
                         基础模型
                       </span>
                     )}
                     {llm?.active === draft.name && (
-                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                      <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-normal text-primary">
                         当前
                       </span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {draft.model}
                     {draft.key_hint && ` · Key ${draft.key_hint}`}
                   </p>
@@ -344,23 +392,31 @@ export function LlmSettingsDialog({
             {editing === null && (
               <Button
                 variant="outline"
-                className="w-full justify-start"
+                className="h-11 w-full justify-start rounded-xl border-dashed border-border bg-transparent text-muted-foreground hover:border-primary/30 hover:bg-primary/[0.04] hover:text-primary"
                 onClick={startAdd}
               >
-                <Plus /> 添加供应商
+                <Plus /> 添加模型档案
               </Button>
             )}
           </div>
 
           {editing !== null && (
-            <div className="space-y-4 rounded-lg border border-border p-4">
+            <div className="space-y-4 rounded-2xl border border-border bg-secondary/30 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">
+                  {editing === 'new' ? '新增模型档案' : '编辑模型档案'}
+                </p>
+                <span className="text-[10px] text-text-faint">
+                  留空的 Key 会沿用已保存值
+                </span>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="llm-vendor">厂家</Label>
                 <select
                   id="llm-vendor"
                   value={form.vendor}
                   onChange={(event) => applyPreset(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-11 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {VENDOR_PRESETS.map((preset) => (
                     <option key={preset.vendor} value={preset.vendor}>
@@ -404,7 +460,7 @@ export function LlmSettingsDialog({
                         model: event.target.value,
                       }))
                     }
-                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="h-11 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {!fetchedModels.includes(form.model) && form.model && (
                       <option value={form.model}>{form.model}（当前）</option>
@@ -494,8 +550,14 @@ export function LlmSettingsDialog({
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={submitForm}>确认该档案</Button>
-                <Button variant="ghost" onClick={() => setEditing(null)}>
+                <Button className="rounded-xl" onClick={submitForm}>
+                  确认该档案
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="rounded-xl"
+                  onClick={() => setEditing(null)}
+                >
                   取消
                 </Button>
               </div>
@@ -505,15 +567,19 @@ export function LlmSettingsDialog({
           {error && (
             <div
               role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
+              className="rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
             >
               {error}
             </div>
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-t border-border pt-4 sm:justify-between">
+          <p className="hidden text-xs text-text-faint sm:block">
+            保存后立即切换为当前模型。
+          </p>
           <Button
+            className="rounded-xl px-5"
             onClick={() => void handleSave()}
             disabled={saving || loading || Boolean(loadError)}
           >

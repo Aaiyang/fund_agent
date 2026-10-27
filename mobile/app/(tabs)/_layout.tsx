@@ -1,25 +1,52 @@
 import { SymbolView } from 'expo-symbols';
 import { router, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
+import { type ReactNode } from 'react';
+import { Pressable, Text, View } from 'react-native';
 
 import { theme } from '@/constants/theme';
 import { useUiStore } from '@/stores/ui';
 
-/**
- * 标签栏图标。expo-symbols 按平台分别校验图标名：iOS 用 SF Symbols，
- * Android/web 用 Material 图标列表，所以各平台的名称成对配置且取值不同。
- */
-function SearchButton() {
+/** 表头圆形按钮：白瓷底、细描边，和聊天页的输入框是同一套材质。 */
+function HeaderIconButton({
+  label,
+  onPress,
+  active,
+  children,
+}: {
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+  children: ReactNode;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="搜索基金"
-      hitSlop={10}
-      onPress={() => router.push('/search')}
-      style={{ paddingHorizontal: 16 }}
+      accessibilityLabel={label}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 34,
+        height: 34,
+        marginHorizontal: 8,
+        borderRadius: 11,
+        borderWidth: 1,
+        borderColor: active ? theme.primary : theme.border,
+        backgroundColor: active ? theme.primarySoft : theme.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
-      <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} tintColor={theme.primary} size={22} />
+      {children}
     </Pressable>
+  );
+}
+
+function SearchButton() {
+  return (
+    <HeaderIconButton label="搜索基金" onPress={() => router.push('/search')}>
+      <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} tintColor={theme.primary} size={19} />
+    </HeaderIconButton>
   );
 }
 
@@ -31,26 +58,20 @@ function SessionsButton() {
   const open = useUiStore((state) => state.agentSessionsOpen);
   const setOpen = useUiStore((state) => state.setAgentSessionsOpen);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="历史会话"
-      hitSlop={10}
-      onPress={() => setOpen(!open)}
-      style={{ paddingHorizontal: 16 }}
-    >
+    <HeaderIconButton label="历史会话" active={open} onPress={() => setOpen(!open)}>
       <SymbolView
         name={{ ios: 'bubble.left.and.bubble.right', android: 'chat', web: 'chat' }}
         tintColor={open ? theme.primary : theme.textMuted}
-        size={22}
+        size={18}
       />
-    </Pressable>
+    </HeaderIconButton>
   );
 }
 
 /**
  * 新建会话：只把聊天页切回空白，不在服务端建档。
  *
- * 之前这里一点就 POST /auth/session，于是"建了却没说话"的会话会留在历史列表里，
+ * 之前这里一点就 POST /auth/session，于是"建了却没说一句话"的会话会留在历史列表里，
  * 越攒越多。空白会话本来就是未发生的事，第一条消息发出去时聊天页的
  * ensureActiveSession 再去建那条。
  */
@@ -58,18 +79,40 @@ function NewChatButton() {
   const setSessionId = useUiStore((state) => state.setAgentSessionId);
   const setSessionsOpen = useUiStore((state) => state.setAgentSessionsOpen);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="新建会话"
-      hitSlop={10}
+    <HeaderIconButton
+      label="新建会话"
       onPress={() => {
         setSessionId(null);
         setSessionsOpen(false);
       }}
-      style={{ paddingHorizontal: 16 }}
     >
-      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.primary} size={22} />
-    </Pressable>
+      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={theme.primary} size={19} />
+    </HeaderIconButton>
+  );
+}
+
+/** 聊天表头两行：标题是助手名，副行只说当前状态。 */
+function AgentHeaderTitle() {
+  const streaming = useUiStore((state) => state.agentStreaming);
+  const subtitle = streaming ? '正在生成' : '在线';
+  return (
+    <View style={{ alignItems: 'center', maxWidth: 190 }}>
+      <Text style={{ fontSize: 17, fontWeight: '600', color: theme.text }}>小镜</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+        <View
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            marginRight: 5,
+            backgroundColor: streaming ? theme.gold : theme.primary,
+          }}
+        />
+        <Text numberOfLines={1} style={{ fontSize: 11, color: theme.textMuted }}>
+          {subtitle}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -78,10 +121,19 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.textMuted,
+        tabBarInactiveTintColor: theme.textFaint,
+        tabBarStyle: {
+          backgroundColor: theme.surface,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
         headerShown: true,
         headerTitleAlign: 'center',
-        headerTitleStyle: { fontSize: 17, color: theme.text },
+        headerStyle: { backgroundColor: theme.background },
+        headerShadowVisible: false,
+        headerTintColor: theme.primary,
+        headerTitleStyle: { fontSize: 17, fontWeight: '600', color: theme.text },
       }}
     >
       <Tabs.Screen
@@ -128,7 +180,7 @@ export default function TabLayout() {
         name="agent"
         options={{
           title: '小镜',
-          headerTitle: '小镜',
+          headerTitle: () => <AgentHeaderTitle />,
           headerLeft: () => <SessionsButton />,
           headerRight: () => <NewChatButton />,
           tabBarIcon: ({ color, size }) => (

@@ -57,9 +57,13 @@ def multi_workflow(monkeypatch):
         fail_review=False,
         clean_review=False,
         supplement_only=False,
+        challenge=False,
         fail_revision=set(),
         two_supplements=False,
         degraded_evidence=None,
+        missing_risk_metrics=False,
+        fail_once=set(),
+        fail_roles_once=set(),
         forged_revision=False,
         forge_roles=("risk",),
         stances={},
@@ -76,6 +80,9 @@ def multi_workflow(monkeypatch):
     def tool(name):
         async def invoke(args):
             state.calls.append((name, args))
+            if name in state.fail_once:
+                state.fail_once.remove(name)
+                return ToolResult.fail("UPSTREAM_ERROR", "暂时不可用", retryable=True).to_text()
             data = {"fund_code": args.get("fund_code"), "as_of": "2026-10-09"}
             if name == "get_portfolio_snapshot":
                 data = {
@@ -86,8 +93,20 @@ def multi_workflow(monkeypatch):
                     "positions": [{"fund_code": "000001", "market_value": 100}] if state.personal else [],
                     "warnings": [],
                 }
-            if name == "get_fund_analysis_data" and state.degraded_evidence == "partial":
-                data["partial"] = True
+            if name == "get_fund_analysis_data":
+                data.update(
+                    {
+                        "raw_count": 250,
+                        "valid_daily_count": 250,
+                        "partial": state.degraded_evidence == "partial",
+                        "metrics": {
+                            "observed_max_drawdown_ratio": None if state.missing_risk_metrics else -0.1,
+                            "annualized_nav_volatility_ratio": None if state.missing_risk_metrics else 0.2,
+                        },
+                    }
+                )
+            if name == "get_fund_benchmark":
+                data.update({"benchmark_text": "沪深300指数收益率", "parts": [{"weight_pp": 100}]})
             return ToolResult.ok(
                 data, source="test", stale=name == "get_fund_snapshot" and state.degraded_evidence == "stale"
             ).to_text()
@@ -137,6 +156,22 @@ def multi_workflow(monkeypatch):
                 return ResearchReview()
             if state.supplement_only:
                 return ResearchReview(supplements=[SupplementRequest(kind="market_events", reason="核验更多市场事件")])
+            if state.challenge:
+                peer = {item["role"]: item for item in data["peer_reports"]}
+                challenger_ids = list(peer["risk"]["findings"][0]["evidence_ids"])[:3]
+                return ResearchReview(
+                    issues=[
+                        ReviewIssue(
+                            role="performance",
+                            finding_index=0,
+                            reason="同一窗口的风险调整后结论与风险维度相反",
+                            evidence_ids=peer["performance"]["findings"][0]["evidence_ids"][:6],
+                            challenger_role="performance" if state.challenge == "invalid" else "risk",
+                            challenger_finding_index=0,
+                            challenger_evidence_ids=challenger_ids,
+                        )
+                    ]
+                )
             return ResearchReview(
                 issues=[ReviewIssue(role="manager", finding_index=0, reason="说明假设差异")],
                 supplements=[
@@ -159,9 +194,12 @@ def multi_workflow(monkeypatch):
             await asyncio.wait_for(barrier.wait(), timeout=2)
         else:
             assert len(data["peer_reports"]) == len(_ROLES)  # 含 skipped 信封：每个维度都要有结局
-            if not state.fail_review and not state.supplement_only:
+            if not state.fail_review and not state.supplement_only and not state.clean_review and not state.challenge:
                 assert data["review"]["issues"][0]["role"] == "manager"
             assert all(item["fund_code"] != "999999" for item in data["review"]["supplements"])
+        if role in state.fail_roles_once:
+            state.fail_roles_once.remove(role)
+            raise RuntimeError("fake transient role failure")
         if role in state.failures or (feedback and role in state.fail_revision):
             raise RuntimeError("fake role failure")
         findings = []
@@ -446,6 +484,63 @@ async def test_resume_after_report_failure_preserves_agent_and_tool_checkpoints(
     assert await state.agent.get_run_continuation("research-a") is None
 
 
+async def test_continuation_restarts_a_multi_role_run_whose_roles_failed(multi_workflow):
+    state = multi_workflow
+    reference = await basic_report(state)
+    state.clean_review = True
+    state.fail_roles_once = set(ROUND_ONE_ROLES)
+    state.fail_final = True
+    with pytest.raises(Exception, match="fake report failure"):
+        await state.agent.get_response(
+            [Message(role="user", content="多角色深度研究")],
+            "research-a",
+            user_id="42",
+            research_followup_id=reference,
+        )
+    continuation = await state.agent.get_run_continuation("research-a")
+    assert continuation is not None and "重新运行" in continuation.notice
+    # 这条测试关心新开的第二轮；清掉第一轮失败记录，避免 fixture 的当前轮断言混入旧记录。
+    state.analysis.clear()
+    state.reviews.clear()
+    await state.agent.continue_run("research-a", continuation.turn_id, user_id="42")
+    report = (await state.agent.get_chat_history("research-a"))[-1]
+    assert all(item.status != "failed" for item in report.research_roles)
+    assert (await saved_state(state)).values["research_result"].status == "completed"
+    assert await state.agent.get_run_continuation("research-a") is None
+
+
+async def test_targeted_challenge_reaches_the_challenged_role_once(multi_workflow):
+    state = multi_workflow
+    state.challenge = "valid"
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="多角色深度研究")],
+        "research-a",
+        user_id="42",
+        research_followup_id=reference,
+    )
+    feedback = next(data for role, feedback, data in state.analysis if feedback and role == "performance")
+    challenge = feedback["cross_examination"][0]
+    assert challenge["challenger_role"] == "risk"
+    assert challenge["challenger_evidence"]
+    assert any("cross_examination" in str(message.content) for message in state.reports[-1])
+
+
+async def test_invalid_challenge_is_dropped_without_demoting_the_issue(multi_workflow):
+    state = multi_workflow
+    state.challenge = "invalid"
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="多角色深度研究")],
+        "research-a",
+        user_id="42",
+        research_followup_id=reference,
+    )
+    feedback = next(data for role, feedback, data in state.analysis if feedback and role == "performance")
+    assert "cross_examination" not in feedback
+    assert feedback["review"]["issues"][0]["challenger_role"] is None
+
+
 async def test_review_failure_is_disclosed_without_fabricating_a_completed_review(multi_workflow):
     state = multi_workflow
     reference = await basic_report(state)
@@ -475,11 +570,49 @@ async def test_clean_review_reuses_complete_first_round_without_revision_calls(m
     )
     assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
     assert len(state.reviews) == 1
+    assert all("numeric_audit" in report for report in state.reviews[0]["peer_reports"])
     assert not any(feedback for _, feedback, _ in state.analysis)
     assert all(name != "get_portfolio_snapshot" for name, _ in state.calls)
     result = (await saved_state(state)).values["research_result"]
     assert result.status == "completed" and not result.gaps
     assert '"completed_count": 5' in "\n".join(str(message.content) for message in state.reports[-1])
+
+
+async def test_upstream_missing_risk_metrics_do_not_trigger_a_revision(multi_workflow):
+    state = multi_workflow
+    state.clean_review = True
+    state.missing_risk_metrics = True
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="多角色深度研究")],
+        "research-a",
+        user_id="42",
+        research_followup_id=reference,
+    )
+    assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
+    assert not any(feedback for _, feedback, _ in state.analysis)
+    saved = await saved_state(state)
+    result = saved.values["research_result"]
+    assert result.status == "partial"
+    report = (await state.agent.get_chat_history("research-a"))[-1]
+    assert {item.role: item.status for item in report.research_roles}["risk"] == "partial"
+    assert any("净值风险指标" in line and "上游缺指标" in line for line in report.research_citations.sources)
+
+
+async def test_failed_required_tool_is_retried_once_and_only_affected_role_revised(multi_workflow):
+    state = multi_workflow
+    state.clean_review = True
+    state.fail_once = {"get_fund_benchmark"}
+    reference = await basic_report(state)
+    await state.agent.get_response(
+        [Message(role="user", content="多角色深度研究")],
+        "research-a",
+        user_id="42",
+        research_followup_id=reference,
+    )
+    assert sum(name == "get_fund_benchmark" for name, _ in state.calls) == 2
+    assert {role for role, feedback, _ in state.analysis if feedback} == {"performance"}
+    assert (await saved_state(state)).values["research_result"].status == "completed"
 
 
 async def test_opposite_stances_reach_the_synthesis_as_a_paired_tension(multi_workflow):
@@ -580,10 +713,11 @@ async def test_unmet_evidence_requirement_is_derived_and_named(multi_workflow):
     result = (await saved_state(state)).values["research_result"]
     assert result.status == "partial" and any("业绩比较基准" in gap for gap in result.gaps)
     assert len([item for item in state.analysis if not item[1]]) == len(ROUND_ONE_ROLES)
-    # 附注由服务端生成：成文模型不写覆盖，覆盖结论也照样在报告里。
-    answer = (await state.agent.get_chat_history("research-a"))[-1].content
-    assert "研究对象：000001" in answer and "业绩与基准契合：缺少 业绩比较基准" in answer
-    assert "待完成" not in answer
+    # 覆盖由服务端生成：正文不再追加尾注，结构化证据里仍要说清研究对象与缺口。
+    last = (await state.agent.get_chat_history("research-a"))[-1]
+    coverage = "\n".join(last.research_citations.coverage) if last.research_citations else ""
+    assert "研究对象：000001" in coverage and "业绩与基准契合：缺少 业绩比较基准" in coverage
+    assert "待完成" not in coverage and "数据来源核对" not in last.content
 
 
 @pytest.mark.parametrize("quality", ["partial", "stale"])
@@ -602,7 +736,9 @@ async def test_source_quality_cannot_be_hidden_by_agents_claiming_all_tasks_comp
     assert result.status == "partial"
     marker = "数据范围或质量不完整" if quality == "partial" else "数据并非最新"
     assert any(marker in gap for gap in result.gaps)
-    assert marker in (await state.agent.get_chat_history("research-a"))[-1].content
+    last = (await state.agent.get_chat_history("research-a"))[-1]
+    coverage = "\n".join(last.research_citations.coverage) if last.research_citations else ""
+    assert marker in coverage
 
 
 async def test_revision_failure_keeps_first_round_work_and_discloses_unresolved_feedback(multi_workflow):

@@ -36,7 +36,15 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       {status === 'anonymous' ? <Redirect href="/login" /> : null}
-      <Stack>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: theme.background },
+          headerShadowVisible: false,
+          headerTintColor: theme.primary,
+          headerTitleStyle: { fontSize: 17, fontWeight: '600', color: theme.text },
+          contentStyle: { backgroundColor: theme.background },
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="search" options={{ title: '搜索基金' }} />

@@ -50,6 +50,7 @@ function mountSheet(items) {
     Text: ({ children, style }) => element('span', { style }, children),
     View: ({ children }) => element('div', {}, children),
   };
+  const themeModule = load('../constants/theme.ts', { 'react-native': { Platform: { OS: 'web', select: (options) => options.web ?? options.default } } });
   const { FundPickerSheet } = load('../components/FundPickerSheet.tsx', {
     'react': fakeReact,
     'react-native': native,
@@ -58,11 +59,11 @@ function mountSheet(items) {
       Button: ({ label }) => element('button', {}, label),
       Chip: ({ label }) => element('button', {}, label),
     },
-    '@/constants/theme': load('../constants/theme.ts'),
+    '@/constants/theme': themeModule,
     '@/hooks/usePortfolio': { usePositions: () => ({ isPending: false, data: { items } }) },
     '@/hooks/useWatchlist': { useWatchlist: () => ({ isPending: false, data: { items: [] } }) },
     '@/utils/fundPicker': load('../utils/fundPicker.ts'),
-    '@/utils/format': load('../utils/format.ts'),
+    '@/utils/format': load('../utils/format.ts', { '@/constants/theme': themeModule }),
   });
   const render = () => {
     cursor = 0;

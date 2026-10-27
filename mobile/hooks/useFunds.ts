@@ -14,6 +14,8 @@ export type FundHoldingItem = components['schemas']['FundHoldingItem'];
 export type FundHoldings = components['schemas']['FundHoldingsResponse'];
 export type NavHistory = components['schemas']['FundNavHistoryResponse'];
 export type FundNavRefresh = components['schemas']['FundNavRefreshResponse'];
+export type FundComparisonChartRef = components['schemas']['FundComparisonChartRef'];
+export type FundComparisonSeries = components['schemas']['FundComparisonSeriesResponse'];
 export type NavRange = '1m' | '3m' | '6m' | '1y' | '3y' | 'all';
 
 export const NAV_RANGES: { key: NavRange; label: string }[] = [
@@ -47,6 +49,25 @@ export function useFundNav(code: string | null, range: NavRange) {
     queryKey: queryKeys.fundNav(code ?? '', range),
     queryFn: () => api.get<NavHistory>(`/funds/${code}/nav`, { range }),
     enabled: Boolean(code),
+  });
+}
+
+/**
+ * 多基金对比图：只按报告已经定下的共同窗口重取对齐序列。
+ *
+ * 不从各基金各自的 range 重新对齐，否则曲线和报告里的共同窗口指标会对不上。
+ */
+export function useFundComparisonNav(ref: FundComparisonChartRef | null | undefined) {
+  const codes = ref?.fund_codes ?? [];
+  return useQuery({
+    queryKey: queryKeys.fundComparisonNav(codes, ref?.common_from ?? '', ref?.common_to ?? ''),
+    queryFn: () => api.post<FundComparisonSeries>('/funds/compare/nav', {
+      fund_codes: codes,
+      from_date: ref?.common_from,
+      to_date: ref?.common_to,
+    }),
+    enabled: Boolean(ref && codes.length >= 2 && ref.common_from && ref.common_to),
+    staleTime: 5 * 60_000,
   });
 }
 

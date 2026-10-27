@@ -80,7 +80,7 @@ export function AgentSessionsPanel({
         accessibilityRole="button"
         accessibilityLabel="关闭会话列表"
         onPress={dismiss}
-        style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.35)' }}
+        style={{ flex: 1, backgroundColor: theme.overlay }}
       />
       <Animated.View
         style={{
@@ -95,21 +95,57 @@ export function AgentSessionsPanel({
           transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -PANEL_WIDTH] }) }],
         }}
       >
-        <ScrollView contentContainerStyle={{ padding: theme.gap }}>
-          {sessions.isPending ? <Text style={{ fontSize: 13, color: theme.textMuted }}>加载中…</Text> : null}
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: theme.border,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View>
+            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: theme.gold }}>HISTORY</Text>
+            <Text style={{ marginTop: 4, fontSize: 19, fontWeight: '600', color: theme.text }}>会话</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="关闭会话列表"
+            hitSlop={8}
+            onPress={dismiss}
+            style={{ width: 34, height: 34, borderRadius: 11, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surfaceSoft, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor={theme.textMuted} size={15} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 12 }}>
+          {sessions.isPending ? <Text style={{ fontSize: 13, color: theme.textMuted, padding: 6 }}>加载中…</Text> : null}
           {!sessions.isPending && !items.length ? (
-            <Text style={{ fontSize: 13, color: theme.textMuted }}>还没有会话，问过一句就会出现在这里。</Text>
+            <Text style={{ fontSize: 13, color: theme.textMuted, lineHeight: 20, padding: 6 }}>还没有会话，问过一句就会出现在这里。</Text>
           ) : null}
           {items.map((session) => {
             const active = activeSessionId === session.session_id;
             return (
               <View
                 key={session.session_id}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderColor: theme.border }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 10,
+                  paddingHorizontal: 10,
+                  marginBottom: 6,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: active ? theme.primary : 'transparent',
+                  backgroundColor: active ? theme.primarySoft : 'transparent',
+                }}
               >
                 <Pressable accessibilityRole="button" style={{ flex: 1 }} onPress={() => pick(session.session_id)}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 15, color: theme.text, fontWeight: '500' }} numberOfLines={1}>
+                    <Text style={{ flexShrink: 1, fontSize: 14, color: theme.text, fontWeight: active ? '600' : '500' }} numberOfLines={1}>
                       {sessionTitle(session)}
                     </Text>
                     {active ? (
@@ -120,7 +156,7 @@ export function AgentSessionsPanel({
                   </View>
                   {/* 列表按创建时间倒序，标出时间才看得出哪条是刚聊过的。 */}
                   {session.created_at ? (
-                    <Text style={{ fontSize: 12, color: theme.textFaint, marginTop: 2 }}>
+                    <Text style={{ fontSize: 11, color: theme.textFaint, marginTop: 3 }}>
                       {formatSessionTime(session.created_at)}
                     </Text>
                   ) : null}
@@ -130,9 +166,9 @@ export function AgentSessionsPanel({
                   accessibilityLabel="删除这条会话"
                   hitSlop={10}
                   onPress={() => confirmDelete(session)}
-                  style={{ paddingHorizontal: 6 }}
+                  style={{ padding: 6 }}
                 >
-                  <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor={theme.textFaint} size={18} />
+                  <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor={theme.textFaint} size={17} />
                 </Pressable>
               </View>
             );

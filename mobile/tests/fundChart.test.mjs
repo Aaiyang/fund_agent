@@ -32,8 +32,9 @@ const native = {
   Pressable: ({ children, disabled }) => element('button', { disabled }, children),
 };
 const svg = { default: 'svg', Circle: 'circle', Line: 'line', Polyline: 'polyline', __esModule: true };
-const { theme } = loadComponent('../constants/theme.ts');
-const format = loadComponent('../utils/format.ts');
+const platform = { OS: 'web', select: (options) => options.web ?? options.default };
+const { theme } = loadComponent('../constants/theme.ts', { 'react-native': { Platform: platform } });
+const format = loadComponent('../utils/format.ts', { '@/constants/theme': { theme } });
 const { NavChart } = loadComponent('../components/NavChart.tsx', {
   'react-native': native, 'react-native-svg': svg, '@/constants/theme': { theme }, '@/utils/format': format,
   react: { ...require('react'), useState: (initial) => require('react').useState(initial === 0 ? 320 : initial) },
@@ -88,6 +89,8 @@ const { MarkdownText } = loadComponent('../components/MarkdownText.tsx', {
   'react-native': native, '@/constants/theme': { theme }, '@/components/FundAnalysisChart': { FundAnalysisChart },
   '@/components/FundHoldingsCard': { FundHoldingsCard },
   '@/components/ResearchDataCard': { ResearchDataCard: () => element('div', {}, '研究卡片') },
+  '@/components/ResearchEvidenceSheet': { ResearchEvidenceSheet: () => null },
+  'expo-symbols': { SymbolView: () => null },
 });
 
 test('reference and legacy assistant charts both use API data and the detail NavChart', () => {
@@ -203,4 +206,36 @@ test('holdings reject invalid weights, duplicates, extra fields and partial stre
   }
   const raw = holdingsFence();
   for (let end = 1; end < raw.length; end++) assert.equal(contract.splitFundAnalysisBlocks(raw.slice(0, end))[0].kind, 'text');
+});
+
+test('ordered items separated by blank lines keep one continuous numbering', () => {
+  const merged = renderToStaticMarkup(element(MarkdownText, { content: '1. 第一点\n\n1. 第二点\n\n1. 第三点' }));
+  assert.equal((merged.match(/>1\. /g) ?? []).length, 1);
+  assert.ok(merged.includes('2. ') && merged.includes('3. '));
+
+  const split = renderToStaticMarkup(element(MarkdownText, { content: '1. 甲\n\n普通段落\n\n1. 乙' }));
+  assert.equal((split.match(/>1\. /g) ?? []).length, 2);
+});
+
+test('numbered citations render as superscript and the evidence stays behind one collapsed trigger', () => {
+  const citations = {
+    version: 1,
+    citations: [{
+      number: 1, evidence_id: 'ev_aaaaaaaaaaaaaaaa', label: '基金概况', tool: 'get_fund_snapshot',
+      fund_codes: ['000001'], as_of: '2026-10-20', excerpt: '近一年净值上涨 12.30%',
+    }],
+    coverage: ['研究对象：000001'],
+    sources: [],
+    audit: { matched: 1, unknown: 0, uncited_lines: 0 },
+  };
+  const html = renderToStaticMarkup(element(MarkdownText, { content: '近一年上涨 12.30% [ev_aaaaaaaaaaaaaaaa]。', citations }));
+  assert.ok(html.includes('¹'));
+  assert.doesNotMatch(html, /ev_/);
+  assert.ok(html.includes('证据 1 条'));
+
+  const syntax = renderToStaticMarkup(element(MarkdownText, { content: '近一年上涨 12.30% [^1]。', citations }));
+  assert.ok(syntax.includes('¹'));
+
+  const streaming = renderToStaticMarkup(element(MarkdownText, { content: '近一年上涨 12.30% [ev_aaaaaaaaaaaaaaaa]。' }));
+  assert.doesNotMatch(streaming, /ev_/);
 });

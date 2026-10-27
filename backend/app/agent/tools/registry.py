@@ -37,9 +37,10 @@ from app.agent.tools.portfolio import (
     request_holding_import_confirmation,
     identify_event_portfolio_links,
 )
+from app.agent.tools.watchlist import get_watchlist
 
 # 工具集版本：仅当工具增删或 Schema 变化时升级（KV Cache 全局前缀组成部分）
-TOOLS_VERSION = "v20"
+TOOLS_VERSION = "v21"
 
 # 基金域
 FUND_TOOLS: list[BaseTool] = [
@@ -66,6 +67,7 @@ PORTFOLIO_TOOLS: list[BaseTool] = [
     start_holding_import,
     request_holding_import_confirmation,
     identify_event_portfolio_links,
+    get_watchlist,
 ]
 
 # 行情域

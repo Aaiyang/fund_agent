@@ -38,6 +38,20 @@ class ResearchAssignment(BaseModel):
     required_evidence: list[EvidenceRequirement] = Field(default_factory=list, max_length=6)
 
 
+CoverageGapKind = Literal["available_not_cited", "fetch_failed", "not_attempted", "upstream_unavailable"]
+
+
+class CoverageGap(BaseModel):
+    """一条覆盖缺口的机器分类；missing 仍保留给人看的短标签."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: CoverageGapKind
+    requirement: str = Field(min_length=1, max_length=60)
+    fund_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    tool: str | None = Field(default=None, max_length=80)
+    detail: str = Field(default="", max_length=300)
+
+
 class TaskCoverage(BaseModel):
     """服务端从存活发现的引用推导出的覆盖结论；这张表不由模型填写.
 
@@ -54,6 +68,9 @@ class TaskCoverage(BaseModel):
     # 该角色有多少条结论因引用无法核对而被整条丢弃。交给成文节点如实说明，
     # 而不是让它从缺口文字里猜。
     dropped_citations: int = Field(default=0, ge=0)
+    missing_gaps: list[CoverageGap] = Field(default_factory=list, max_length=24)
+    revision_needed: bool = False
+    supplement_needed: bool = False
 
 
 class EvidenceFinding(BaseModel):
@@ -106,6 +123,26 @@ class AgentAnalysis(BaseModel):
     stance: DimensionStance | None = None
 
 
+class NumericMismatch(BaseModel):
+    """一条未在引用证据中找到的数值；只做审核提示，不参与状态."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    finding_index: int = Field(ge=0, le=5)
+    token: str = Field(min_length=1, max_length=80)
+    reason: str = Field(default="", max_length=200)
+
+
+class NumericAudit(BaseModel):
+    """服务端数字审计摘要；由代码生成，不加入模型输出契约."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    checked: int = Field(default=0, ge=0)
+    matched: int = Field(default=0, ge=0)
+    unmatched: list[NumericMismatch] = Field(default_factory=list, max_length=5)
+    truncated: bool = False
+    note: str = Field(default="", max_length=300)
+
+
 class AgentReport(BaseModel):
     """Immutable envelope used by the graph's shared result channel."""
 
@@ -116,6 +153,7 @@ class AgentReport(BaseModel):
     status: Literal["completed", "partial", "failed", "skipped"]
     analysis: AgentAnalysis = Field(default_factory=AgentAnalysis)
     coverage: TaskCoverage | None = None
+    numeric_audit: NumericAudit | None = None
     skip_reason: (
         Literal["not_applicable", "no_verified_positions", "not_required", "previous_failed", "budget"] | None
     ) = None
@@ -143,6 +181,10 @@ class ReviewIssue(BaseModel):
     finding_index: int = Field(ge=0, le=5, strict=True)
     reason: str = Field(min_length=1, max_length=500)
     evidence_ids: list[EvidenceId] = Field(default_factory=list, max_length=6)
+    # 可选的定向质询：challenger_role 指向同一议题上的同事发现。
+    challenger_role: ResearchRole | None = None
+    challenger_finding_index: int | None = Field(default=None, ge=0, le=5, strict=True)
+    challenger_evidence_ids: list[EvidenceId] = Field(default_factory=list, max_length=3)
 
 
 class SupplementRequest(BaseModel):

@@ -21,6 +21,7 @@ from app.agent.tools.fund import (
 )
 from app.agent.tools.market import get_market_context
 from app.agent.tools.portfolio import get_portfolio, get_positions
+from app.agent.tools.watchlist import get_watchlist
 from app.agent.tools.result import ToolResult
 from app.agent.tools.runtime import (
     ToolRuntimeContext,
@@ -41,6 +42,7 @@ _MODULE_SERVICE_ATTRS = {
     "get_fund_holdings": ("app.agent.tools.fund.get_fund_holdings", "fund_service"),
     "get_portfolio": ("app.agent.tools.portfolio.get_portfolio", "portfolio_service"),
     "get_positions": ("app.agent.tools.portfolio.get_positions", "portfolio_service"),
+    "get_watchlist": ("app.agent.tools.watchlist.get_watchlist", "watchlist_service"),
     "get_market_context": ("app.agent.tools.market.get_market_context", "market_service"),
 }
 
@@ -368,6 +370,94 @@ class TestPortfolioTools:
     @pytest.mark.parametrize("tool", [get_portfolio, get_positions])
     def test_schema_has_no_user_id(self, tool):
         assert "user_id" not in tool.args
+
+
+class TestWatchlistTools:
+    async def test_get_watchlist_passes_runtime_user_id_and_caps(self, monkeypatch):
+        seen = {}
+
+        async def fake_watchlist(user_id, group_id=None):
+            seen.update(user_id=user_id, group_id=group_id)
+            return [
+                SimpleNamespace(
+                    fund_code="000001",
+                    fund_name="华夏成长",
+                    fund_type="混合型",
+                    latest_nav=1.025,
+                    nav_date=date(2026, 10, 22),
+                    daily_return=-3.67,
+                    weekly_return=-15.2,
+                    monthly_return=-22.76,
+                    quarterly_return=-25.13,
+                    semiannual_return=-9.05,
+                    annual_return=-3.48,
+                    is_held=True,
+                    is_updated=True,
+                    groups=["稳健"],
+                    group_ids=[7],
+                ),
+                SimpleNamespace(
+                    fund_code="011452",
+                    fund_name="华泰柏瑞质量成长",
+                    fund_type="混合型",
+                    latest_nav=2.2175,
+                    nav_date=date(2026, 10, 21),
+                    daily_return=1.75,
+                    weekly_return=2.0,
+                    monthly_return=-29.12,
+                    quarterly_return=-20.1,
+                    semiannual_return=-24.62,
+                    annual_return=48.78,
+                    is_held=False,
+                    is_updated=False,
+                    groups=[],
+                    group_ids=[],
+                ),
+            ]
+
+        _patch_tool_service(monkeypatch, "get_watchlist", SimpleNamespace(list_funds=fake_watchlist))
+        text = await get_watchlist.ainvoke({"group_id": 7, "limit": 1})
+
+        assert seen == {"user_id": 42, "group_id": 7}
+        payload = json.loads(text.split("\n")[1])
+        assert payload["watchlist_count"] == 1
+        assert payload["return_unit"] == "percentage_point"
+        assert payload["watchlist"][0]["fund_code"] == "000001"
+        assert payload["watchlist"][0]["groups"] == ["稳健"]
+        assert "仅返回前 1 只" in text
+
+    async def test_get_watchlist_marks_stale_navs(self, monkeypatch):
+        item = SimpleNamespace(
+            fund_code="011452",
+            fund_name="华泰柏瑞质量成长",
+            fund_type=None,
+            latest_nav=None,
+            nav_date=None,
+            daily_return=None,
+            weekly_return=None,
+            monthly_return=None,
+            quarterly_return=None,
+            semiannual_return=None,
+            annual_return=None,
+            is_held=False,
+            is_updated=False,
+            groups=[],
+            group_ids=[],
+        )
+
+        async def fake_watchlist(user_id, group_id=None):
+            return [item]
+
+        _patch_tool_service(monkeypatch, "get_watchlist", SimpleNamespace(list_funds=fake_watchlist))
+        text = await get_watchlist.ainvoke({})
+
+        assert "stale=true" in text
+        assert "部分自选基金的净值可能不是最新" in text
+        payload = json.loads(text.split("\n")[1])
+        assert payload["watchlist"][0]["nav_is_updated"] is False
+
+    def test_schema_has_no_user_id(self):
+        assert "user_id" not in get_watchlist.args
 
 
 # ---------------------------------------------------------------------------

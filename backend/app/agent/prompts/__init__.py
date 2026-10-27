@@ -19,6 +19,7 @@ with open(os.path.join(_PROMPTS_DIR, "session_title.md"), encoding="utf-8") as _
 from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后：graph → contract → schemas
     AGENT_ANALYSIS_CONTRACT,
     MULTI_ROLE_REPORT_STRUCTURE,
+    REPORT_CITATION_RULES,
     RESEARCH_REVIEW_CONTRACT,
     REPORT_CONTINUATION,
     REPORT_EMPTY_RETRY,
@@ -54,6 +55,10 @@ from app.agent.prompts.graph import (  # noqa: E402  必须在模板读入之后
 # v25：用户显式启动多角色研究与任务内证据通信边界
 # v26：图内内联提示词收进 prompts.graph，输出契约改由 schema 生成（单一来源）
 # v27：多角色报告按归属人成文（节标题、综合结论署名），内部键名禁止漏进正文；角色输出加 stance 立场
+# v28：研究报告改为编号角标引用，证据/覆盖/核对进结构化面板，提示词按研究与引用重新分层
+# v29：多基金对比图由客户端按共同窗口自动渲染，模型不再生成对比序列
+# v30：数字审计仅作审核提示；审核可对真实冲突做一次定向质询，修订轮回应但不辩论
+# v31：新增 get_watchlist，自选与持仓边界写进工具路由
 _GRAPH_PROMPT_KEYS = (
     ROLE_RULES,
     tuple(ROLE_BRIEFS.values()),
@@ -63,13 +68,14 @@ _GRAPH_PROMPT_KEYS = (
     REPORT_CONTINUATION,
     REPORT_EMPTY_RETRY,
     MULTI_ROLE_REPORT_STRUCTURE,
+    REPORT_CITATION_RULES,
     AGENT_ANALYSIS_CONTRACT,
     RESEARCH_REVIEW_CONTRACT,
 )
 
 # 后缀是内联提示词与 schema 契约的内容指纹：改一个字就换指纹。以前只有 system.md
 # 记版本，图里那几段中文改了多少轮都没人账，KV 前缀失效只能靠手动升版本号。
-SYSTEM_PROMPT_VERSION = "fund-agent-v27+" + hashlib.sha256(repr(_GRAPH_PROMPT_KEYS).encode()).hexdigest()[:8]
+SYSTEM_PROMPT_VERSION = "fund-agent-v31+" + hashlib.sha256(repr(_GRAPH_PROMPT_KEYS).encode()).hexdigest()[:8]
 
 
 def load_prompt_file(filename: str) -> str:

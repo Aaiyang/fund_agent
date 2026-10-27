@@ -333,6 +333,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chatbot/fund-selection/decision/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Analysis Fund Stream
+         * @description 选择后直接从原检查点流式输出报告，复用普通聊天的过滤与图表校验.
+         */
+        post: operations["choose_analysis_fund_stream_api_v1_chatbot_fund_selection_decision_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatbot/continue/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue Agent Run Stream
+         * @description 原任务继续也流式输出，不重选基金、不新增问题、不重复取证.
+         */
+        post: operations["continue_agent_run_stream_api_v1_chatbot_continue_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chatbot/fund-selection/decision": {
         parameters: {
             query?: never;
@@ -573,6 +613,26 @@ export interface paths {
          *     都加载完才能发起请求，而客户端给定的集合会让任何调用方点名刷新任意基金。
          */
         post: operations["refresh_latest_navs_api_v1_funds_refresh_latest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/funds/compare/nav": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Fund Comparison Nav
+         * @description 按报告固定的共同窗口重取 2–3 只基金的对齐归一序列，供对比曲线使用.
+         */
+        post: operations["get_fund_comparison_nav_api_v1_funds_compare_nav_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2061,15 +2121,20 @@ export interface components {
             holding_import_ids?: string[];
             /** Holding Account Id */
             holding_account_id?: number | null;
-            /** Server-issued report reference for multi-role research. */
+            /** Research Followup Id */
             research_followup_id?: string | null;
-            /** 选基金面板直接授权的研究对象；只能是六位基金代码 */
+            /**
+             * Research Fund Codes
+             * @description 客户端选基金面板直接授权的研究对象；只能是六位基金代码
+             */
             research_fund_codes?: string[];
             /**
-             * 成本档位：single 一次模型出报告，multi_role 三角色合议（仅随 research_fund_codes 生效）
+             * Research Strategy
+             * @description 成本档位：single 一次模型出报告，multi_role 三角色合议（仅随 research_fund_codes 生效）
              * @default single
+             * @enum {string}
              */
-            research_strategy?: 'single' | 'multi_role';
+            research_strategy?: "single" | "multi_role";
         };
         /**
          * ChatResponse
@@ -2160,6 +2225,151 @@ export interface components {
              * @description When the account was created
              */
             created_at?: string | null;
+        };
+        /**
+         * FundComparisonChartFund
+         * @description 报告时点的单基金对比指标；客户端数字表以它为准.
+         */
+        FundComparisonChartFund: {
+            /** Fund Code */
+            fund_code: string;
+            /** Window Change Ratio */
+            window_change_ratio?: number | null;
+            /** Observed Max Drawdown Ratio */
+            observed_max_drawdown_ratio?: number | null;
+            /** Annualized Nav Volatility Ratio */
+            annualized_nav_volatility_ratio?: number | null;
+            /**
+             * Aligned Count
+             * @default 0
+             */
+            aligned_count?: number;
+            /**
+             * Stale
+             * @default false
+             */
+            stale?: boolean;
+        };
+        /**
+         * FundComparisonChartRef
+         * @description 多基金对比图的固定共同窗口与报告时点指标；序列由客户端按此窗口另取.
+         */
+        FundComparisonChartRef: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /** Fund Codes */
+            fund_codes: string[];
+            /**
+             * Common From
+             * Format: date
+             */
+            common_from: string;
+            /**
+             * Common To
+             * Format: date
+             */
+            common_to: string;
+            /**
+             * Aligned Count
+             * @default 0
+             */
+            aligned_count?: number;
+            /** Funds */
+            funds: components["schemas"]["FundComparisonChartFund"][];
+        };
+        /**
+         * FundComparisonPeriodReturns
+         * @description 共同窗口内的阶段收益；没有覆盖该阶段的基金保留 None.
+         */
+        FundComparisonPeriodReturns: {
+            /** Return 1M */
+            return_1m?: number | null;
+            /** Return 3M */
+            return_3m?: number | null;
+            /** Return 6M */
+            return_6m?: number | null;
+            /** Return 1Y */
+            return_1y?: number | null;
+        };
+        /**
+         * FundComparisonPoint
+         * @description 归一后的同日累计变化；0.1 表示 10%，不是单位净值.
+         */
+        FundComparisonPoint: {
+            /**
+             * Nav Date
+             * Format: date
+             */
+            nav_date: string;
+            /** Change Ratio */
+            change_ratio: number;
+        };
+        /**
+         * FundComparisonSeriesFund
+         * @description 一只基金在共同日期上的归一序列；名称只用于图例.
+         */
+        FundComparisonSeriesFund: {
+            /** Fund Code */
+            fund_code: string;
+            /** Fund Name */
+            fund_name?: string | null;
+            /** Points */
+            points?: components["schemas"]["FundComparisonPoint"][];
+            period_returns?: components["schemas"]["FundComparisonPeriodReturns"];
+        };
+        /**
+         * FundComparisonSeriesRequest
+         * @description 按报告生成的固定共同窗口重取对齐序列；只给代码和日期，不接受任意范围.
+         */
+        FundComparisonSeriesRequest: {
+            /** Fund Codes */
+            fund_codes: string[];
+            /**
+             * From Date
+             * Format: date
+             */
+            from_date: string;
+            /**
+             * To Date
+             * Format: date
+             */
+            to_date: string;
+        };
+        /**
+         * FundComparisonSeriesResponse
+         * @description 按固定共同窗口重取的对齐序列；指标仍以报告消息里的引用为准.
+         */
+        FundComparisonSeriesResponse: {
+            /**
+             * Metric Basis
+             * @default unadjusted_unit_nav
+             * @constant
+             */
+            metric_basis?: "unadjusted_unit_nav";
+            /** Common From */
+            common_from?: string | null;
+            /** Common To */
+            common_to?: string | null;
+            /**
+             * Aligned Count
+             * @default 0
+             */
+            aligned_count?: number;
+            /** Funds */
+            funds?: components["schemas"]["FundComparisonSeriesFund"][];
+            /**
+             * Stale
+             * @default false
+             */
+            stale?: boolean;
+            /** Gaps */
+            gaps?: string[];
+            /** Warnings */
+            warnings?: string[];
         };
         /**
          * FundDetailResponse
@@ -3297,22 +3507,30 @@ export interface components {
              * @description The complete content of the message
              */
             content: string;
-            /** Server-issued reference for an eligible source research report. */
+            /**
+             * Research Id
+             * @description 服务端签发的可进一步研究的报告标识
+             */
             research_id?: string | null;
             /**
              * Research Intent
              * @description 该报告的研究对象类型，界面据此决定按钮写「深度研究」还是「深度对比」
-             * @enum {string}
              */
-            research_intent?: "fund_research" | "fund_comparison" | "portfolio_diagnosis" | "allocation_analysis" | "sector_research" | "stock_research" | null;
-            /** 多角色报告里每个角色的实际结局；单档位报告为 None */
+            research_intent?: ("fund_research" | "fund_comparison" | "portfolio_diagnosis" | "allocation_analysis" | "sector_research" | "stock_research") | null;
+            /**
+             * Research Roles
+             * @description 多角色报告里每个角色的实际结局；单档位报告为 None
+             */
             research_roles?: components["schemas"]["ResearchRoleOutcome"][] | null;
             /**
              * Research Review Status
              * @description 多角色报告的交叉审核结局
-             * @enum {string}
              */
-            research_review_status?: "completed" | "partial" | "failed" | "skipped" | null;
+            research_review_status?: ("completed" | "partial" | "failed" | "skipped") | null;
+            /** @description 报告正文角标对应的编号证据、来源核对与引用审计；前端折叠展示 */
+            research_citations?: components["schemas"]["ResearchCitations"] | null;
+            /** @description 多基金对比报告的固定共同窗口与指标；客户端据此绘制归一收益对比图 */
+            fund_comparison_chart?: components["schemas"]["FundComparisonChartRef"] | null;
         };
         /**
          * MinuteExternalPoint
@@ -3717,6 +3935,87 @@ export interface components {
             note?: string;
         };
         /**
+         * ResearchCitationAudit
+         * @description 引用可核对性计数；只用于折叠面板，不进入可见正文.
+         */
+        ResearchCitationAudit: {
+            /**
+             * Matched
+             * @default 0
+             */
+            matched?: number;
+            /**
+             * Unknown
+             * @default 0
+             */
+            unknown?: number;
+            /**
+             * Uncited Lines
+             * @default 0
+             */
+            uncited_lines?: number;
+        };
+        /**
+         * ResearchCitationItem
+         * @description 报告正文里真正被引用的一条证据；number 是前端角标，不是模型写的.
+         */
+        ResearchCitationItem: {
+            /** Number */
+            number: number;
+            /** Evidence Id */
+            evidence_id: string;
+            /** Label */
+            label: string;
+            /** Tool */
+            tool: string;
+            /** Fund Codes */
+            fund_codes?: string[];
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt?: string;
+        };
+        /**
+         * ResearchCitations
+         * @description 一条研究报告的编号引用与折叠证据；由服务端生成，不要求模型填写.
+         */
+        ResearchCitations: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /** Citations */
+            citations?: components["schemas"]["ResearchCitationItem"][];
+            /** Coverage */
+            coverage?: string[];
+            /** Sources */
+            sources?: string[];
+            audit?: components["schemas"]["ResearchCitationAudit"];
+        };
+        /**
+         * ResearchRoleOutcome
+         * @description 一份多角色报告里每个角色的实际结局，界面据此显示"N 个角色里 M 个失败".
+         *
+         *     这些数字来自服务端信封（``AgentReport.status``），不是模型在正文里的自述。
+         */
+        ResearchRoleOutcome: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "performance" | "risk" | "holdings" | "manager" | "disclosure" | "portfolio";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "partial" | "failed" | "skipped";
+        };
+        /**
          * ScreenshotImportAccepted
          * @description POST /holding-imports/screenshots 响应体（HTTP 202）.
          */
@@ -3738,24 +4037,6 @@ export interface components {
          * SectorBoardItem
          * @description 一个板块的当日快照；缺数就是 None，不补成 0 也不猜涨跌方向.
          */
-        /**
-         * ResearchRoleOutcome
-         * @description 一份多角色报告里每个角色的实际结局，界面据此显示"N 个角色里 M 个失败".
-         *
-         *     这些数字来自服务端信封（``AgentReport.status``），不是模型在正文里的自述。
-         */
-        ResearchRoleOutcome: {
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "performance" | "risk" | "holdings" | "manager" | "disclosure" | "portfolio";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "completed" | "partial" | "failed" | "skipped";
-        };
         SectorBoardItem: {
             /** Code */
             code: string;
@@ -4191,8 +4472,6 @@ export interface components {
          * @description 加减仓：记一笔买入、赎回、定投期数或转换.
          */
         TradeCreateRequest: {
-            /** 同一订单重试沿用此键；改变参数须使用新键。 */
-            idempotency_key: string;
             /** Account Id */
             account_id: number;
             /**
@@ -4227,6 +4506,11 @@ export interface components {
              * @description 转换目标基金
              */
             target_code?: string | null;
+            /**
+             * Idempotency Key
+             * @description 同一交易的重试沿用此键；复用键但改变参数返回 409
+             */
+            idempotency_key: string;
         };
         /**
          * TradeLeg
@@ -4999,6 +5283,72 @@ export interface operations {
             };
         };
     };
+    choose_analysis_fund_stream_api_v1_chatbot_fund_selection_decision_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundSelectionDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    continue_agent_run_stream_api_v1_chatbot_continue_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentContinueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     choose_analysis_fund_api_v1_chatbot_fund_selection_decision_post: {
         parameters: {
             query?: never;
@@ -5322,6 +5672,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FundNavRefreshResponse"];
+                };
+            };
+        };
+    };
+    get_fund_comparison_nav_api_v1_funds_compare_nav_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundComparisonSeriesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundComparisonSeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
